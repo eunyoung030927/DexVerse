@@ -411,13 +411,21 @@ Two baseline suites are defined: 12 single-hand tasks (28-DoF) and 7 bimanual
 tasks (56-DoF), with the natural-language prompts the checkpoints were finetuned
 on.
 
+Finetuned baseline weights are published on the Hugging Face Hub — one repo per
+baseline, each with a `single/` and a `bimanual/` folder:
+
+```bash
+hf download dexverse/pi05-dexverse --include 'single/*' --local-dir ~/dexverse-ckpts/pi05
+hf download dexverse/openvla-oft-dexverse --include 'single/*' --local-dir ~/dexverse-ckpts/openvla
+```
+
 Start a policy server, then evaluate against it:
 
 ```bash
 # terminal 1 — policy server (paths are required env vars, no defaults)
 OPENPI_ROOT=/path/to/openpi \
 PYTHON_BIN=/path/to/openpi/.venv/bin/python \
-CKPT_DIR=/path/to/openpi/checkpoints/<config>/<run>/<step> \
+CKPT_DIR=~/dexverse-ckpts/pi05/single \
 CONFIG_NAME=<train config name> \
     bash scripts/eval/serve_pi0.sh
 
@@ -431,9 +439,9 @@ POLICY=pi0 SUITE=single bash scripts/eval/run_all_tasks.sh
 
 Per-task `metrics.json` and an aggregate `summary.json` are written under
 `runs/<policy>_eval_online/`. See
-[`scripts/eval/README.md`](scripts/eval/README.md) for the server contracts,
-the observation-preset / state-width requirements (they differ per backend, and
-a mismatch fails silently), and the full flag reference.
+[`scripts/eval/README.md`](scripts/eval/README.md) for checkpoint downloads, the
+server contracts, the observation-preset / state-width requirements (they differ
+per backend, and a mismatch fails silently), and the full flag reference.
 
 ## Demonstrations
 

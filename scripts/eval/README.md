@@ -24,6 +24,51 @@ scripts/eval/
 └── serve_pi0.sh        # start the openpi server
 ```
 
+## Checkpoints
+
+The finetuned baseline weights live on the Hugging Face Hub under the
+[`dexverse`](https://huggingface.co/dexverse) organization, one repo per
+baseline with a `single/` and a `bimanual/` folder inside:
+
+| repo | embodiment folder | size | contains |
+| --- | --- | --- | --- |
+| [`dexverse/openvla-oft-dexverse`](https://huggingface.co/dexverse/openvla-oft-dexverse) | `single/`, `bimanual/` | 16 / 17 GB | 4-shard merged VLA, action head, proprio projector, `dataset_statistics.json` |
+| [`dexverse/pi05-dexverse`](https://huggingface.co/dexverse/pi05-dexverse) | `single/`, `bimanual/` | 7.0 GB each | `model.safetensors`, `metadata.pt`, `assets/.../norm_stats.json` |
+
+Download one embodiment at a time — pulling a whole repo fetches both:
+
+```bash
+pip install -U "huggingface_hub[cli]"
+hf auth login          # required for pi05-dexverse, which is not yet public
+
+# π₀.₅
+hf download dexverse/pi05-dexverse --include 'single/*' --local-dir ~/dexverse-ckpts/pi05
+hf download dexverse/pi05-dexverse --include 'bimanual/*' --local-dir ~/dexverse-ckpts/pi05
+
+# OpenVLA-OFT
+hf download dexverse/openvla-oft-dexverse --include 'single/*' --local-dir ~/dexverse-ckpts/openvla
+hf download dexverse/openvla-oft-dexverse --include 'bimanual/*' --local-dir ~/dexverse-ckpts/openvla
+```
+
+`CKPT_DIR` is then the embodiment folder, e.g.
+`~/dexverse-ckpts/pi05/single`. Downloads resume if interrupted; re-running a
+command is a no-op once complete.
+
+> **Note:** `openvla-oft-dexverse` is public; `pi05-dexverse` is still private
+> pending release review, so downloading it needs an account with access to the
+> `dexverse` organization.
+
+Two things not to "clean up" after downloading:
+
+- **π₀.₅ — keep `assets/dexbench-data/...` exactly where it is.** openpi resolves
+  normalization statistics by `assets/<asset_id>/norm_stats.json`, where the id
+  comes from the training config. Renaming it makes the server start *without*
+  norm stats and silently emit unnormalized actions.
+- **OpenVLA-OFT — the `unnorm_key` must stay `dexbench_rlds/{single,bimanual}`.**
+  Those are the only keys in `dataset_statistics.json`, and the string is also
+  what selects the action dimension (see the argv trap below). `dexbench` is the
+  benchmark's former name.
+
 ## Quick start
 
 **Terminal 1 — policy server.** Every path is a required environment variable;
@@ -34,21 +79,22 @@ starting.
 # OpenVLA-OFT
 OPENVLA_OFT_ROOT=/path/to/openvla-oft \
 PYTHON_BIN=/path/to/envs/openvla-oft/bin/python \
-CKPT_DIR=/path/to/openvla-oft/runs/<run>--<step>_chkpt \
+CKPT_DIR=~/dexverse-ckpts/openvla/single \
 UNNORM_KEY=dexbench_rlds/single \
     bash scripts/eval/serve_openvla.sh
 
 # openpi
 OPENPI_ROOT=/path/to/openpi \
 PYTHON_BIN=/path/to/openpi/.venv/bin/python \
-CKPT_DIR=/path/to/openpi/checkpoints/<config>/<run>/<step> \
+CKPT_DIR=~/dexverse-ckpts/pi05/single \
 CONFIG_NAME=pi05_dexbench \
     bash scripts/eval/serve_pi0.sh
 ```
 
-For a bimanual checkpoint pass `EMBODIMENT=bimanual` to `serve_openvla.sh` (it
-switches `--num_images_in_input` from 2 to 3) and point `CONFIG_NAME` at the
-bimanual config for `serve_pi0.sh`.
+For a bimanual checkpoint point `CKPT_DIR` at the `bimanual/` folder, pass
+`EMBODIMENT=bimanual` to `serve_openvla.sh` (it switches
+`--num_images_in_input` from 2 to 3), and point `CONFIG_NAME` at the bimanual
+config for `serve_pi0.sh`.
 
 **Terminal 2 — evaluation.** Run in the DexVerse / Isaac Lab environment:
 
