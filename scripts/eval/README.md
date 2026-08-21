@@ -39,7 +39,6 @@ Download one embodiment at a time — pulling a whole repo fetches both:
 
 ```bash
 pip install -U "huggingface_hub[cli]"
-hf auth login          # required for pi05-dexverse, which is not yet public
 
 # π₀.₅
 hf download dexverse/pi05-dexverse --include 'single/*' --local-dir ~/dexverse-ckpts/pi05
@@ -50,13 +49,9 @@ hf download dexverse/openvla-oft-dexverse --include 'single/*' --local-dir ~/dex
 hf download dexverse/openvla-oft-dexverse --include 'bimanual/*' --local-dir ~/dexverse-ckpts/openvla
 ```
 
-`CKPT_DIR` is then the embodiment folder, e.g.
-`~/dexverse-ckpts/pi05/single`. Downloads resume if interrupted; re-running a
-command is a no-op once complete.
-
-> **Note:** `openvla-oft-dexverse` is public; `pi05-dexverse` is still private
-> pending release review, so downloading it needs an account with access to the
-> `dexverse` organization.
+Both repos are public — no Hugging Face account or token is needed. `CKPT_DIR`
+is then the embodiment folder, e.g. `~/dexverse-ckpts/pi05/single`. Downloads
+resume if interrupted; re-running a command is a no-op once complete.
 
 Two things not to "clean up" after downloading:
 
