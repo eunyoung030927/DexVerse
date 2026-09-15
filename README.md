@@ -328,12 +328,6 @@ python scripts/demo_tools/create_demo_files_sequential.py \
 
 Pass `--no-set-state` only if you explicitly want true action replay. See `create_demo_files_sequential.py --help` for the full set of output and selection options.
 
-The converter restarts physics with `env.sim.reset()` before restoring every
-episode's initial state, including the first episode, matching the recorder.
-This is required for reproducible CPU action replay: restoring scene positions
-and velocities alone can diverge even with the same seed. Both replay modes use
-this restart; new HDF5 files record `physics_restart=True`.
-
 #### Observation modes (`--obs-groups`)
 
 You choose which observations end up in the HDF5 with `--obs-groups`. It accepts either a
@@ -370,14 +364,8 @@ python scripts/demo_tools/create_demo_files_sequential.py \
 Image storage dtypes are configurable with `--rgb-dtype` (`uint8` default, or `float32`) and
 `--depth-dtype` (`float16` default, or `float32`).
 
-For PushT, the `state` preset includes `state/tee_pose_b`,
-`state/tee_pose_rel_goal`, and `goal/goal_tee_pose_b`. Each pose contains
-`[x, y, z, qw, qx, qy, qz]`; the absolute poses use the table frame and the
-relative pose uses the goal frame. Velocities stay in `privileged`, which this
-preset excludes. Previously, PushT's object and goal poses were available only
-in `privileged`, so state-preset conversions omitted them. Regenerate those
-PushT HDF5 files from the original pickles for training with the corrected
-observations; existing model input dimensions must also be updated.
+PushT v0 now includes object and goal poses in the `state` preset. Regenerate
+earlier PushT state HDF5s and update policy input dimensions to use these fields.
 
 #### Recording a plain camera video for quick debugging during conversion (`--record-video`)
 
@@ -394,43 +382,9 @@ python scripts/demo_tools/create_demo_files_sequential.py \
 
 `--video-dir` defaults to a `videos/` sibling of each HDF5 output.
 
-#### Comparing CPU action replay with state restoration
-
-Run the same first 20 episodes in both modes, with state observations and one
-camera MP4 per episode:
-
-```bash
-python scripts/demo_tools/compare_replay.py \
-    --file source/dexverse/demonstrations/articulation/Dexverse-OpenStapler-v0/Dexverse-OpenStapler-v0.pkl \
-    --num-episodes 20 \
-    --output-dir outputs/open_stapler_cpu_comparison
-```
-
-Use the Isaac Lab Python environment and have `ffprobe` installed for video
-validation. The script runs the sequential converter twice with `--device cpu`,
-`--obs-groups state`, `--record-video`, and seed 0, once with `--set-state` and
-once with `--no-set-state`. Camera rendering still uses the GPU. Its default
-video rate is 60 FPS, matching this task's control rate; adjust `--video-fps`
-for tasks with another control rate.
-
-To repeat the comparison with GPU physics, add `--device cuda:0` and choose a
-new output directory. All other replay settings and episode selections stay
-the same; the chosen physics device is saved in the manifest and HDF5 metadata.
-
-`report.md`, `summary.json`, and `episodes.csv` contain replay success measured
-from `terminations/success`. Success requires 10 consecutive successful steps
-by default, matching the recorder; change `--num-success-steps` if the source
-was recorded with another threshold. The report also gives any-step and
-final-step success counts. The converter preserves the legacy HDF5 `success`
-attribute as the original recording label and stores the measured result in
-`replay_success`, with `has_replay_success` and `replay_complete` validity flags.
-The converter's console summary now reports measured replay success.
-
-The output includes the two HDF5s, 40 MP4s, conversion logs, and a `manifest.json`
-with the source hash, episode indices, commands, code hashes, and software
-versions. Paired action arrays and decoded video frame counts are validated.
-Use a new output directory for each run. To regenerate a report without
-replaying, repeat the command with `--summarize-only`.
+Both replay modes restart physics before restoring each episode, matching the
+recorder. To compare 20 trajectories with videos and measured success rates,
+see [replay comparison](docs/replay_comparison.md).
 
 ### Rendering debug videos from an H5 (`render_demo_video.py`)
 

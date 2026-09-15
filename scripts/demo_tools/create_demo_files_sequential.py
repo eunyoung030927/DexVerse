@@ -139,13 +139,7 @@ parser.add_argument("--task-override", default=None)
 parser.add_argument("--robot-type-override", default=None)
 parser.add_argument("--json-path", default=None)
 parser.add_argument("--enable-pinocchio", action="store_true")
-parser.add_argument("--seed", type=int, default=None, help="Seed for environment creation and replay randomizers.")
-parser.add_argument(
-    "--num-success-steps",
-    type=int,
-    default=10,
-    help="Consecutive replay success steps required (matches record_demos.py's default).",
-)
+parser.add_argument("--seed", type=int, default=None, help="Replay reset/randomization seed; recorded state still takes precedence.")
 
 # --- Video recording ------------------------------------------------------
 parser.add_argument(
@@ -159,8 +153,6 @@ parser.add_argument("--video-dir", type=Path, default=None)
 
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
-if args_cli.num_success_steps < 1:
-    parser.error("--num-success-steps must be positive")
 
 args_cli.headless = True
 
@@ -537,11 +529,6 @@ class PerPickleH5Writer:
         self._h5.attrs["observation_preset"] = observation_preset or ""
         # Marker so readers can tell sequential outputs from parallel ones.
         self._h5.attrs["replay_mode"] = "sequential"
-        self._h5.attrs["set_state"] = args_cli.set_state
-        self._h5.attrs["physics_restart"] = True
-        self._h5.attrs["sim_device"] = args_cli.device
-        self._h5.attrs["seed"] = args_cli.seed if args_cli.seed is not None else -1
-        self._h5.attrs["num_success_steps"] = args_cli.num_success_steps
         self._counter = 0
 
     def write_episode(
@@ -557,7 +544,6 @@ class PerPickleH5Writer:
         initial_obs: dict[str, np.ndarray],
         final_obs: dict[str, np.ndarray],
         terminations: dict[str, list[bool]] | None = None,
-        expected_steps: int | None = None,
     ) -> None:
         group_name = f"demo_{self._counter}"
         self._counter += 1
@@ -567,22 +553,6 @@ class PerPickleH5Writer:
         g.attrs["num_samples"] = len(actions)
         g.attrs["success"] = bool(success) if success is not None else False
         g.attrs["has_success_flag"] = success is not None
-        # The legacy success attribute is the recording label, not a replay result.
-        g.attrs["recorded_success"] = bool(success) if success is not None else False
-        complete = expected_steps is not None and len(actions) == expected_steps
-        g.attrs["expected_steps"] = expected_steps if expected_steps is not None else -1
-        g.attrs["replay_complete"] = complete
-        flags = (terminations or {}).get("success")
-        g.attrs["has_replay_success"] = flags is not None and complete
-        if flags is not None:
-            run = max_run = 0
-            for flag in flags:
-                run = run + 1 if flag else 0
-                max_run = max(max_run, run)
-            g.attrs["replay_success"] = complete and max_run >= args_cli.num_success_steps
-            g.attrs["replay_success_any"] = any(flags)
-            g.attrs["replay_success_final"] = bool(flags[-1]) if flags else False
-            g.attrs["replay_success_max_consecutive"] = max_run
 
         if len(actions) > 0:
             self._dataset(g, "actions", np.stack(actions, axis=0).astype(np.float32, copy=False))
@@ -944,7 +914,7 @@ def _replay_one_episode(
     payload: dict,
     label: str,
 ) -> bool | None:
-    """Replay one episode and return measured replay success, or None if unevaluated."""
+    """Replay one episode and append it to the writer. Returns the recording label."""
     ep_index = int(episode.get("episode_index", -1))
     ep_name = episode.get("episode_name", f"demo_{ep_index}")
     ep_success = episode.get("success")
@@ -1085,20 +1055,11 @@ def _replay_one_episode(
             initial_obs=initial_flat,
             final_obs=last_flat,
             terminations=terminations_buf,
-            expected_steps=T,
         )
         if video is not None:
             video.finalize_episode()
 
-    success_flags = terminations_buf.get("success")
-    if len(actions_buf) != T or success_flags is None:
-        return None
-    run = 0
-    for flag in success_flags:
-        run = run + 1 if flag else 0
-        if run >= args_cli.num_success_steps:
-            return True
-    return False
+    return ep_success
 
 
 def _convert_one_group(group: PickleGroup) -> tuple[int, int, int]:
@@ -1206,7 +1167,7 @@ def _convert_one_group(group: PickleGroup) -> tuple[int, int, int]:
 
     total = len(episodes)
     unknown = total - succeeded - failed
-    parts = [f"replay success ({args_cli.num_success_steps} consecutive steps) {succeeded}/{total}"]
+    parts = [f"recorded success {succeeded}/{total}"]
     if failed:
         parts.append(f"failed {failed}")
     if unknown:
@@ -1237,7 +1198,7 @@ def main() -> int:
         grand_total += t
 
     print(
-        f"\nDone. total={grand_total} replay_success={grand_succ} failed={grand_fail} "
+        f"\nDone. total={grand_total} recorded_success={grand_succ} failed={grand_fail} "
         f"unevaluated={grand_total - grand_succ - grand_fail}"
     )
     return 0

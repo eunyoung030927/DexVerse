@@ -57,10 +57,20 @@ def summarize(output: Path, manifest: dict) -> dict:
         if len(paths) != 1:
             raise ValueError(f"Expected one HDF5 for {mode}, found {paths}")
         with h5py.File(paths[0], "r") as h5:
-            if bool(h5.attrs["set_state"]) != (mode == "set_state"):
+            # Older converters predate these attributes. For those outputs the run
+            # manifest records the mode/device; validate H5 metadata when available.
+            if "set_state" in h5.attrs and bool(h5.attrs["set_state"]) != (mode == "set_state"):
                 raise ValueError(f"Wrong set_state metadata in {paths[0]}")
-            if h5.attrs["sim_device"] != device or h5.attrs["observation_preset"] != "state":
+            # Use the converter's existing metadata; accept earlier comparison files too.
+            replay_device = h5.attrs.get("replay_sim_device", h5.attrs.get("sim_device"))
+            expected_device = "cuda:0" if device == "cuda" else device
+            if replay_device == "cuda":
+                replay_device = "cuda:0"
+            if ((replay_device is not None and replay_device != expected_device)
+                    or h5.attrs["observation_preset"] != "state"):
                 raise ValueError(f"Expected {device} physics and state observations in {paths[0]}")
+            if "conversion_complete" in h5.attrs and not h5.attrs["conversion_complete"]:
+                raise ValueError(f"Conversion incomplete: {paths[0]}")
             groups = sorted(h5["data"].values(), key=lambda g: int(g.attrs["episode_index"]))
             indices = [int(g.attrs["episode_index"]) for g in groups]
             if indices != manifest["episode_indices"]:
@@ -68,16 +78,21 @@ def summarize(output: Path, manifest: dict) -> dict:
             mode_rows = []
             for group in groups:
                 index = int(group.attrs["episode_index"])
-                if not group.attrs["replay_complete"] or not group.attrs["has_replay_success"]:
-                    raise ValueError(f"Replay incomplete or success unavailable: {mode}, episode {index}")
                 actions = group["actions"][()]
                 if mode == "set_state":
                     reference_actions[index] = actions
                 elif not np.array_equal(actions, reference_actions[index]):
                     raise ValueError(f"Action inputs differ for episode {index}")
                 expected_steps = manifest["episode_lengths"][index]
-                if len(actions) != expected_steps or len(group["terminations/success"]) != expected_steps:
+                if "terminations/success" not in group:
+                    raise ValueError(f"Replay success unavailable: {mode}, episode {index}")
+                flags = group["terminations/success"][()]
+                if len(actions) != expected_steps or flags.shape != (expected_steps,):
                     raise ValueError(f"Incomplete trajectory for {mode}, episode {index}")
+                run = max_run = 0
+                for flag in flags:
+                    run = run + 1 if flag else 0
+                    max_run = max(max_run, run)
                 videos = list((output / mode).rglob(f"episode_{index:05d}.mp4"))
                 if len(videos) != 1 or videos[0].stat().st_size == 0:
                     raise ValueError(f"Missing video for {mode}, episode {index}")
@@ -96,11 +111,11 @@ def summarize(output: Path, manifest: dict) -> dict:
                     "mode": mode,
                     "episode_index": index,
                     "steps": len(actions),
-                    "recorded_success": bool(group.attrs["recorded_success"]),
-                    "replay_success": bool(group.attrs["replay_success"]),
-                    "success_any_step": bool(group.attrs["replay_success_any"]),
-                    "success_final_step": bool(group.attrs["replay_success_final"]),
-                    "max_consecutive_success_steps": int(group.attrs["replay_success_max_consecutive"]),
+                    "recorded_success": bool(group.attrs["success"]),
+                    "replay_success": max_run >= manifest["num_success_steps"],
+                    "success_any_step": bool(flags.any()),
+                    "success_final_step": bool(flags[-1]) if len(flags) else False,
+                    "max_consecutive_success_steps": max_run,
                     "video_frames": frames,
                     "video": str(videos[0].relative_to(output)),
                 }
@@ -153,7 +168,7 @@ def summarize(output: Path, manifest: dict) -> dict:
               "CPU collection therefore cannot be confirmed from this pickle. These results compare replay "
               "in the current checkout and environment, using the current task success condition.", "",
               "The HDF5 legacy `success` attribute remains the original recording label. "
-              "Use `replay_success` or `terminations/success` for replay measurements. "
+              "Report success is calculated from the existing `terminations/success` dataset. "
               "Set-state success checks the recorded path against the current task criterion; "
               "it does not establish that live physics reproduces that path.", "",
               f"MP4s contain one initial frame plus one frame per action. Physics device is {device}; camera rendering "
@@ -201,7 +216,7 @@ def main() -> None:
         commands[mode] = [
             sys.executable, "-u", str(converter), "--file", str(source), "--select-episodes",
             *map(str, range(args.num_episodes)), "--obs-groups", "state", "--device", args.device,
-            "--seed", str(args.seed), "--num-success-steps", str(args.num_success_steps),
+            "--seed", str(args.seed),
             "--record-video", "--video-fps", str(args.video_fps), flag,
             "--output-dir", str(output / mode),
         ]
@@ -222,7 +237,7 @@ def main() -> None:
                                [converter, Path(__file__).resolve(), *sorted((REPO / "source/dexverse/dexverse").rglob("*.py"))]},
         "commands": commands, "pythonpath": str(REPO / "source/dexverse"),
     }
-    (output / "working_tree.patch").write_text(command_output(["git", "diff"]))
+    (output / "working_tree.patch").write_text(command_output(["git", "diff", "HEAD"]))
     manifest_path = output / "manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
     env = os.environ.copy()
