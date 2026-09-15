@@ -364,6 +364,15 @@ python scripts/demo_tools/create_demo_files_sequential.py \
 Image storage dtypes are configurable with `--rgb-dtype` (`uint8` default, or `float32`) and
 `--depth-dtype` (`float16` default, or `float32`).
 
+For PushT, the `state` preset includes `state/tee_pose_b`,
+`state/tee_pose_rel_goal`, and `goal/goal_tee_pose_b`. Each pose contains
+`[x, y, z, qw, qx, qy, qz]`; the absolute poses use the table frame and the
+relative pose uses the goal frame. Velocities stay in `privileged`, which this
+preset excludes. Previously, PushT's object and goal poses were available only
+in `privileged`, so state-preset conversions omitted them. Regenerate those
+PushT HDF5 files from the original pickles for training with the corrected
+observations; existing model input dimensions must also be updated.
+
 #### Recording a plain camera video for quick debugging during conversion (`--record-video`)
 
 `create_demo_files_sequential.py` can also write one MP4 per episode straight from a scene camera while it replays, which is handy for sanity-checking a conversion run. This is a raw camera render for debug purpose and is not affected by the choice of observation modes.
