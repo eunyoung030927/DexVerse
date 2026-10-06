@@ -1,7 +1,7 @@
 retargeting:
   type: DexPilot
   urdf_path: allegro_hand_left_dexrot.urdf
-  wrist_link_name: base_link
+  wrist_link_name: palm
   finger_tip_link_names:
   - link_15.0_tip
   - link_3.0_tip

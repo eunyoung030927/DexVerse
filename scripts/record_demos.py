@@ -1214,6 +1214,11 @@ def main() -> None:
 
     env = create_environment(env_cfg, multi_spawn_trace=multi_spawn_trace)
     teleop_interface = setup_teleop_device(env_cfg, {})
+    if args_cli.xr:
+        from dexverse.teleop_utils.xr_session import request_ar_session
+
+        # Start the AR session without the viewport "Start AR" button (no-op if already enabled).
+        request_ar_session(simulation_app)
 
     arm_joint_ids, arm_joint_names = _resolve_arm_joint_ids(env, env_cfg)
     if arm_joint_names is not None:

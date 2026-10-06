@@ -9,7 +9,7 @@ retargeting:
   - right_finger4_tip_link
   - right_finger5_tip_link
   low_pass_alpha: 0.8
-  scaling_factor: 1.3
+  scaling_factor: 1.15
   target_joint_names:
   - right_finger1_joint1
   - right_finger1_joint2

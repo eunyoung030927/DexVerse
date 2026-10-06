@@ -107,6 +107,15 @@ parser.add_argument(
         "of recorded camera observations."
     ),
 )
+parser.add_argument(
+    "--xr_stream_log",
+    type=int,
+    default=0,
+    help=(
+        "Print a hand-tracking stream summary every N frames (wrist xyz, non-zero joints out of 26, "
+        "STALE when the pose is frozen). 0 disables it."
+    ),
+)
 # append AppLauncher cli args
 AppLauncher.add_app_launcher_args(parser)
 # Live teleoperation favors latency over image quality. Isaac Lab's supported
@@ -421,6 +430,14 @@ def main() -> None:  # noqa: C901
 
     print(f"Using teleop device: {teleop_interface}")
 
+    xr_stream_logger = None
+    if args_cli.xr:
+        from dexverse.teleop_utils.xr_session import XrStreamLogger, request_ar_session
+
+        # Start the AR session without the viewport "Start AR" button (no-op if already enabled).
+        request_ar_session(simulation_app)
+        xr_stream_logger = XrStreamLogger(teleop_interface, args_cli.xr_stream_log)
+
     # reset environment
     env.reset()
     teleop_interface.reset()
@@ -501,6 +518,8 @@ def main() -> None:  # noqa: C901
 
                 # get device command
                 action = teleop_interface.advance()
+                if xr_stream_logger is not None:
+                    xr_stream_logger.step()
 
                 # Only apply teleop commands when active
                 if teleoperation_active:

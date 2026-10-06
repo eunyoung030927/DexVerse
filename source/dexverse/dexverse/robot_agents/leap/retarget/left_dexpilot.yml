@@ -5,7 +5,7 @@ retargeting:
   - middle_tip_head
   - ring_tip_head
   low_pass_alpha: 0.8
-  scaling_factor: 1.3
+  scaling_factor: 1.15
   target_joint_names:
   - leap_0
   - leap_1
@@ -26,3 +26,17 @@ retargeting:
   type: DexPilot
   urdf_path: leap_hand_left_fixed.urdf
   wrist_link_name: palm_wrist
+# DexVerse-only section (dex-retargeting reads just `retargeting`). Narrower limits for the finger optimizer
+# only; the simulated hand keeps its full range. With LEAP's +-60 deg abduction and PIP/DIP hyperextension,
+# tip-only objectives reached fist targets by swinging fingers sideways and bending PIPs backwards.
+dexverse:
+  joint_limit_overrides:
+    leap_0: [-0.35, 0.35]
+    leap_4: [-0.35, 0.35]
+    leap_8: [-0.35, 0.35]
+    leap_2: [0.0, 1.885]
+    leap_6: [0.0, 1.885]
+    leap_10: [0.0, 1.885]
+    leap_3: [0.0, 2.042]
+    leap_7: [0.0, 2.042]
+    leap_11: [0.0, 2.042]

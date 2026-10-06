@@ -5,10 +5,10 @@ retargeting:
   type: vector
   urdf_path: allegro_hand_right_dexrot.urdf
   target_origin_link_names:
-  - base_link
-  - base_link
-  - base_link
-  - base_link
+  - palm
+  - palm
+  - palm
+  - palm
   target_task_link_names:
   - link_15.0_tip
   - link_3.0_tip

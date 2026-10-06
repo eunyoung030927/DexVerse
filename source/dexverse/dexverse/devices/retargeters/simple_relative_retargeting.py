@@ -29,6 +29,7 @@ Three ``wrist_rot_repr`` modes are supported in the per-hand layout:
 from __future__ import annotations
 
 import tempfile
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from importlib import import_module
 from typing import Any
@@ -277,6 +278,9 @@ class SimpleRelativeRetargeter(RetargeterBase):
                 )
 
             local_urdf_path = retrieve_file_path(urdf_path, force_download=True)
+            limit_overrides = self._load_joint_limit_overrides(config_path)
+            if limit_overrides:
+                local_urdf_path = self._create_urdf_with_joint_limits(local_urdf_path, limit_overrides)
             patched_config_path = self._create_dex_config_with_urdf(config_path, local_urdf_path)
             retargeter = RetargetingConfig.load_from_file(patched_config_path).build()
 
@@ -316,6 +320,42 @@ class SimpleRelativeRetargeter(RetargeterBase):
             f"has no config for scheme '{scheme}'. Add a 'config_paths' dict that includes this "
             "scheme, or use scheme 'dexpilot' with a legacy 'config_path'."
         )
+
+    @staticmethod
+    def _load_joint_limit_overrides(config_path: str) -> dict[str, tuple[float, float]]:
+        """Read optional ``dexverse.joint_limit_overrides: {joint: [lower, upper]}`` from a retargeting YAML.
+
+        dex-retargeting only reads the ``retargeting`` section, so this sibling section is ignored by it.
+        """
+        with open(config_path) as file:
+            config = yaml.safe_load(file) or {}
+        overrides = (config.get("dexverse") or {}).get("joint_limit_overrides") or {}
+        return {str(name): (float(lim[0]), float(lim[1])) for name, lim in overrides.items()}
+
+    def _create_urdf_with_joint_limits(self, urdf_path: str, overrides: dict[str, tuple[float, float]]) -> str:
+        """Write a temporary copy of the retargeting URDF with narrower joint limits.
+
+        Only the finger optimizer sees these limits; the simulated robot keeps its own. Used where wide limits
+        let tip-only objectives (DexPilot / vector) reach a fingertip target through implausible postures,
+        e.g. LEAP fingers swinging +-60 deg sideways with hyperextended PIPs instead of curling.
+        """
+        tree = ET.parse(urdf_path)
+        found = set()
+        for joint in tree.getroot().iter("joint"):
+            name = joint.get("name")
+            limit = joint.find("limit")
+            if name in overrides and limit is not None:
+                limit.set("lower", repr(overrides[name][0]))
+                limit.set("upper", repr(overrides[name][1]))
+                found.add(name)
+        missing = sorted(set(overrides) - found)
+        if missing:
+            raise ValueError(f"joint_limit_overrides name joints missing from '{urdf_path}': {missing}")
+        with tempfile.NamedTemporaryFile(mode="wb", suffix=".urdf", delete=False) as temp_file:
+            tree.write(temp_file)
+            temp_path = temp_file.name
+        self._dex_config_temp_paths.append(temp_path)
+        return temp_path
 
     def _create_dex_config_with_urdf(self, config_path: str, urdf_path: str) -> str:
         """Create a temporary dex-retargeting config with the resolved URDF path."""
