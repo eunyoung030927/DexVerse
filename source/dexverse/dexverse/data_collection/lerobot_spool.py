@@ -55,10 +55,12 @@ block; the finger columns are the absolute finger targets of ``action`` in all o
                             the episode's first frame, ``p_t - p_0`` and ``R_t R_0^T`` -- "absolute delta" from the
                             start, which a policy can apply to the pose it observed when the episode began.
 
-The matching measured wrist poses are ``observation.state.ee`` / ``observation.state.ee_rot6d`` (layouts of
-``ee_abs`` / ``ee_abs_rot6d``) and ``observation.state.ee_init`` (layout of ``ee_delta_init``: the measured pose
-relative to the measured pose of the episode's first frame, so ``ee_delta_init`` has a state in its own frame);
-finger columns = measured finger joint positions. Poses come from the virtual-joint values (targets for the
+Every action version has a measured counterpart in the same layout: ``observation.state`` (joints),
+``observation.state.ee`` / ``observation.state.ee_rot6d`` (absolute wrist pose, layouts of ``ee_abs`` /
+``ee_abs_rot6d``), ``observation.state.ee_delta`` (measured wrist motion since the previous frame, zero on the first)
+and ``observation.state.ee_init`` (measured pose relative to the measured pose of the episode's first frame, so
+``ee_delta_init`` has a state in its own frame); finger columns = measured finger joint positions.
+``observation.state.joint_vel`` holds the joint velocities in the order of ``observation.state``. Poses come from the virtual-joint values (targets for the
 actions, joint positions for the state) by the product of exponentials over joint axes MEASURED in the simulator
 at startup, so no per-hand Euler convention is assumed; ``meta.json`` reports how far the measured palm rotation
 is from the command (``ee_rot_check_deg``).
@@ -109,6 +111,7 @@ EE_ACTION_BLOCKS = {
 EE_STATE_BLOCKS = {
     "observation.state.ee": _POSE6,
     "observation.state.ee_rot6d": _POSE9,
+    "observation.state.ee_delta": _DELTA6,
     "observation.state.ee_init": _DELTA6,
 }
 
@@ -355,6 +358,9 @@ def ee_state_columns(joint_pos: np.ndarray, hands: list[dict], action_joint_ids:
         p, rot = wrist_state_poses(q, h)
         blocks["observation.state.ee"].append(np.hstack([p, rot.as_rotvec()]))
         blocks["observation.state.ee_rot6d"].append(np.hstack([p, rot6d(rot)]))
+        p_prev = np.vstack([p[:1], p[:-1]])
+        rot_prev = rot[np.concatenate([[0], np.arange(len(q) - 1)])]
+        blocks["observation.state.ee_delta"].append(np.hstack([p - p_prev, (rot * rot_prev.inv()).as_rotvec()]))
         blocks["observation.state.ee_init"].append(np.hstack([p - p[0], (rot * rot[0].inv()).as_rotvec()]))
     return {k: _assemble(hands, items, b, lambda c: q[:, action_joint_ids[c]]) for k, b in blocks.items()}
 
@@ -576,6 +582,8 @@ class LeRobotSpoolRecorder:
             h, w, c = self.image_shapes[key]
             feats[key] = {"dtype": "video", "shape": [c, h, w], "names": ["channel", "height", "width"]}
         feats["observation.state"] = {"dtype": "float32", "shape": [len(self.state_names)], "names": self.state_names}
+        feats["observation.state.joint_vel"] = {"dtype": "float32", "shape": [len(self.state_names)],
+                                                "names": self.state_names}
         feats["action"] = {"dtype": "float32", "shape": [len(self.action_names)], "names": self.action_names}
         if self.ee_hands:
             for key, block in {**EE_STATE_BLOCKS, **EE_ACTION_BLOCKS}.items():
@@ -599,6 +607,8 @@ class LeRobotSpoolRecorder:
             "state_definition": "robot.data.joint_pos (rad / m for the virtual wrist prismatics) captured before the "
                                 "action of the same frame is applied; the action's joints first in action-column "
                                 "order (state[:len(action)] matches action by name), then the other joints",
+            "joint_vel_definition": "robot.data.joint_vel (rad/s, m/s) in the order of observation.state, captured "
+                                    "with it",
             "action_definition": "env.step action: the task's absolute joint-position action terms in term order "
                                  "(wrist virtual joints relative to the home pose, finger joint targets)",
             "ee_definitions": {
@@ -615,6 +625,9 @@ class LeRobotSpoolRecorder:
                                         "MEASURED wrist pose of the episode's first frame",
                 "observation.state.ee": "[x,y,z,rx,ry,rz] measured wrist pose, rotation vector",
                 "observation.state.ee_rot6d": "[x,y,z,r6d_0..5] measured wrist pose, 6D rotation",
+                "observation.state.ee_delta": "[dx,dy,dz,drx,dry,drz] measured wrist motion since the previous "
+                                              "frame (p_t - p_{t-1}, rotvec(R_t R_{t-1}^T)), zero on the first frame; "
+                                              "the state that goes with action.ee_delta",
                 "observation.state.ee_init": "[dx,dy,dz,drx,dry,drz] measured wrist pose relative to the measured "
                                              "pose of the episode's first frame (p_t - p_0, rotvec(R_t R_0^T)); "
                                              "the state that goes with action.ee_delta_init",
@@ -676,7 +689,7 @@ class LeRobotSpoolRecorder:
         self._ep = {
             "seq": seq, "dir": tmp, "info": dict(info or {}), "t0": time.time(), "capture_s": 0.0,
             "files": {key: open(os.path.join(tmp, f), "wb", buffering=8 << 20) for key, _c, f in self.cameras},
-            "state": [], "action": [], "palm_quat": [], "n": 0,
+            "state": [], "joint_vel": [], "action": [], "palm_quat": [], "n": 0,
         }
         self._needs_render = True
 
@@ -708,6 +721,7 @@ class LeRobotSpoolRecorder:
                 raise RuntimeError(f"[lerobot] {cam_name} gave {img.shape}, expected {self.image_shapes[key]}")
             ep["files"][key].write(np.ascontiguousarray(img).tobytes())
         ep["state"].append(self.robot.data.joint_pos[0].detach().to("cpu").numpy().astype(np.float32))
+        ep["joint_vel"].append(self.robot.data.joint_vel[0].detach().to("cpu").numpy().astype(np.float32))
         ep["action"].append(np.asarray(action.detach().to("cpu").numpy() if hasattr(action, "detach") else action,
                                        dtype=np.float32).reshape(-1))
         if self.palm_ids:
@@ -759,7 +773,7 @@ class LeRobotSpoolRecorder:
         joint_pos = np.stack(ep["state"])               # sim joint order
         action = np.stack(ep["action"])
         arrays = {"keep_idx": np.arange(T, dtype=np.int64), "observation.state": joint_pos[:, self.state_order],
-                  "action": action}
+                  "observation.state.joint_vel": np.stack(ep["joint_vel"])[:, self.state_order], "action": action}
         self._ep = ep                                   # _ee_rot_check reads palm_quat from the active episode
         try:
             ee_check = self._ee_rot_check(action.astype(np.float64)) if self.ee_hands else None

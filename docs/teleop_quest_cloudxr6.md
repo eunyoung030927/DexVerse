@@ -130,8 +130,10 @@ scripts/teleop_tools/run_teleop.sh record_demos --task Dexverse-PickCube-v0 --ro
 | `observation.images.third_person` | 월드 고정 3인칭 카메라, video 3×480×640 |
 | `observation.images.eye_in_hand` | 손목 카메라 (양손 태스크는 오른손), video 3×480×640 |
 | `observation.state` | 전체 관절 위치. **action과 같은 순서**: action이 구동하는 관절을 action 열 순서로 먼저, 그 뒤에 나머지(mimic 등) 관절. `state[:len(action)]`이 action과 이름별로 맞는다 |
+| `observation.state.joint_vel` | 관절 속도 (rad/s, m/s), `observation.state`와 같은 순서 |
 | `observation.state.ee` | 실측 손목 자세 `[x,y,z,rx,ry,rz]`(rotvec) + 손가락 관절 위치 (`action.ee_abs`와 같은 배치) |
 | `observation.state.ee_rot6d` | 실측 손목 자세 `[x,y,z,r6d×6]` + 손가락 관절 위치 (`action.ee_abs_rot6d`와 같은 배치) |
+| `observation.state.ee_delta` | 직전 프레임 대비 실측 손목 변화 `[dx,dy,dz,drx,dry,drz]` (첫 프레임 0) + 손가락 관절 위치. `action.ee_delta`와 같은 배치 |
 | `observation.state.ee_init` | 에피소드 첫 프레임 실측 자세 기준 현재 실측 자세 `[dx,dy,dz,drx,dry,drz]` (`p_t−p_0`, rotvec(`R_t R_0ᵀ`)) + 손가락 관절 위치. `action.ee_delta_init`과 같은 기준·배치 |
 | `action` | `env.step`이 받은 값 그대로: 손목 가상 관절 6개(홈 자세 기준, 손마다 회전 순서 다름) + 손가락 관절 목표. 그대로 open-loop 재생하면 데모 재현 |
 | `action.ee_abs` | 손목 **절대** 명령 자세 `[x,y,z,rx,ry,rz]` (m, rotvec rad) + 손가락 |
@@ -147,6 +149,8 @@ scripts/teleop_tools/run_teleop.sh record_demos --task Dexverse-PickCube-v0 --ro
 - action EE 키는 **명령값**이다. 시뮬레이터 손목은 명령을 다 못 따라간다(GraspCup 재생에서 회전 오차 중앙값 약 9°).
   실제 도달 자세는 `observation.state.ee*`. 에피소드별 명령-실측 회전 차이는 `meta/isaac_tasks_episodes.jsonl`의
   `ee_rot_check_deg`.
+- 짝: `action`↔`observation.state`, `ee_abs`↔`state.ee`, `ee_abs_rot6d`↔`state.ee_rot6d`, `ee_delta`↔`state.ee_delta`,
+  `ee_delta_init`↔`state.ee_init`. 회전 입력은 rot6d 권장(rotvec은 180° 근처에서 튄다).
 - 청크 시작 기준 delta(openpi `DeltaActions` 방식)는 학습 시 `action.ee_abs*`와 `observation.state.ee*`로 계산한다.
 - 메타: `meta/isaac_tasks.json`(spool 계약 사본: 태스크, fps, 카메라, 정의 문자열, 측정 축),
   `meta/isaac_tasks_episodes.jsonl`(에피소드별 seed, reset_id, 원본 pickle, 타이밍, ee_rot_check).
