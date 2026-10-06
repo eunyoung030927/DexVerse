@@ -106,9 +106,10 @@ cd /workspace/dexverse/DexVerse   # n1은 /workspace/local/DexVerse
 scripts/teleop_tools/run_teleop.sh record_demos --task Dexverse-PickCube-v0 --robot_type floating_allegro_right --num_demos 50
 ```
 
-- 저장 위치(기본): `$DEXVERSE_LEROBOT_DIR` → 없으면 `/workspace/local/datasets`(n1 호스트 마운트) → 없으면
-  `/root/dexverse_datasets`, 그 아래 `<task>-<robot_type>` (예: `pickcube-v0-floating_allegro_right`).
-  같은 태스크·손으로 다시 실행하면 **같은 데이터셋에 이어 쓴다**. 직접 지정은 `--lerobot_root <경로>`.
+- 저장 폴더: `--datasets_dir <폴더>` (기본 `$DEXVERSE_LEROBOT_DIR` → 없으면 `/workspace/local/datasets`(n1 호스트 마운트)
+  → 없으면 `/root/dexverse_datasets`; `--help`에 현재 기본값이 보인다). 그 아래에 LeRobot 데이터셋
+  `<task>-<robot_type>/`(예: `pickcube-v0-floating_allegro_right`)과 pickle `trajectories/`가 생긴다. 같은 태스크·손으로
+  다시 실행하면 **같은 데이터셋에 이어 쓴다**. 데이터셋 폴더를 정확히 지정하려면 `--lerobot_root <경로>`.
 - trajectory pickle(재생·재렌더링용 원본: 초기 상태 + action, 이미지 없음)도 같은 폴더 아래
   `trajectories/<카테고리>/<task>/<task>_<YYYYmmdd_HHMMSS>_<robot_type>.pkl`에 저장된다. 카테고리(grasping,
   articulation, functional, contact_rich, non_prehensile, bimanual, long_horizon, multi_goal)는 태스크 등록 정보에서

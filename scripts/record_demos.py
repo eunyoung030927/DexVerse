@@ -60,7 +60,10 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from dexverse.data_collection.lerobot_spool import default_trajectory_path  # stdlib + numpy only (pre-app safe)
+from dexverse.data_collection.lerobot_spool import (  # stdlib + numpy only (pre-app safe)
+    default_datasets_dir,
+    default_trajectory_path,
+)
 from dexverse.demo_paths import DEXVERSE_DATA_DIR_ENV, get_dexverse_data_dir, resolve_demo_output_path
 from dexverse.benchmark import action_layout, task_identity
 from dexverse.teleop_utils.debug_visualization import add_debug_visualization_args, configure_v1_debug_visualization
@@ -91,8 +94,7 @@ parser.add_argument(
         "'<dataset_dir>/<task_name>/<task_name>_<time>.pkl'. When "
         f"{DEXVERSE_DATA_DIR_ENV} is set, output is redirected to that mount. Without {DEXVERSE_DATA_DIR_ENV}, "
         "--dataset_file or an absolute --dataset_dir, pickles go next to the LeRobot datasets: "
-        "'<datasets dir>/trajectories/<dataset_dir or the task category>/<task_name>/<task_name>_<time>[_<robot_type>].pkl' "
-        "(datasets dir: $DEXVERSE_LEROBOT_DIR, else /workspace/local/datasets, else /root/dexverse_datasets)."
+        "'<datasets_dir>/trajectories/<dataset_dir or the task category>/<task_name>/<task_name>_<time>[_<robot_type>].pkl'."
     ),
 )
 parser.add_argument(
@@ -211,15 +213,25 @@ parser.add_argument(
 )
 
 parser.add_argument(
+    "--datasets_dir",
+    type=str,
+    default=default_datasets_dir(),
+    help=(
+        "Base folder for everything recorded (LOCAL disk; network mounts are refused): the LeRobot dataset "
+        "<datasets_dir>/<task>-<robot_type> and the trajectory pickles <datasets_dir>/trajectories/<category>/<task>/. "
+        "Default: $DEXVERSE_LEROBOT_DIR, else /workspace/local/datasets if it exists, else /root/dexverse_datasets "
+        "(here: %(default)s)."
+    ),
+)
+parser.add_argument(
     "--lerobot_root",
     type=str,
     default=None,
     help=(
-        "LeRobot v3 dataset recorded live next to the trajectory pickle (on by default; see --no_lerobot): "
-        "third-person + wrist camera RGB, joint state, the env action and its end-effector versions for every "
-        "step of each successful demo. Must be LOCAL disk (network mounts are refused). Default: "
-        "$DEXVERSE_LEROBOT_DIR, else /workspace/local/datasets if it exists, else /root/dexverse_datasets, "
-        "/<task>-<robot_type> (e.g. graspcup-v0-floating_shadow_right); re-running appends to it. Frames go to "
+        "Exact LeRobot v3 dataset folder, overriding <datasets_dir>/<task>-<robot_type> (e.g. "
+        "graspcup-v0-floating_shadow_right). The dataset is recorded live next to the trajectory pickle (on by "
+        "default; see --no_lerobot): third-person + wrist camera RGB, joint state, the env action and its "
+        "end-effector versions for every step of each successful demo; re-running appends to it. Frames go to "
         "<root>.spool and a background CPU writer encodes them."
     ),
 )
@@ -301,7 +313,9 @@ try:
         resolved_dataset_file = resolve_demo_output_path(env_name, args_cli.dataset_file, args_cli.dataset_dir)
     else:
         # Default: next to the LeRobot datasets (local disk), not inside the repository.
-        resolved_dataset_file = default_trajectory_path(env_name, args_cli.dataset_dir, args_cli.robot_type)
+        resolved_dataset_file = default_trajectory_path(
+            env_name, args_cli.dataset_dir, args_cli.robot_type, args_cli.datasets_dir
+        )
         auto_trajectory_category = not args_cli.dataset_dir
 except ValueError as exc:
     parser.error(str(exc))
@@ -1322,7 +1336,7 @@ def main() -> None:
     if auto_trajectory_category:
         category = _task_category(args_cli.task)
         if category:
-            args_cli.dataset_file = default_trajectory_path(env_name, category, args_cli.robot_type)
+            args_cli.dataset_file = default_trajectory_path(env_name, category, args_cli.robot_type, args_cli.datasets_dir)
     output_file = setup_output_file()
 
     global env_cfg  # Exposed for setup_teleop_device parity with prior implementation.
@@ -1376,11 +1390,10 @@ def main() -> None:
         from dexverse.data_collection.lerobot_spool import (
             LeRobotSpoolRecorder,
             default_dataset_name,
-            default_datasets_dir,
         )
 
         lerobot_root = args_cli.lerobot_root or os.path.join(
-            default_datasets_dir(), default_dataset_name(args_cli.task, getattr(env_cfg, "robot_type", None))
+            args_cli.datasets_dir, default_dataset_name(args_cli.task, getattr(env_cfg, "robot_type", None))
         )
         trajectory_recorder.lerobot = LeRobotSpoolRecorder(
             env,

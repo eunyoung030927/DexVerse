@@ -137,12 +137,14 @@ def default_dataset_name(task_id: str, robot_type: str | None) -> str:
     return f"{name}-{robot_type or 'default'}"
 
 
-def default_trajectory_path(task_name: str, dataset_dir: str | None = None, robot_type: str | None = None) -> str:
+def default_trajectory_path(task_name: str, dataset_dir: str | None = None, robot_type: str | None = None,
+                            datasets_dir: str | None = None) -> str:
     """Default trajectory-pickle path next to the LeRobot datasets:
-    ``<datasets dir>/trajectories/[<dataset_dir>/]<task>/<task>_<YYYYmmdd_HHMMSS>[_<robot_type>].pkl``."""
+    ``<datasets_dir>/trajectories/[<dataset_dir>/]<task>/<task>_<YYYYmmdd_HHMMSS>[_<robot_type>].pkl``
+    (``datasets_dir`` defaults to :func:`default_datasets_dir`)."""
     stamp = time.strftime("%Y%m%d_%H%M%S")
     name = f"{task_name}_{stamp}" + (f"_{robot_type}" if robot_type else "") + ".pkl"
-    return os.path.join(default_datasets_dir(), "trajectories", dataset_dir or "", task_name, name)
+    return os.path.join(datasets_dir or default_datasets_dir(), "trajectories", dataset_dir or "", task_name, name)
 
 
 def filesystem_type(path) -> str:
