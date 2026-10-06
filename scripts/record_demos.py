@@ -34,7 +34,7 @@ Optional arguments:
                               "<dataset_dir>/<task_name>/<task_name>_<time>.pkl". Under Docker,
                               only the relative subpath is kept; the host mount is always used.
                               Otherwise a relative --dataset_dir (or none) is placed next to the
-                              LeRobot datasets: "<datasets dir>/trajectories/[<dataset_dir>/]...".
+                              LeRobot datasets: "<datasets dir>/trajectories/<dataset_dir or task category>/...".
     --record_state            Enable recording per-step scene states (T+1 snapshots per episode).
     --num_demos               Number of demonstrations to record. (default: 0, infinite)
     --num_success_steps       Number of continuous steps with task success for concluding a demo as successful. (default: 10)
@@ -91,7 +91,7 @@ parser.add_argument(
         "'<dataset_dir>/<task_name>/<task_name>_<time>.pkl'. When "
         f"{DEXVERSE_DATA_DIR_ENV} is set, output is redirected to that mount. Without {DEXVERSE_DATA_DIR_ENV}, "
         "--dataset_file or an absolute --dataset_dir, pickles go next to the LeRobot datasets: "
-        "'<datasets dir>/trajectories/[<dataset_dir>/]<task_name>/<task_name>_<time>[_<robot_type>].pkl' "
+        "'<datasets dir>/trajectories/<dataset_dir or the task category>/<task_name>/<task_name>_<time>[_<robot_type>].pkl' "
         "(datasets dir: $DEXVERSE_LEROBOT_DIR, else /workspace/local/datasets, else /root/dexverse_datasets)."
     ),
 )
@@ -289,6 +289,9 @@ if args_cli.task is None:
 
 
 env_name = args_cli.task.split(":")[-1]
+# Default pickle path without --dataset_dir: the task's category (grasping, articulation, ...) is filled in
+# from the env registry once the app is up (see main()).
+auto_trajectory_category = False
 try:
     if (
         args_cli.dataset_file
@@ -299,6 +302,7 @@ try:
     else:
         # Default: next to the LeRobot datasets (local disk), not inside the repository.
         resolved_dataset_file = default_trajectory_path(env_name, args_cli.dataset_dir, args_cli.robot_type)
+        auto_trajectory_category = not args_cli.dataset_dir
 except ValueError as exc:
     parser.error(str(exc))
 
@@ -1052,6 +1056,19 @@ def check_success(env: gym.Env, success_term: object | None, success_step_count:
     return success_step_count, False
 
 
+def _task_category(task: str) -> str | None:
+    """Task category (grasping, articulation, functional, ...): the package right under ``config`` in the
+    task's env-cfg entry point (``dexverse.tasks.config.<category>...`` / ``dexverse.baseline_v1.config.<category>...``)."""
+    try:
+        entry = gym.spec(task.split(":")[-1]).kwargs.get("env_cfg_entry_point", "")
+    except gym.error.Error:
+        return None
+    if not isinstance(entry, str):
+        entry = getattr(entry, "__module__", "")
+    parts = entry.split(":")[0].split(".")
+    return parts[parts.index("config") + 1] if "config" in parts[:-1] else None
+
+
 def _configure_lerobot_cameras(env_cfg) -> None:
     """Recorded cameras at --lerobot_image_size, RGB only; drop depth / point-cloud observations (unused, costly)."""
     height, width = (int(v) for v in args_cli.lerobot_image_size.lower().split("x"))
@@ -1302,6 +1319,10 @@ def _resolve_arm_joint_ids(env: gym.Env, env_cfg) -> tuple[list[int] | None, lis
 
 
 def main() -> None:
+    if auto_trajectory_category:
+        category = _task_category(args_cli.task)
+        if category:
+            args_cli.dataset_file = default_trajectory_path(env_name, category, args_cli.robot_type)
     output_file = setup_output_file()
 
     global env_cfg  # Exposed for setup_teleop_device parity with prior implementation.

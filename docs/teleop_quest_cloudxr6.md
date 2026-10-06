@@ -59,7 +59,7 @@ cd /workspace/dexverse/DexVerse
 # 디버그 텔레옵 (저장 안 함)
 scripts/teleop_tools/run_teleop.sh teleop_agent --task Dexverse-PickCube-v0 --robot_type floating_allegro_right
 # 데모 녹화
-scripts/teleop_tools/run_teleop.sh record_demos --task Dexverse-PickUpStick-v0 --dataset_dir grasping --num_demos 50
+scripts/teleop_tools/run_teleop.sh record_demos --task Dexverse-PickUpStick-v0 --num_demos 50
 ```
 
 `run_teleop.sh`가 자동으로 붙이는 것 (직접 주면 그 값을 씀):
@@ -103,17 +103,19 @@ conda activate lerobot && pip install "lerobot==0.4.2" scipy && conda deactivate
 
 ```bash
 cd /workspace/dexverse/DexVerse   # n1은 /workspace/local/DexVerse
-scripts/teleop_tools/run_teleop.sh record_demos --task Dexverse-PickCube-v0 --robot_type floating_allegro_right \
-  --dataset_dir grasping --num_demos 50 --num_success_steps 10
+scripts/teleop_tools/run_teleop.sh record_demos --task Dexverse-PickCube-v0 --robot_type floating_allegro_right --num_demos 50
 ```
 
 - 저장 위치(기본): `$DEXVERSE_LEROBOT_DIR` → 없으면 `/workspace/local/datasets`(n1 호스트 마운트) → 없으면
   `/root/dexverse_datasets`, 그 아래 `<task>-<robot_type>` (예: `pickcube-v0-floating_allegro_right`).
   같은 태스크·손으로 다시 실행하면 **같은 데이터셋에 이어 쓴다**. 직접 지정은 `--lerobot_root <경로>`.
 - trajectory pickle(재생·재렌더링용 원본: 초기 상태 + action, 이미지 없음)도 같은 폴더 아래
-  `trajectories/[<dataset_dir>/]<task>/<task>_<시각>_<robot_type>.pkl`에 저장된다(예: `--dataset_dir grasping` →
-  `/workspace/local/datasets/trajectories/grasping/Dexverse-PickCube-v0/...`). `--dataset_file`, 절대경로 `--dataset_dir`,
-  `DEXVERSE_DATA_DIR`을 주면 기존 방식대로 그 경로를 쓴다.
+  `trajectories/<카테고리>/<task>/<task>_<YYYYmmdd_HHMMSS>_<robot_type>.pkl`에 저장된다. 카테고리(grasping,
+  articulation, functional, contact_rich, non_prehensile, bimanual, long_horizon, multi_goal)는 태스크 등록 정보에서
+  자동으로 정해진다(예: PickCube → `trajectories/grasping/Dexverse-PickCube-v0/...`). `--dataset_dir <이름>`을 주면 그
+  이름이 카테고리 자리에 들어가고, `--dataset_file`, 절대경로 `--dataset_dir`, `DEXVERSE_DATA_DIR`을 주면 기존 방식대로
+  그 경로를 쓴다.
+- `--num_success_steps`(기본 10): 성공 조건이 이 스텝 수만큼 연속으로 유지돼야 성공으로 저장하고 자동 리셋한다.
 - 데이터셋은 **로컬 디스크**여야 한다. CIFS/NFS 마운트 경로는 시작 시 거부한다. `<root>.spool/`이 옆에 생긴다.
 - 카메라(3인칭 + 손목)가 켜지고 480×640 RGB로 바뀐다(`--lerobot_image_size HxW`). depth/pointcloud 관측은 꺼진다.
 - 캡처 비용은 RTX 3090에서 프레임당 약 5~8 ms(60 Hz 한 스텝 16.7 ms). VR이 버벅이면 해상도를 낮춘다.

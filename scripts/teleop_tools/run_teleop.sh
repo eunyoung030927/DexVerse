@@ -2,7 +2,7 @@
 # Run a DexVerse teleop / recording script against the running CloudXR runtime.
 #
 #   scripts/teleop_tools/run_teleop.sh teleop_agent --task Dexverse-PickCube-v0 --robot_type floating_allegro_right
-#   scripts/teleop_tools/run_teleop.sh record_demos --task Dexverse-PickUpStick-v0 --dataset_dir grasping --num_demos 50
+#   scripts/teleop_tools/run_teleop.sh record_demos --task Dexverse-PickUpStick-v0 --robot_type floating_allegro_right --num_demos 50
 #
 # Added unless you pass them yourself: --teleop_device handtracking --enable_pinocchio --headless
 # (use --gui to drop --headless and watch the scene over VNC; the AR session still starts automatically),
