@@ -1104,6 +1104,70 @@ def handle_reset(env: gym.Env) -> object:
     return _unwrap_obs(env.reset())
 
 
+class _XrStatusPanel:
+    """Recording state shown inside the headset (XR runs only).
+
+    The XR client's "Running" button is a local toggle: it never learns that the recorder paused itself after a
+    saved demo, so it keeps showing "Running" and the next START needs two presses (stop, then start). This panel
+    shows the recorder's real state, the saved count and what to press, as a camera-facing text widget (Isaac Lab
+    ``show_instruction``, the same widget Isaac Lab Mimic uses; it renders into the XR scene).
+    """
+
+    PRIM = "/DexVerseRecordStatus"
+    SOURCE = "/_xr/stage/xrCamera"
+
+    def __init__(self, recorder: "TrajectoryPickleRecorder", enabled: bool):
+        self._recorder = recorder
+        self._enabled = enabled
+        self._target = int(args_cli.num_demos)
+
+    def _count(self) -> str:
+        n = self._recorder.num_episodes
+        return f"{n} / {self._target}" if self._target > 0 else str(n)
+
+    def _show(self, text: str, *, recording: bool = False) -> None:
+        if not self._enabled:
+            return
+        try:
+            from isaaclab.ui.xr_widgets import show_instruction
+            from pxr import Gf
+
+            if recording:  # small, off to the side, so it does not cover the workspace
+                show_instruction(text, self.SOURCE, Gf.Vec3f(0.9, 0.55, -2.0), display_duration=None, max_width=1.2,
+                                 min_width=0.5, font_size=0.06, text_color=0xFF4040FF, target_prim_path=self.PRIM)
+            else:
+                show_instruction(text, self.SOURCE, Gf.Vec3f(0.0, 0.45, -2.0), display_duration=None, max_width=2.2,
+                                 min_width=1.0, font_size=0.08, target_prim_path=self.PRIM)
+        except Exception as exc:  # never let the overlay break a recording session
+            self._enabled = False
+            logger.warning("In-headset status panel disabled: %s", exc)
+
+    def waiting(self, last: str | None = None) -> None:
+        head = last if last else "READY"
+        self._show(f"{head}  |  saved {self._count()}  |  press Running twice to start the next demo")
+
+    def recording(self) -> None:
+        n = self._recorder.num_episodes + 1
+        self._show(f"REC  demo {n}" + (f" / {self._target}" if self._target > 0 else ""), recording=True)
+
+    def stopped(self, mid_episode: bool) -> None:
+        if mid_episode:
+            self._show("PAUSED mid-demo  |  press Running to resume")
+        else:
+            self._show(f"saved {self._count()}  |  press Running once more to start")
+
+    def after_reset(self, reason: str) -> None:
+        last = {
+            "after_success": f"SAVED demo {self._recorder.num_episodes}",
+            "manual_reset": "RESET - attempt not saved",
+            "task_termination": "Task ended (e.g. object out of bounds) - not saved",
+        }.get(reason, "RESET")
+        self.waiting(last)
+
+    def done(self) -> None:
+        self._show(f"DONE  |  {self._count()} demos recorded")
+
+
 def run_simulation_loop(
     env: gym.Env,
     teleop_interface: object,
@@ -1118,6 +1182,7 @@ def run_simulation_loop(
     should_reset = False
     reset_reason = "manual_reset"
     running = False  # Start inactive for VR (user activates with START gesture).
+    status = _XrStatusPanel(trajectory_recorder, enabled=bool(args_cli.xr))
 
     def reset_recording_instance():
         nonlocal should_reset, reset_reason
@@ -1132,11 +1197,13 @@ def run_simulation_loop(
         if hasattr(teleop_interface, "_retargeters") and teleop_interface._retargeters:
             if hasattr(teleop_interface._retargeters[0], "calibrate_wrist_pose"):
                 teleop_interface._retargeters[0].calibrate_wrist_pose()
+        status.recording()
 
     def stop_recording_instance():
         nonlocal running
         running = False
         print("Recording paused")
+        status.stopped(trajectory_recorder.has_active_episode())
 
     teleop_callbacks = {
         "R": reset_recording_instance,
@@ -1172,6 +1239,7 @@ def run_simulation_loop(
     print(f"  - Need {args_cli.num_success_steps} consecutive successful steps to mark as successful")
     print("=" * 60)
 
+    status.waiting()
     _printed_bodies = False
     _debug_counter = 0
 
@@ -1227,6 +1295,7 @@ def run_simulation_loop(
                 success_step_count = 0
                 should_reset = False
                 running = False
+                status.after_reset(reset_reason)
                 continue
             if running:
                 # On the first step of a new demo, capture the initial scene state.
@@ -1259,6 +1328,7 @@ def run_simulation_loop(
                     should_reset = False
                     running = False
                     print(f"✗ Reset attempt recorded as {outcome}; auto-reset ID: {next_reset_id}")
+                    status.after_reset("task_termination")
                     continue
                 if args_cli.record_state:
                     post_step_state = env.scene.get_state(is_relative=True)
@@ -1286,6 +1356,7 @@ def run_simulation_loop(
 
                 if args_cli.num_demos > 0 and trajectory_recorder.num_episodes >= args_cli.num_demos:
                     print(f"\nAll {trajectory_recorder.num_episodes} demonstrations recorded. Exiting...")
+                    status.done()
                     target_time = time.time() + 1.0
                     while time.time() < target_time:
                         env.sim.render()
@@ -1304,6 +1375,7 @@ def run_simulation_loop(
                 success_step_count = 0
                 should_reset = False
                 running = False
+                status.after_reset(reset_reason)
 
             if env.sim.is_stopped():
                 break
