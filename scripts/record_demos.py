@@ -209,10 +209,18 @@ parser.add_argument(
     type=str,
     default=None,
     help=(
-        "Also record a LeRobot v3 dataset at this LOCAL directory (not a NAS mount) while collecting: "
-        "third-person + wrist camera RGB, joint state and action of every recorded step, captured live. "
-        "Enables the task cameras; frames go to <root>.spool and a background CPU writer encodes them."
+        "LeRobot v3 dataset recorded live next to the trajectory pickle (on by default; see --no_lerobot): "
+        "third-person + wrist camera RGB, joint state, the env action and its end-effector versions for every "
+        "step of each successful demo. Must be LOCAL disk (network mounts are refused). Default: "
+        "$DEXVERSE_LEROBOT_DIR, else /workspace/local/datasets if it exists, else /root/dexverse_datasets, "
+        "/<task>-<robot_type> (e.g. graspcup-v0-floating_shadow_right); re-running appends to it. Frames go to "
+        "<root>.spool and a background CPU writer encodes them."
     ),
+)
+parser.add_argument(
+    "--no_lerobot",
+    action="store_true",
+    help="Record only the trajectory pickle (no LeRobot dataset, cameras stay off).",
 )
 parser.add_argument("--repo_id", type=str, default=None, help="LeRobot repo id (default local/dexverse-<task>-<robot>).")
 parser.add_argument(
@@ -294,8 +302,10 @@ app_launcher_args = vars(args_cli)
 
 if args_cli.replay_demos:
     args_cli.teleop_device = "replay"
-if args_cli.lerobot_root:
-    # The recorder captures the task cameras every step; XR runs otherwise strip them.
+if args_cli.no_lerobot and args_cli.lerobot_root:
+    parser.error("--lerobot_root and --no_lerobot are mutually exclusive")
+if not args_cli.no_lerobot:
+    # The LeRobot recorder captures the task cameras every step; XR runs otherwise strip them.
     app_launcher_args["enable_cameras"] = True
 
 uses_xr_teleop = (
@@ -924,7 +934,7 @@ def create_environment_config() -> tuple["ManagerBasedRLEnvCfg | DirectRLEnvCfg"
             env_cfg = prune_stale_obs_refs(env_cfg)
         env_cfg.sim.render.antialiasing_mode = "DLSS"
 
-    if args_cli.lerobot_root:
+    if not args_cli.no_lerobot:
         _configure_lerobot_cameras(env_cfg)
 
     # Replay regenerates observations, so no HDF5-style recorder manager is needed here.
@@ -1327,14 +1337,21 @@ def main() -> None:
         sim_device=str(env.device),
     )
 
-    if args_cli.lerobot_root:
-        from dexverse.data_collection.lerobot_spool import LeRobotSpoolRecorder
+    if not args_cli.no_lerobot:
+        from dexverse.data_collection.lerobot_spool import (
+            LeRobotSpoolRecorder,
+            default_dataset_name,
+            default_datasets_dir,
+        )
 
+        lerobot_root = args_cli.lerobot_root or os.path.join(
+            default_datasets_dir(), default_dataset_name(args_cli.task, getattr(env_cfg, "robot_type", None))
+        )
         trajectory_recorder.lerobot = LeRobotSpoolRecorder(
             env,
             env_cfg,
             task_id=args_cli.task,
-            root=args_cli.lerobot_root,
+            root=lerobot_root,
             repo_id=args_cli.repo_id,
             task=args_cli.lerobot_task,
             max_pending=args_cli.spool_max_pending,

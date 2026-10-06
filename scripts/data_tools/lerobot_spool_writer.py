@@ -214,11 +214,18 @@ def main(argv=None):
     root = os.path.abspath(args.root or info["root"])
     repo_id = args.repo_id or info["repo_id"]
 
-    lock_f = open(os.path.join(spool, S.WRITER_LOCK), "w")
+    lock_f = open(os.path.join(spool, S.WRITER_LOCK), "a")
     try:
         fcntl.flock(lock_f, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
-        raise SystemExit(f"[spool-writer] another writer holds {os.path.join(spool, S.WRITER_LOCK)}; exiting")
+        if not args.follow:
+            raise SystemExit(f"[spool-writer] another writer holds {os.path.join(spool, S.WRITER_LOCK)}; exiting")
+        # A new recording session into the same root while the previous session's writer is still encoding:
+        # wait for it to finish, then take over this session's episodes.
+        log("another writer (previous session) still holds the lock; waiting for it to finish")
+        fcntl.flock(lock_f, fcntl.LOCK_EX)
+    lock_f.seek(0)
+    lock_f.truncate()
     lock_f.write(str(os.getpid()))
     lock_f.flush()
 

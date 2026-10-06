@@ -85,11 +85,11 @@ scripts/teleop_tools/run_teleop.sh record_demos --task Dexverse-PickUpStick-v0 -
    사이트 손추적 권한 허용.
 5. 헤드셋 메뉴 **START** → 이때 손목 자세가 캘리브레이션되고 로봇이 따라 움직인다. STOP/RESET도 메뉴에서.
 
-## LeRobot 데이터셋으로 바로 녹화 (`--lerobot_root`)
+## LeRobot 데이터셋 녹화 (기본 켜짐)
 
-isaac-tasks(UR7e + RH5DG2) 수집기와 같은 방식·같은 형식이다. 녹화하면서 매 스텝 카메라 이미지·상태·action을
-spool에 쌓고, 성공한 에피소드만 별도 CPU 프로세스(writer)가 LeRobot v3로 쓴다. 기존 trajectory pickle도 그대로
-같이 저장된다.
+`record_demos`는 trajectory pickle과 함께 **LeRobot v3 데이터셋을 항상 같이 저장**한다(끄려면 `--no_lerobot`).
+isaac-tasks(UR7e + RH5DG2) 수집기와 같은 방식이다: 녹화하면서 매 스텝 카메라 이미지·상태·action을 spool에
+쌓고, 성공한 에피소드만 별도 CPU 프로세스(writer)가 LeRobot v3로 쓴다.
 
 ### 1회 준비: writer용 LeRobot 환경 (Isaac Sim python과 분리)
 
@@ -104,48 +104,62 @@ conda activate lerobot && pip install "lerobot==0.4.2" scipy && conda deactivate
 ```bash
 cd /workspace/dexverse/DexVerse   # n1은 /workspace/local/DexVerse
 scripts/teleop_tools/run_teleop.sh record_demos --task Dexverse-PickCube-v0 --robot_type floating_allegro_right \
-  --lerobot_root /workspace/local/datasets/pickcube_allegro --num_demos 50
+  --dataset_dir grasping --num_demos 50 --num_success_steps 10
 ```
 
-- `--lerobot_root`는 **로컬 디스크** 경로여야 한다(NAS 금지). `<root>.spool/`이 옆에 생긴다.
-- 카메라(3인칭 + 손목)가 자동으로 켜지고 480×640 RGB로 바뀐다(`--lerobot_image_size HxW`). depth/pointcloud 관측은 꺼진다.
-- 캡처 비용은 RTX 3090에서 프레임당 약 7~8 ms(60 Hz 한 스텝 16.7 ms). VR이 버벅이면 해상도를 낮춘다.
+- 저장 위치(기본): `$DEXVERSE_LEROBOT_DIR` → 없으면 `/workspace/local/datasets`(n1 호스트 마운트) → 없으면
+  `/root/dexverse_datasets`, 그 아래 `<task>-<robot_type>` (예: `pickcube-v0-floating_allegro_right`).
+  같은 태스크·손으로 다시 실행하면 **같은 데이터셋에 이어 쓴다**. 직접 지정은 `--lerobot_root <경로>`.
+- 데이터셋은 **로컬 디스크**여야 한다. CIFS/NFS 마운트 경로는 시작 시 거부한다. `<root>.spool/`이 옆에 생긴다.
+- 카메라(3인칭 + 손목)가 켜지고 480×640 RGB로 바뀐다(`--lerobot_image_size HxW`). depth/pointcloud 관측은 꺼진다.
+- 캡처 비용은 RTX 3090에서 프레임당 약 5~8 ms(60 Hz 한 스텝 16.7 ms). VR이 버벅이면 해상도를 낮춘다.
 - task 문장은 태스크 이름에서 자동 생성(`Dexverse-PickCube-v0` → "Pick cube"). 학습용 문장은 `--lerobot_task "..."`로 지정.
 - 기타: `--repo_id`, `--spool_max_pending 4`, `--writer_threads 8`, `--no_spool_writer`(나중에 writer를 따로 실행),
   `--lerobot_python`(writer python, 기본 `/opt/conda/envs/lerobot/bin/python`).
-- writer가 중간에 죽으면 spool이 남는다. 이어서 쓰기:
+- 녹화가 끝나도 writer는 남은 에피소드를 마저 쓰고 끝난다(`<root>.spool/writer.log` 마지막 줄 `exit 0`). 그 전에
+  컨테이너를 끄지 말 것. writer가 중간에 죽으면 spool이 남는다. 이어서 쓰기:
   `/opt/conda/envs/lerobot/bin/python scripts/data_tools/lerobot_spool_writer.py --spool <root>.spool`
-- 불러오기: `LeRobotDataset(repo_id, root=<root>, video_backend="pyav")`
+- 불러오기: `LeRobotDataset(repo_id, root=<root>, video_backend="pyav")` (컨테이너엔 torchcodec용 FFmpeg가 없다).
 
 ### 데이터셋 형식 (fps 60 = sim dt 1/120 × decimation 2)
 
-| 키 | 형태 | 내용 |
-|---|---|---|
-| `observation.images.third_person` | video 3×480×640 | 월드 고정 3인칭 카메라 |
-| `observation.images.eye_in_hand` | video 3×480×640 | 손에 붙은 손목 카메라 (양손 태스크는 오른손) |
-| `observation.state` | float32 (관절 수) | `robot.data.joint_pos` 전체, sim 관절 순서 (손목 가상 관절 포함), names = 관절 이름 |
-| `action` | float32 (action 차원) | `env.step`이 받은 값 그대로: 손목 가상 관절(홈 자세 기준) + 손가락 관절 목표. 그대로 open-loop 재생하면 데모 재현 |
-| `action.ee_delta` | float32 (6 × 손 수) | 손목 명령 변화 `[dx,dy,dz,rx,ry,rz]`: 직전 명령 대비 위치(m) + 회전 `R_t R_{t-1}^T`의 rotvec(rad), 손 베이스 좌표계. 첫 스텝은 홈 자세 대비 |
+프레임 t = (action t 적용 **전**의 관측, action t). 모든 벡터 키의 `names`가 `meta/info.json`에 있다.
 
-- 프레임 t = (action t 적용 **전**의 관측, action t). 
-- `ee_delta`의 회전은 손마다 다른 Euler 순서를 가정하지 않는다. 시작 시 시뮬레이터에서 손목 가상 관절 축을 하나씩
-  움직여 측정하고(product of exponentials), 기본값을 포함한 관절 목표로 계산한다. `meta/isaac_tasks.json`의
-  `ee_hands`에 측정 축이 남는다.
-- `ee_delta`는 **명령값** 기준이다. 시뮬레이터 손목은 명령을 다 못 따라간다(GraspCup 재생에서 손목 회전 오차
-  중앙값 약 9°, 빠른 움직임에서 더 큼). 실제 도달 자세는 `observation.state`에 있다. 에피소드별 명령-실측 회전
-  차이는 `meta/isaac_tasks_episodes.jsonl`의 `ee_rot_check_deg`.
+| 키 | 내용 |
+|---|---|
+| `observation.images.third_person` | 월드 고정 3인칭 카메라, video 3×480×640 |
+| `observation.images.eye_in_hand` | 손목 카메라 (양손 태스크는 오른손), video 3×480×640 |
+| `observation.state` | 전체 관절 위치. **action과 같은 순서**: action이 구동하는 관절을 action 열 순서로 먼저, 그 뒤에 나머지(mimic 등) 관절. `state[:len(action)]`이 action과 이름별로 맞는다 |
+| `observation.state.ee` | 실측 손목 자세 `[x,y,z,rx,ry,rz]`(rotvec) + 손가락 관절 위치 (`action.ee_abs`와 같은 배치) |
+| `observation.state.ee_rot6d` | 실측 손목 자세 `[x,y,z,r6d×6]` + 손가락 관절 위치 (`action.ee_abs_rot6d`와 같은 배치) |
+| `action` | `env.step`이 받은 값 그대로: 손목 가상 관절 6개(홈 자세 기준, 손마다 회전 순서 다름) + 손가락 관절 목표. 그대로 open-loop 재생하면 데모 재현 |
+| `action.ee_abs` | 손목 **절대** 명령 자세 `[x,y,z,rx,ry,rz]` (m, rotvec rad) + 손가락 |
+| `action.ee_abs_rot6d` | 손목 **절대** 명령 자세 `[x,y,z,r6d_0..5]` (6D = 회전행렬 첫 두 열 `[R[:,0], R[:,1]]`) + 손가락 |
+| `action.ee_delta` | **직전 스텝 대비** 변화 `[dx,dy,dz,drx,dry,drz]`: `p_t−p_{t−1}`, rotvec(`R_t R_{t−1}ᵀ`). 첫 스텝은 홈 자세 대비 + 손가락 |
+| `action.ee_delta_init` | **에피소드 첫 프레임의 실측 손목 자세 대비** `[dx,dy,dz,drx,dry,drz]`: `p_t−p_0`, rotvec(`R_t R_0ᵀ`) + 손가락 |
+
+- EE 키들은 `action`과 같은 배치에서 손마다 손목 6열을 그 자리에서 해당 블록으로 바꾼 것이다. 손가락 열은 모두
+  `action`의 절대 손가락 목표(상태 키는 실측 손가락 관절 위치)다. 양손은 손목 블록 이름에 `right_`/`left_`가 붙는다.
+- 좌표계는 손 베이스(가상 관절 체인의 기준) 좌표계다. 손목 자세는 가상 관절 값(action은 목표, state는 실측 위치)에서
+  시작 시 시뮬레이터로 측정한 관절 축으로 계산한다(product of exponentials). 그래서 손마다 다른 Euler 순서가 섞이지
+  않는다. 측정 축은 `meta/isaac_tasks.json`의 `ee_hands`.
+- action EE 키는 **명령값**이다. 시뮬레이터 손목은 명령을 다 못 따라간다(GraspCup 재생에서 회전 오차 중앙값 약 9°).
+  실제 도달 자세는 `observation.state.ee*`. 에피소드별 명령-실측 회전 차이는 `meta/isaac_tasks_episodes.jsonl`의
+  `ee_rot_check_deg`.
+- 청크 시작 기준 delta(openpi `DeltaActions` 방식)는 학습 시 `action.ee_abs*`와 `observation.state.ee*`로 계산한다.
 - 메타: `meta/isaac_tasks.json`(spool 계약 사본: 태스크, fps, 카메라, 정의 문자열, 측정 축),
   `meta/isaac_tasks_episodes.jsonl`(에피소드별 seed, reset_id, 원본 pickle, 타이밍, ee_rot_check).
 
 ### 기존 pickle 재생 (`--replay_demos`)
 
 VR 없이 trajectory pickle(예: 공개 데모)의 각 에피소드 초기 상태를 복원하고 action을 재생하면서 같은 녹화
-루프를 돈다. 파이프라인 검증이나 기존 데모를 LeRobot으로 다시 뽑을 때 쓴다.
+루프를 돈다. 파이프라인 검증이나 기존 데모를 LeRobot으로 다시 뽑을 때 쓴다. `--dataset_file`을 원본과 다른
+경로로 줄 것(재생도 새 pickle을 쓴다). 물리가 서버마다 조금 달라 open-loop 재생이 일부 에피소드에서 실패할 수 있다.
 
 ```bash
 /workspace/isaaclab/_isaac_sim/python.sh scripts/record_demos.py --task Dexverse-GraspCup-v0 \
   --replay_demos demos/v0/functional/Dexverse-GraspCup-v0/demos.pkl --headless \
-  --lerobot_root /workspace/local/datasets/graspcup_shadow --num_demos 50
+  --dataset_file /tmp/graspcup_replay.pkl --num_demos 50
 ```
 
 ## 트러블슈팅
@@ -165,7 +179,7 @@ VR 없이 trajectory pickle(예: 공개 데모)의 각 에피소드 초기 상�
 
 - `source/dexverse/dexverse/teleop_utils/xr_session.py` — AR 세션 자동 시작, 손 스트림 로거
 - `scripts/teleop_agent.py` — 위 두 기능 연결, `--xr_stream_log N`
-- `scripts/record_demos.py` — AR 세션 자동 시작, `--lerobot_root` 라이브 LeRobot 녹화, `--replay_demos`
+- `scripts/record_demos.py` — AR 세션 자동 시작, 라이브 LeRobot 녹화(기본 켜짐), `--replay_demos`
 - `source/dexverse/dexverse/data_collection/lerobot_spool.py` — spool 형식 + `LeRobotSpoolRecorder`
 - `scripts/data_tools/lerobot_spool_writer.py` — spool → LeRobot v3 writer (별도 CPU 프로세스)
 - `source/dexverse/dexverse/teleop_utils/replay_teleop.py` — pickle 재생용 teleop 장치
