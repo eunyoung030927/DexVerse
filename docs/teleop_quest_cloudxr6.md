@@ -132,6 +132,7 @@ scripts/teleop_tools/run_teleop.sh record_demos --task Dexverse-PickCube-v0 --ro
 | `observation.state` | 전체 관절 위치. **action과 같은 순서**: action이 구동하는 관절을 action 열 순서로 먼저, 그 뒤에 나머지(mimic 등) 관절. `state[:len(action)]`이 action과 이름별로 맞는다 |
 | `observation.state.ee` | 실측 손목 자세 `[x,y,z,rx,ry,rz]`(rotvec) + 손가락 관절 위치 (`action.ee_abs`와 같은 배치) |
 | `observation.state.ee_rot6d` | 실측 손목 자세 `[x,y,z,r6d×6]` + 손가락 관절 위치 (`action.ee_abs_rot6d`와 같은 배치) |
+| `observation.state.ee_init` | 에피소드 첫 프레임 실측 자세 기준 현재 실측 자세 `[dx,dy,dz,drx,dry,drz]` (`p_t−p_0`, rotvec(`R_t R_0ᵀ`)) + 손가락 관절 위치. `action.ee_delta_init`과 같은 기준·배치 |
 | `action` | `env.step`이 받은 값 그대로: 손목 가상 관절 6개(홈 자세 기준, 손마다 회전 순서 다름) + 손가락 관절 목표. 그대로 open-loop 재생하면 데모 재현 |
 | `action.ee_abs` | 손목 **절대** 명령 자세 `[x,y,z,rx,ry,rz]` (m, rotvec rad) + 손가락 |
 | `action.ee_abs_rot6d` | 손목 **절대** 명령 자세 `[x,y,z,r6d_0..5]` (6D = 회전행렬 첫 두 열 `[R[:,0], R[:,1]]`) + 손가락 |

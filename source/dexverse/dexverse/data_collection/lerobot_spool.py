@@ -55,8 +55,10 @@ block; the finger columns are the absolute finger targets of ``action`` in all o
                             the episode's first frame, ``p_t - p_0`` and ``R_t R_0^T`` -- "absolute delta" from the
                             start, which a policy can apply to the pose it observed when the episode began.
 
-The matching measured wrist poses are ``observation.state.ee`` / ``observation.state.ee_rot6d`` (same layouts,
-finger columns = measured finger joint positions). Poses come from the virtual-joint values (targets for the
+The matching measured wrist poses are ``observation.state.ee`` / ``observation.state.ee_rot6d`` (layouts of
+``ee_abs`` / ``ee_abs_rot6d``) and ``observation.state.ee_init`` (layout of ``ee_delta_init``: the measured pose
+relative to the measured pose of the episode's first frame, so ``ee_delta_init`` has a state in its own frame);
+finger columns = measured finger joint positions. Poses come from the virtual-joint values (targets for the
 actions, joint positions for the state) by the product of exponentials over joint axes MEASURED in the simulator
 at startup, so no per-hand Euler convention is assumed; ``meta.json`` reports how far the measured palm rotation
 is from the command (``ee_rot_check_deg``).
@@ -107,6 +109,7 @@ EE_ACTION_BLOCKS = {
 EE_STATE_BLOCKS = {
     "observation.state.ee": _POSE6,
     "observation.state.ee_rot6d": _POSE9,
+    "observation.state.ee_init": _DELTA6,
 }
 
 # Datasets go to local disk: CIFS / NFS mounts corrupt or stall the writer's large sequential writes.
@@ -342,8 +345,9 @@ def ee_action_columns(actions: np.ndarray, joint_pos: np.ndarray, hands: list[di
 
 
 def ee_state_columns(joint_pos: np.ndarray, hands: list[dict], action_joint_ids: list[int]) -> dict:
-    """Measured wrist poses in the layouts of ``action.ee_abs`` / ``action.ee_abs_rot6d``: ``{key: (T, n)}``;
-    finger columns are the measured positions of the joints the finger action columns drive."""
+    """Measured wrist poses in the layouts of ``action.ee_abs`` / ``action.ee_abs_rot6d`` / ``action.ee_delta_init``
+    (relative to frame 0 of ``joint_pos``, i.e. the episode's first frame): ``{key: (T, n)}``; finger columns are
+    the measured positions of the joints the finger action columns drive."""
     q = np.asarray(joint_pos, dtype=np.float64)
     items = _ee_layout_items(len(action_joint_ids), hands)
     blocks = {k: [] for k in EE_STATE_BLOCKS}
@@ -351,6 +355,7 @@ def ee_state_columns(joint_pos: np.ndarray, hands: list[dict], action_joint_ids:
         p, rot = wrist_state_poses(q, h)
         blocks["observation.state.ee"].append(np.hstack([p, rot.as_rotvec()]))
         blocks["observation.state.ee_rot6d"].append(np.hstack([p, rot6d(rot)]))
+        blocks["observation.state.ee_init"].append(np.hstack([p - p[0], (rot * rot[0].inv()).as_rotvec()]))
     return {k: _assemble(hands, items, b, lambda c: q[:, action_joint_ids[c]]) for k, b in blocks.items()}
 
 
@@ -610,6 +615,9 @@ class LeRobotSpoolRecorder:
                                         "MEASURED wrist pose of the episode's first frame",
                 "observation.state.ee": "[x,y,z,rx,ry,rz] measured wrist pose, rotation vector",
                 "observation.state.ee_rot6d": "[x,y,z,r6d_0..5] measured wrist pose, 6D rotation",
+                "observation.state.ee_init": "[dx,dy,dz,drx,dry,drz] measured wrist pose relative to the measured "
+                                             "pose of the episode's first frame (p_t - p_0, rotvec(R_t R_0^T)); "
+                                             "the state that goes with action.ee_delta_init",
             } if self.ee_hands else None,
             "ee_hands": self.ee_hands,
             "alignment": "frame t = (observation before action t, action t)",
