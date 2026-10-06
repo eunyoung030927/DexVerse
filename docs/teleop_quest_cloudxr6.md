@@ -85,6 +85,69 @@ scripts/teleop_tools/run_teleop.sh record_demos --task Dexverse-PickUpStick-v0 -
    사이트 손추적 권한 허용.
 5. 헤드셋 메뉴 **START** → 이때 손목 자세가 캘리브레이션되고 로봇이 따라 움직인다. STOP/RESET도 메뉴에서.
 
+## LeRobot 데이터셋으로 바로 녹화 (`--lerobot_root`)
+
+isaac-tasks(UR7e + RH5DG2) 수집기와 같은 방식·같은 형식이다. 녹화하면서 매 스텝 카메라 이미지·상태·action을
+spool에 쌓고, 성공한 에피소드만 별도 CPU 프로세스(writer)가 LeRobot v3로 쓴다. 기존 trajectory pickle도 그대로
+같이 저장된다.
+
+### 1회 준비: writer용 LeRobot 환경 (Isaac Sim python과 분리)
+
+```bash
+source /opt/conda/etc/profile.d/conda.sh && unset PYTHONPATH
+conda create -y -n lerobot -c conda-forge --override-channels python=3.11
+conda activate lerobot && pip install "lerobot==0.4.2" scipy && conda deactivate
+```
+
+### 녹화
+
+```bash
+cd /workspace/dexverse/DexVerse   # n1은 /workspace/local/DexVerse
+scripts/teleop_tools/run_teleop.sh record_demos --task Dexverse-PickCube-v0 --robot_type floating_allegro_right \
+  --lerobot_root /workspace/local/datasets/pickcube_allegro --num_demos 50
+```
+
+- `--lerobot_root`는 **로컬 디스크** 경로여야 한다(NAS 금지). `<root>.spool/`이 옆에 생긴다.
+- 카메라(3인칭 + 손목)가 자동으로 켜지고 480×640 RGB로 바뀐다(`--lerobot_image_size HxW`). depth/pointcloud 관측은 꺼진다.
+- 캡처 비용은 RTX 3090에서 프레임당 약 7~8 ms(60 Hz 한 스텝 16.7 ms). VR이 버벅이면 해상도를 낮춘다.
+- task 문장은 태스크 이름에서 자동 생성(`Dexverse-PickCube-v0` → "Pick cube"). 학습용 문장은 `--lerobot_task "..."`로 지정.
+- 기타: `--repo_id`, `--spool_max_pending 4`, `--writer_threads 8`, `--no_spool_writer`(나중에 writer를 따로 실행),
+  `--lerobot_python`(writer python, 기본 `/opt/conda/envs/lerobot/bin/python`).
+- writer가 중간에 죽으면 spool이 남는다. 이어서 쓰기:
+  `/opt/conda/envs/lerobot/bin/python scripts/data_tools/lerobot_spool_writer.py --spool <root>.spool`
+- 불러오기: `LeRobotDataset(repo_id, root=<root>, video_backend="pyav")`
+
+### 데이터셋 형식 (fps 60 = sim dt 1/120 × decimation 2)
+
+| 키 | 형태 | 내용 |
+|---|---|---|
+| `observation.images.third_person` | video 3×480×640 | 월드 고정 3인칭 카메라 |
+| `observation.images.eye_in_hand` | video 3×480×640 | 손에 붙은 손목 카메라 (양손 태스크는 오른손) |
+| `observation.state` | float32 (관절 수) | `robot.data.joint_pos` 전체, sim 관절 순서 (손목 가상 관절 포함), names = 관절 이름 |
+| `action` | float32 (action 차원) | `env.step`이 받은 값 그대로: 손목 가상 관절(홈 자세 기준) + 손가락 관절 목표. 그대로 open-loop 재생하면 데모 재현 |
+| `action.ee_delta` | float32 (6 × 손 수) | 손목 명령 변화 `[dx,dy,dz,rx,ry,rz]`: 직전 명령 대비 위치(m) + 회전 `R_t R_{t-1}^T`의 rotvec(rad), 손 베이스 좌표계. 첫 스텝은 홈 자세 대비 |
+
+- 프레임 t = (action t 적용 **전**의 관측, action t). 
+- `ee_delta`의 회전은 손마다 다른 Euler 순서를 가정하지 않는다. 시작 시 시뮬레이터에서 손목 가상 관절 축을 하나씩
+  움직여 측정하고(product of exponentials), 기본값을 포함한 관절 목표로 계산한다. `meta/isaac_tasks.json`의
+  `ee_hands`에 측정 축이 남는다.
+- `ee_delta`는 **명령값** 기준이다. 시뮬레이터 손목은 명령을 다 못 따라간다(GraspCup 재생에서 손목 회전 오차
+  중앙값 약 9°, 빠른 움직임에서 더 큼). 실제 도달 자세는 `observation.state`에 있다. 에피소드별 명령-실측 회전
+  차이는 `meta/isaac_tasks_episodes.jsonl`의 `ee_rot_check_deg`.
+- 메타: `meta/isaac_tasks.json`(spool 계약 사본: 태스크, fps, 카메라, 정의 문자열, 측정 축),
+  `meta/isaac_tasks_episodes.jsonl`(에피소드별 seed, reset_id, 원본 pickle, 타이밍, ee_rot_check).
+
+### 기존 pickle 재생 (`--replay_demos`)
+
+VR 없이 trajectory pickle(예: 공개 데모)의 각 에피소드 초기 상태를 복원하고 action을 재생하면서 같은 녹화
+루프를 돈다. 파이프라인 검증이나 기존 데모를 LeRobot으로 다시 뽑을 때 쓴다.
+
+```bash
+/workspace/isaaclab/_isaac_sim/python.sh scripts/record_demos.py --task Dexverse-GraspCup-v0 \
+  --replay_demos demos/v0/functional/Dexverse-GraspCup-v0/demos.pkl --headless \
+  --lerobot_root /workspace/local/datasets/graspcup_shadow --num_demos 50
+```
+
 ## 트러블슈팅
 
 | 증상 | 확인 |
@@ -102,6 +165,9 @@ scripts/teleop_tools/run_teleop.sh record_demos --task Dexverse-PickUpStick-v0 -
 
 - `source/dexverse/dexverse/teleop_utils/xr_session.py` — AR 세션 자동 시작, 손 스트림 로거
 - `scripts/teleop_agent.py` — 위 두 기능 연결, `--xr_stream_log N`
-- `scripts/record_demos.py` — AR 세션 자동 시작
+- `scripts/record_demos.py` — AR 세션 자동 시작, `--lerobot_root` 라이브 LeRobot 녹화, `--replay_demos`
+- `source/dexverse/dexverse/data_collection/lerobot_spool.py` — spool 형식 + `LeRobotSpoolRecorder`
+- `scripts/data_tools/lerobot_spool_writer.py` — spool → LeRobot v3 writer (별도 CPU 프로세스)
+- `source/dexverse/dexverse/teleop_utils/replay_teleop.py` — pickle 재생용 teleop 장치
 - `scripts/teleop_tools/start_cloudxr_runtime.sh`, `scripts/teleop_tools/run_teleop.sh`
 - `docs/teleop_quest_cloudxr6.md` (이 문서)

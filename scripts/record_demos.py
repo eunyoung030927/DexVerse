@@ -204,6 +204,43 @@ parser.add_argument(
     ),
 )
 
+parser.add_argument(
+    "--lerobot_root",
+    type=str,
+    default=None,
+    help=(
+        "Also record a LeRobot v3 dataset at this LOCAL directory (not a NAS mount) while collecting: "
+        "third-person + wrist camera RGB, joint state and action of every recorded step, captured live. "
+        "Enables the task cameras; frames go to <root>.spool and a background CPU writer encodes them."
+    ),
+)
+parser.add_argument("--repo_id", type=str, default=None, help="LeRobot repo id (default local/dexverse-<task>-<robot>).")
+parser.add_argument(
+    "--lerobot_task", type=str, default=None, help="Language instruction stored with every frame (default: from the task id)."
+)
+parser.add_argument(
+    "--lerobot_image_size", type=str, default="480x640", help="HxW of both recorded cameras (default 480x640)."
+)
+parser.add_argument("--spool_max_pending", type=int, default=4, help="Ready episodes allowed before recording waits.")
+parser.add_argument("--writer_threads", type=int, default=8, help="PNG writer threads of the spool writer.")
+parser.add_argument("--no_spool_writer", action="store_true", help="Only spool; run lerobot_spool_writer.py later.")
+parser.add_argument(
+    "--lerobot_python",
+    type=str,
+    default=None,
+    help="Python of the env with lerobot installed (default /opt/conda/envs/lerobot/bin/python).",
+)
+parser.add_argument(
+    "--replay_demos",
+    type=str,
+    default=None,
+    help=(
+        "Drive the recording loop with the actions of a trajectory pickle instead of a teleop device "
+        "(restores each episode's initial state, presses START, replays its actions). For validating the "
+        "pipeline without a headset and for re-exporting existing pickles (e.g. with --lerobot_root)."
+    ),
+)
+
 AppLauncher.add_app_launcher_args(parser)
 # Demonstration recording is also a live teleoperation path, so prefer low
 # rendering latency by default. This affects the viewport / XR stream only;
@@ -254,6 +291,12 @@ if data_root is not None:
     )
 
 app_launcher_args = vars(args_cli)
+
+if args_cli.replay_demos:
+    args_cli.teleop_device = "replay"
+if args_cli.lerobot_root:
+    # The recorder captures the task cameras every step; XR runs otherwise strip them.
+    app_launcher_args["enable_cameras"] = True
 
 uses_xr_teleop = (
     "handtracking" in args_cli.teleop_device.lower() or "motion_controllers" in args_cli.teleop_device.lower()
@@ -328,6 +371,7 @@ class TrajectoryPickleRecorder:
         sim_device: str | None = None,
     ):
         self._output_file = output_file
+        self.lerobot = None  # optional LeRobotSpoolRecorder, driven by this recorder's episode lifecycle
         os.makedirs(os.path.dirname(output_file) or ".", exist_ok=True)
         self._episodes: list[dict] = []
         self._active_episode: dict | None = None
@@ -414,6 +458,8 @@ class TrajectoryPickleRecorder:
             num_steps = len(self._active_episode.get("actions", []))
             self._active_episode = None
             outcome = "failed" if num_steps > 0 else "skipped"
+            if self.lerobot is not None:
+                self.lerobot.discard_episode(reason)
         else:
             num_steps = 0
             outcome = "skipped"
@@ -458,6 +504,11 @@ class TrajectoryPickleRecorder:
             self._active_episode["multi_usds"] = self._to_pickleable(multi_usds)
         if active_object_metadata is not None:
             self._active_episode["active_object_metadata"] = self._to_pickleable(active_object_metadata)
+        if self.lerobot is not None:
+            self.lerobot.begin_episode(
+                {"source_episode": self._active_episode["episode_index"], "reset_id": self._active_reset_id,
+                 "seed": self._metadata.get("seed"), "trajectory_pickle": self._output_file}
+            )
 
     def record_action(self, action) -> None:
         if self._active_episode is None:
@@ -522,6 +573,11 @@ class TrajectoryPickleRecorder:
                     "(must be T+1: initial + per-step post-state)."
                 )
         self._active_episode["success"] = bool(success)
+        if self.lerobot is not None:
+            if success:
+                self.lerobot.commit_episode({"num_pickle_steps": int(self._active_episode["num_steps"])})
+            else:
+                self.lerobot.discard_episode("finalized_failure")
         episode_index = int(self._active_episode["episode_index"])
         num_steps = int(self._active_episode["num_steps"])
         self._episodes.append(self._active_episode)
@@ -536,6 +592,8 @@ class TrajectoryPickleRecorder:
 
     def discard_episode(self) -> None:
         self._active_episode = None
+        if self.lerobot is not None:
+            self.lerobot.discard_episode("discarded")
 
     def flush(self) -> None:
         payload = dict(self._metadata)
@@ -866,6 +924,9 @@ def create_environment_config() -> tuple["ManagerBasedRLEnvCfg | DirectRLEnvCfg"
             env_cfg = prune_stale_obs_refs(env_cfg)
         env_cfg.sim.render.antialiasing_mode = "DLSS"
 
+    if args_cli.lerobot_root:
+        _configure_lerobot_cameras(env_cfg)
+
     # Replay regenerates observations, so no HDF5-style recorder manager is needed here.
     env_cfg.recorders = {}
     env_cfg.terminations.time_out = None
@@ -965,6 +1026,20 @@ def check_success(env: gym.Env, success_term: object | None, success_step_count:
     else:
         success_step_count = 0
     return success_step_count, False
+
+
+def _configure_lerobot_cameras(env_cfg) -> None:
+    """Recorded cameras at --lerobot_image_size, RGB only; drop depth / point-cloud observations (unused, costly)."""
+    height, width = (int(v) for v in args_cli.lerobot_image_size.lower().split("x"))
+    for name in ("third_person_camera", "wrist_camera", "right_wrist_camera", "left_wrist_camera"):
+        cam = getattr(env_cfg.scene, name, None)
+        if cam is None:
+            continue
+        cam.height, cam.width = height, width
+        cam.data_types = ["rgb"]
+    for group in ("depth", "pointcloud"):
+        if getattr(env_cfg.observations, group, None) is not None:
+            setattr(env_cfg.observations, group, None)
 
 
 def handle_reset(env: gym.Env) -> object:
@@ -1080,6 +1155,9 @@ def run_simulation_loop(
                     pass
 
             action = teleop_interface.advance()
+            if getattr(teleop_interface, "finished", False):
+                print("Replay finished: every episode of the pickle was played.")
+                break
             # RESET callbacks fire during ``advance``. Honor them before taking
             # another action so an untouched setup is correctly logged as
             # skipped rather than as a one-step failed attempt.
@@ -1109,6 +1187,9 @@ def run_simulation_loop(
                         active_object_metadata=_get_active_object_metadata_from_env(env),
                     )
 
+                if trajectory_recorder.lerobot is not None:
+                    # LeRobot frame t = (observation before action t, action t)
+                    trajectory_recorder.lerobot.capture(action)
                 trajectory_recorder.record_action(action.detach().clone())
                 actions = action.repeat(env.num_envs, 1)
                 step_output = env.step(actions)
@@ -1213,7 +1294,13 @@ def main() -> None:
         attach_range_vis(env_cfg)
 
     env = create_environment(env_cfg, multi_spawn_trace=multi_spawn_trace)
-    teleop_interface = setup_teleop_device(env_cfg, {})
+    if args_cli.replay_demos:
+        from dexverse.teleop_utils.replay_teleop import ReplayDemoDevice
+
+        teleop_interface = ReplayDemoDevice(env, args_cli.replay_demos)
+        print(f"Using {teleop_interface}")
+    else:
+        teleop_interface = setup_teleop_device(env_cfg, {})
     if args_cli.xr:
         from dexverse.teleop_utils.xr_session import request_ar_session
 
@@ -1239,6 +1326,22 @@ def main() -> None:
         action_layout_metadata=action_layout(env),
         sim_device=str(env.device),
     )
+
+    if args_cli.lerobot_root:
+        from dexverse.data_collection.lerobot_spool import LeRobotSpoolRecorder
+
+        trajectory_recorder.lerobot = LeRobotSpoolRecorder(
+            env,
+            env_cfg,
+            task_id=args_cli.task,
+            root=args_cli.lerobot_root,
+            repo_id=args_cli.repo_id,
+            task=args_cli.lerobot_task,
+            max_pending=args_cli.spool_max_pending,
+            launch_writer=not args_cli.no_spool_writer,
+            writer_python=args_cli.lerobot_python,
+            image_threads=args_cli.writer_threads,
+        )
 
     stats_panel = None
     if args_cli.show_stats:
@@ -1267,6 +1370,8 @@ def main() -> None:
 
     if stats_panel is not None:
         stats_panel.close()
+    if trajectory_recorder.lerobot is not None:
+        trajectory_recorder.lerobot.close()
     env.close()
     trajectory_recorder.flush()
     print(f"\nRecording session completed with {num_recorded} successful demonstration(s)")
