@@ -33,6 +33,8 @@ Optional arguments:
     --dataset_dir             Root directory to export the trajectory pickle. Output path will be
                               "<dataset_dir>/<task_name>/<task_name>_<time>.pkl". Under Docker,
                               only the relative subpath is kept; the host mount is always used.
+                              Otherwise a relative --dataset_dir (or none) is placed next to the
+                              LeRobot datasets: "<datasets dir>/trajectories/[<dataset_dir>/]...".
     --record_state            Enable recording per-step scene states (T+1 snapshots per episode).
     --num_demos               Number of demonstrations to record. (default: 0, infinite)
     --num_success_steps       Number of continuous steps with task success for concluding a demo as successful. (default: 10)
@@ -58,6 +60,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from dexverse.data_collection.lerobot_spool import default_trajectory_path  # stdlib + numpy only (pre-app safe)
 from dexverse.demo_paths import DEXVERSE_DATA_DIR_ENV, get_dexverse_data_dir, resolve_demo_output_path
 from dexverse.benchmark import action_layout, task_identity
 from dexverse.teleop_utils.debug_visualization import add_debug_visualization_args, configure_v1_debug_visualization
@@ -86,7 +89,10 @@ parser.add_argument(
     help=(
         "Root directory to export trajectory pickle as "
         "'<dataset_dir>/<task_name>/<task_name>_<time>.pkl'. When "
-        f"{DEXVERSE_DATA_DIR_ENV} is set, output is redirected to that mount."
+        f"{DEXVERSE_DATA_DIR_ENV} is set, output is redirected to that mount. Without {DEXVERSE_DATA_DIR_ENV}, "
+        "--dataset_file or an absolute --dataset_dir, pickles go next to the LeRobot datasets: "
+        "'<datasets dir>/trajectories/[<dataset_dir>/]<task_name>/<task_name>_<time>[_<robot_type>].pkl' "
+        "(datasets dir: $DEXVERSE_LEROBOT_DIR, else /workspace/local/datasets, else /root/dexverse_datasets)."
     ),
 )
 parser.add_argument(
@@ -284,7 +290,15 @@ if args_cli.task is None:
 
 env_name = args_cli.task.split(":")[-1]
 try:
-    resolved_dataset_file = resolve_demo_output_path(env_name, args_cli.dataset_file, args_cli.dataset_dir)
+    if (
+        args_cli.dataset_file
+        or get_dexverse_data_dir() is not None
+        or (args_cli.dataset_dir and os.path.isabs(args_cli.dataset_dir))
+    ):
+        resolved_dataset_file = resolve_demo_output_path(env_name, args_cli.dataset_file, args_cli.dataset_dir)
+    else:
+        # Default: next to the LeRobot datasets (local disk), not inside the repository.
+        resolved_dataset_file = default_trajectory_path(env_name, args_cli.dataset_dir, args_cli.robot_type)
 except ValueError as exc:
     parser.error(str(exc))
 

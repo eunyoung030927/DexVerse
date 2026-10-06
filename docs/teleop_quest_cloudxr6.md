@@ -110,6 +110,10 @@ scripts/teleop_tools/run_teleop.sh record_demos --task Dexverse-PickCube-v0 --ro
 - 저장 위치(기본): `$DEXVERSE_LEROBOT_DIR` → 없으면 `/workspace/local/datasets`(n1 호스트 마운트) → 없으면
   `/root/dexverse_datasets`, 그 아래 `<task>-<robot_type>` (예: `pickcube-v0-floating_allegro_right`).
   같은 태스크·손으로 다시 실행하면 **같은 데이터셋에 이어 쓴다**. 직접 지정은 `--lerobot_root <경로>`.
+- trajectory pickle(재생·재렌더링용 원본: 초기 상태 + action, 이미지 없음)도 같은 폴더 아래
+  `trajectories/[<dataset_dir>/]<task>/<task>_<시각>_<robot_type>.pkl`에 저장된다(예: `--dataset_dir grasping` →
+  `/workspace/local/datasets/trajectories/grasping/Dexverse-PickCube-v0/...`). `--dataset_file`, 절대경로 `--dataset_dir`,
+  `DEXVERSE_DATA_DIR`을 주면 기존 방식대로 그 경로를 쓴다.
 - 데이터셋은 **로컬 디스크**여야 한다. CIFS/NFS 마운트 경로는 시작 시 거부한다. `<root>.spool/`이 옆에 생긴다.
 - 카메라(3인칭 + 손목)가 켜지고 480×640 RGB로 바뀐다(`--lerobot_image_size HxW`). depth/pointcloud 관측은 꺼진다.
 - 캡처 비용은 RTX 3090에서 프레임당 약 5~8 ms(60 Hz 한 스텝 16.7 ms). VR이 버벅이면 해상도를 낮춘다.
