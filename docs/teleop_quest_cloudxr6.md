@@ -186,6 +186,35 @@ scripts/teleop_tools/pickle_to_lerobot.sh /workspace/local/datasets/trajectories
 - pickle 하나당 Isaac Sim을 한 번 띄운다(시작 약 1분 + 재생은 실시간보다 빠름). GPU가 한가할 때 돌리면 된다.
 - 개별 재생은 `record_demos.py --replay_demos <pkl> --dataset_file <새 pkl> --headless`(검증용).
 
+## MimicGen으로 데모 늘리기 (`mimicgen.sh`)
+
+VR로 모은 데모(예: 20개)를 Isaac Lab Mimic으로 늘린다(예: 50개 = 사람 20 + 생성 30). 물체 기준으로 손목 궤적 구간을
+옮겨 붙이고, 손가락 관절은 원본 데모 값을 그대로 쓴다. 생성된 데모는 시뮬레이터에서 성공한 것만 남긴다.
+
+```bash
+cd /workspace/local/DexVerse
+scripts/teleop_tools/mimicgen.sh /workspace/local/datasets/trajectories/functional/Dexverse-GraspCup-v0 \
+    --robot_type floating_allegro_right --num_demos 30
+```
+
+- 인자: pickle 파일 또는 폴더(하위 `*.pkl` 전부). 한 태스크·한 손 종류만 쓴다(폴더에 여러 손이 섞여 있으면 `--robot_type`으로 고름). **녹화한 서버에서 돌릴 것**(재생 재현이 같은 서버에서만 정확).
+- 단계(모두 헤드리스 Isaac Sim, 결과는 `<datasets_dir>/mimicgen/<task>-<robot_type>/<시각>/`):
+  1. `annotate_pickles.py` — 원본 데모를 재생하며 손바닥·물체 자세와 서브태스크 신호를 기록 → `annotated.hdf5`
+     (+ `.json`). 재생에서 성공하지 못한 데모는 건너뛰고 로그에 표시.
+  2. `generate_demos.py` — 성공 데모가 `--num_demos`개 될 때까지 생성 → `generated.pkl`(record_demos와 같은 형식)
+  3. `pickle_to_lerobot.sh` — 생성 pickle을 LeRobot 데이터셋 `<datasets_dir>/<task>-<robot_type>-mimicgen`으로
+     (사람 데모 데이터셋과 분리. `--no_lerobot`이면 2단계에서 멈춤)
+- 서브태스크(`--subtasks 2`, 기본): ① 접근·파지(물체가 3cm 들리면 끝, 물체 기준) ② 나머지(따르기·놓기). ②의
+  기준 좌표계는 `--second_ref auto`(기본) = 태스크에 `success_marker`가 있으면 그것(따르기·놓기 목표), 없으면 물체.
+- 성공 판정은 record_demos와 같다(성공 조건 10스텝 연속, `--num_success_steps`). 생성 시도마다 시뮬레이터를 완전히
+  초기화하므로 생성된 데모는 재생 시 **비트 단위로 재현**된다(그래서 LeRobot 변환에서 빠지는 에피소드가 없다).
+- 옵션: `--seed`, `--action_noise`(손목 목표 잡음, 기본 0.002), `--max_num_failures`(기본 1000), `--datasets_dir`.
+- 시간: 시도 1회 약 10초. 성공률은 태스크·데모 품질에 따라 다르다(아래 실측). 30개 생성에 GraspCup 기준 약 25분(주석 4분 + 생성 12분 + LeRobot 변환 9분).
+
+실측(work1, GraspCup v0, 공개 Shadow 데모 20개 → 생성): 20개 전부 주석 → 시도 62회 중 30개 성공(48%) →
+  LeRobot 30/30 재현(8740프레임, 사람 데모와 같은 키). ②의 기준을 물체로 두면 6–7%, 서브태스크 1개면 13%였다(5개 생성 시험).
+VR(손 추적) 세션으로 녹화한 pickle로는 아직 검증 전이다(카메라 없이 녹화 → 카메라 켠 재생에서 재현되는지 확인 필요).
+
 ## 트러블슈팅
 
 | 증상 | 확인 |
@@ -208,5 +237,7 @@ scripts/teleop_tools/pickle_to_lerobot.sh /workspace/local/datasets/trajectories
 - `source/dexverse/dexverse/data_collection/lerobot_spool.py` — spool 형식 + `LeRobotSpoolRecorder`
 - `scripts/data_tools/lerobot_spool_writer.py` — spool → LeRobot v3 writer (별도 CPU 프로세스)
 - `source/dexverse/dexverse/teleop_utils/replay_teleop.py` — pickle 재생용 teleop 장치
+- `scripts/teleop_tools/mimicgen.sh`, `scripts/data_tools/mimicgen.py`, `scripts/mimic/` (annotate_pickles, generate_demos),
+  `source/dexverse/dexverse/mimic/` — Isaac Lab Mimic 데모 생성(손목 모델 측정·IK, 서브태스크 신호, 기록기)
 - `scripts/teleop_tools/start_cloudxr_runtime.sh`, `scripts/teleop_tools/run_teleop.sh`
 - `docs/teleop_quest_cloudxr6.md` (이 문서)
