@@ -336,6 +336,16 @@ if args_cli.replay_demos:
     args_cli.teleop_device = "replay"
 if args_cli.no_lerobot and args_cli.lerobot_root:
     parser.error("--lerobot_root and --no_lerobot are mutually exclusive")
+_xr_device = any(k in args_cli.teleop_device.lower() for k in ("handtracking", "motion_controllers"))
+lerobot_after_session = False
+if _xr_device and not args_cli.no_lerobot and not args_cli.lerobot_root:
+    # Rendering the dataset cameras inside an XR session stalls it, so VR sessions record the trajectory pickle
+    # only; the LeRobot dataset is built afterwards by replaying it (scripts/teleop_tools/pickle_to_lerobot.sh),
+    # which reproduces the demos exactly on the same machine. Pass --lerobot_root to record live anyway.
+    args_cli.no_lerobot = True
+    lerobot_after_session = True
+    print("[lerobot] VR session: recording the trajectory pickle only; build the LeRobot dataset afterwards with "
+          "scripts/teleop_tools/pickle_to_lerobot.sh")
 if not args_cli.no_lerobot:
     # The LeRobot recorder captures the task cameras every step; XR runs otherwise strip them.
     app_launcher_args["enable_cameras"] = True
@@ -1310,6 +1320,13 @@ def run_simulation_loop(
                         multi_usds=multi_usds,
                         active_object_metadata=_get_active_object_metadata_from_env(env),
                     )
+                    replay_source = getattr(teleop_interface, "current_episode", None)
+                    if trajectory_recorder.lerobot is not None and replay_source is not None:
+                        # --replay_demos: keep where the frames came from
+                        trajectory_recorder.lerobot.annotate_episode(
+                            replay_source_pickle=getattr(teleop_interface, "source_path", None),
+                            replay_source_episode=replay_source.get("episode_index"),
+                        )
 
                 if trajectory_recorder.lerobot is not None:
                     # LeRobot frame t = (observation before action t, action t)
@@ -1513,6 +1530,11 @@ def main() -> None:
     trajectory_recorder.flush()
     print(f"\nRecording session completed with {num_recorded} successful demonstration(s)")
     print(f"Trajectory pickle saved to: {output_file}")
+    if lerobot_after_session and num_recorded > 0:
+        print("Build the LeRobot dataset from it (headless replay, run when the GPU is free):\n"
+              f"  scripts/teleop_tools/pickle_to_lerobot.sh {output_file}\n"
+              f"  (or every new pickle at once: scripts/teleop_tools/pickle_to_lerobot.sh "
+              f"{os.path.join(args_cli.datasets_dir, 'trajectories')})")
 
 
 if __name__ == "__main__":

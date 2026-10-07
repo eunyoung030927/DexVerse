@@ -703,6 +703,11 @@ class LeRobotSpoolRecorder:
         }
         self._needs_render = True
 
+    def annotate_episode(self, **info):
+        """Add metadata to the episode being recorded (stored in its ``meta.json`` when it is committed)."""
+        if self._ep is not None:
+            self._ep["info"].update(info)
+
     def mark_needs_render(self):
         """Call after anything that moves the scene outside env.step (reset, reset_to)."""
         self._needs_render = True

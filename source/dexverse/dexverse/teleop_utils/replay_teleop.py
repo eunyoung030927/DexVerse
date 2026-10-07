@@ -18,6 +18,7 @@ replayed open-loop from the recorded initial state, so a demo is reproduced only
 
 from __future__ import annotations
 
+import os
 import pickle
 from collections.abc import Callable
 
@@ -42,6 +43,7 @@ class ReplayDemoDevice:
         with open(pickle_path, "rb") as f:
             payload = pickle.load(f)
         self.env = env
+        self.source_path = os.path.abspath(pickle_path)
         self.episodes = [ep for ep in payload.get("episodes", []) if len(ep.get("actions", [])) > 0]
         if max_episodes is not None:
             self.episodes = self.episodes[: int(max_episodes)]

@@ -85,9 +85,9 @@ scripts/teleop_tools/run_teleop.sh record_demos --task Dexverse-PickUpStick-v0 -
    사이트 손추적 권한 허용.
 5. 헤드셋 메뉴 **START** → 이때 손목 자세가 캘리브레이션되고 로봇이 따라 움직인다. STOP/RESET도 메뉴에서.
 
-## LeRobot 데이터셋 녹화 (기본 켜짐)
+## LeRobot 데이터셋
 
-`record_demos`는 trajectory pickle과 함께 **LeRobot v3 데이터셋을 항상 같이 저장**한다(끄려면 `--no_lerobot`).
+`record_demos`는 trajectory pickle과 함께 **LeRobot v3 데이터셋을 저장**한다(끄려면 `--no_lerobot`). 단 **VR 세션은 pickle만 저장**하고 데이터셋은 녹화 후 `pickle_to_lerobot.sh`로 만든다(아래).
 isaac-tasks(UR7e + RH5DG2) 수집기와 같은 방식이다: 녹화하면서 매 스텝 카메라 이미지·상태·action을 spool에
 쌓고, 성공한 에피소드만 별도 CPU 프로세스(writer)가 LeRobot v3로 쓴다.
 
@@ -162,17 +162,29 @@ scripts/teleop_tools/run_teleop.sh record_demos --task Dexverse-PickCube-v0 --ro
 - 메타: `meta/isaac_tasks.json`(spool 계약 사본: 태스크, fps, 카메라, 정의 문자열, 측정 축),
   `meta/isaac_tasks_episodes.jsonl`(에피소드별 seed, reset_id, 원본 pickle, 타이밍, ee_rot_check).
 
-### 기존 pickle 재생 (`--replay_demos`)
+### VR 녹화 후 LeRobot 데이터셋 만들기 (`pickle_to_lerobot.sh`)
 
-VR 없이 trajectory pickle(예: 공개 데모)의 각 에피소드 초기 상태를 복원하고 action을 재생하면서 같은 녹화
-루프를 돈다. 파이프라인 검증이나 기존 데모를 LeRobot으로 다시 뽑을 때 쓴다. `--dataset_file`을 원본과 다른
-경로로 줄 것(재생도 새 pickle을 쓴다). 물리가 서버마다 조금 달라 open-loop 재생이 일부 에피소드에서 실패할 수 있다.
+XR 세션 안에서 데이터셋 카메라를 렌더링하면 세션이 첫 프레임에서 멈춘다. 그래서 **VR(손 추적) 세션은 trajectory
+pickle만 저장**하고(`--lerobot_root`를 직접 주면 실시간 녹화 시도), LeRobot 데이터셋은 녹화가 끝난 뒤 pickle을
+헤드리스로 재생해서 만든다. 결과 형식은 실시간 녹화와 같다(영상, state, EE action 전부).
 
 ```bash
-/workspace/isaaclab/_isaac_sim/python.sh scripts/record_demos.py --task Dexverse-GraspCup-v0 \
-  --replay_demos demos/v0/functional/Dexverse-GraspCup-v0/demos.pkl --headless \
-  --dataset_file /tmp/graspcup_replay.pkl --num_demos 50
+cd /workspace/local/DexVerse
+scripts/teleop_tools/pickle_to_lerobot.sh /workspace/local/datasets/trajectories --dry_run   # 무엇을 변환할지 보기
+scripts/teleop_tools/pickle_to_lerobot.sh /workspace/local/datasets/trajectories             # 변환
 ```
+
+- 인자: pickle 파일 또는 폴더(하위 `*.pkl` 전부). 태스크·손 종류는 pickle에서 읽고,
+  `<datasets_dir>/<task>-<robot_type>/`에 에피소드를 이어 붙인다(`--datasets_dir`, `--lerobot_root`로 변경).
+- 변환한 pickle은 `<datasets_dir>/lerobot_conversions.jsonl`에 기록되고 다음 실행에서 건너뛴다(`--force`로 다시).
+  그래서 녹화할 때마다 같은 명령을 다시 돌리면 새 pickle만 변환된다.
+- 재생 pickle과 로그는 `<datasets_dir>/trajectories_replayed/`에 남고, 데이터셋 메타
+  (`meta/isaac_tasks_episodes.jsonl`)에 원본 pickle·에피소드 번호(`replay_source_pickle`, `replay_source_episode`)가 남는다.
+- 재생은 기록된 초기 상태에서 action을 그대로 다시 넣는 방식이다. **같은 서버에서는 비트 단위로 재현**된다
+  (n1 녹화 PickCube 434스텝을 n1에서 두 번 재생: 로봇 관절·물체 위치 차이 0). 다른 서버에서 재생하면 물리가 조금 달라
+  일부 에피소드가 성공 조건을 못 채워 빠질 수 있으니 **녹화한 서버에서 변환**할 것. 빠진 에피소드는 요약에 표시된다.
+- pickle 하나당 Isaac Sim을 한 번 띄운다(시작 약 1분 + 재생은 실시간보다 빠름). GPU가 한가할 때 돌리면 된다.
+- 개별 재생은 `record_demos.py --replay_demos <pkl> --dataset_file <새 pkl> --headless`(검증용).
 
 ## 트러블슈팅
 
@@ -191,7 +203,8 @@ VR 없이 trajectory pickle(예: 공개 데모)의 각 에피소드 초기 상�
 
 - `source/dexverse/dexverse/teleop_utils/xr_session.py` — AR 세션 자동 시작, 손 스트림 로거
 - `scripts/teleop_agent.py` — 위 두 기능 연결, `--xr_stream_log N`
-- `scripts/record_demos.py` — AR 세션 자동 시작, 라이브 LeRobot 녹화(기본 켜짐), `--replay_demos`
+- `scripts/record_demos.py` — AR 세션 자동 시작, LeRobot 녹화(VR 세션은 pickle만), `--replay_demos`, 헤드셋 상태 문구
+- `scripts/teleop_tools/pickle_to_lerobot.sh`, `scripts/data_tools/pickle_to_lerobot.py` — pickle 재생으로 LeRobot 데이터셋 생성
 - `source/dexverse/dexverse/data_collection/lerobot_spool.py` — spool 형식 + `LeRobotSpoolRecorder`
 - `scripts/data_tools/lerobot_spool_writer.py` — spool → LeRobot v3 writer (별도 CPU 프로세스)
 - `source/dexverse/dexverse/teleop_utils/replay_teleop.py` — pickle 재생용 teleop 장치
