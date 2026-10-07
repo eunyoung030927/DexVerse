@@ -42,6 +42,7 @@ DEFAULT_TABLE_INIT_ROT = (1.0, 0.0, 0.0, 0.0)
 DEFAULT_TABLE_LEG_THICKNESS = 0.08
 DEFAULT_TABLE_LEG_INSET = 0.12
 DEFAULT_TABLE_LEG_MATERIAL_PATH = f"{NVIDIA_NUCLEUS_DIR}/Materials/Base/Wood/Oak.mdl"
+DEFAULT_TABLE_TOP_MATERIAL_PATH = f"{NVIDIA_NUCLEUS_DIR}/Materials/Base/Wood/Oak.mdl"
 DEFAULT_CAMERA_POINT_CLOUD_TABLE_XY_INSET = 0.0
 DEFAULT_CAMERA_POINT_CLOUD_TABLE_Z_MIN_OFFSET = 0.01
 DEFAULT_CAMERA_POINT_CLOUD_TABLE_Z_MAX_OFFSET = 0.60
@@ -588,9 +589,12 @@ class SceneCfg(InteractiveSceneCfg):
             size=DEFAULT_TABLE_SIZE,
             rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
             collision_props=sim_utils.CollisionPropertiesCfg(),
-            visual_material=sim_utils.PreviewSurfaceCfg(
-                diffuse_color=(0.5, 0.5, 0.5),  # Dark grey color
-                roughness=0.5,
+            # Wood tabletop (the legs' Oak MDL); was a flat 0.5-grey preview surface. Visual only: collision and
+            # physics are unchanged, and replays of demos recorded before the change still reproduce.
+            visual_material=sim_utils.MdlFileCfg(
+                mdl_path=DEFAULT_TABLE_TOP_MATERIAL_PATH,
+                project_uvw=True,
+                texture_scale=(0.4, 0.4),
             ),
             visible=True,
         ),
