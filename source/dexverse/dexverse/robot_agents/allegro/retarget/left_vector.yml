@@ -42,3 +42,6 @@ retargeting:
   - joint_15.0
   low_pass_alpha: 0.8
   scaling_factor: 1.3
+dexverse:
+  # mirror of the right hand's -6 deg (the global left value is +15)
+  finger_z_rotation_deg: 6.0

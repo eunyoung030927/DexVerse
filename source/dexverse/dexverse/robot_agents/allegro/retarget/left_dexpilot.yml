@@ -26,3 +26,6 @@ retargeting:
   - joint_13.0
   - joint_14.0
   - joint_15.0
+dexverse:
+  # mirror of the right hand's -6 deg (the global left value is +15)
+  finger_z_rotation_deg: 6.0

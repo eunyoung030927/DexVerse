@@ -42,3 +42,7 @@ retargeting:
   - joint_15.0
   low_pass_alpha: 0.8
   scaling_factor: 1.3
+dexverse:
+  # LEAP / Allegro: the global right-hand -15 deg leaves every abduction joint at its limit with an open hand
+  # (fingers all bent to one side); replaying the recorded Quest hand, -6 deg centres them (2026-10-07)
+  finger_z_rotation_deg: -6.0

@@ -128,6 +128,8 @@ class SimpleRelativeRetargeter(RetargeterBase):
         # applied.
         self._previous_wrist_euler_commands = {hand: None for hand in self._tracked_hands}
         self._dex_retgt = {}
+        # per-hand override of FINGER_Z_ROTATION_DEG from the retargeting YAML (dexverse.finger_z_rotation_deg)
+        self._finger_z_rotation_deg = {}
         self._dex_output_joint_names = {}
         self._dex_to_action_finger_indices = {}
         self._dex_config_temp_paths: list[str] = []
@@ -279,6 +281,9 @@ class SimpleRelativeRetargeter(RetargeterBase):
 
             local_urdf_path = retrieve_file_path(urdf_path, force_download=True)
             limit_overrides = self._load_joint_limit_overrides(config_path)
+            z_rot_override = self._load_finger_z_rotation(config_path)
+            if z_rot_override is not None:
+                self._finger_z_rotation_deg[HAND_NAME_TO_TARGET[hand_name]] = z_rot_override
             if limit_overrides:
                 local_urdf_path = self._create_urdf_with_joint_limits(local_urdf_path, limit_overrides)
             patched_config_path = self._create_dex_config_with_urdf(config_path, local_urdf_path)
@@ -331,6 +336,15 @@ class SimpleRelativeRetargeter(RetargeterBase):
             config = yaml.safe_load(file) or {}
         overrides = (config.get("dexverse") or {}).get("joint_limit_overrides") or {}
         return {str(name): (float(lim[0]), float(lim[1])) for name, lim in overrides.items()}
+
+    @staticmethod
+    def _load_finger_z_rotation(config_path: str) -> float | None:
+        """Read optional ``dexverse.finger_z_rotation_deg`` from a retargeting YAML: this hand's heading correction,
+        replacing the global :data:`FINGER_Z_ROTATION_DEG` entry for its side."""
+        with open(config_path) as file:
+            config = yaml.safe_load(file) or {}
+        value = (config.get("dexverse") or {}).get("finger_z_rotation_deg")
+        return None if value is None else float(value)
 
     def _create_urdf_with_joint_limits(self, urdf_path: str, overrides: dict[str, tuple[float, float]]) -> str:
         """Write a temporary copy of the retargeting URDF with narrower joint limits.
@@ -691,6 +705,7 @@ class SimpleRelativeRetargeter(RetargeterBase):
 
         hand_key = hand.name.replace("HAND_", "").lower() if hand is not None else None
         z_rot_deg = FINGER_Z_ROTATION_DEG.get(hand_key, 0.0) if hand_key is not None else 0.0
+        z_rot_deg = getattr(self, "_finger_z_rotation_deg", {}).get(hand, z_rot_deg)
         if z_rot_deg != 0.0:
             z_rot_matrix = R.from_euler("z", z_rot_deg, degrees=True).as_matrix().astype(np.float32)
             # Row-vector convention: `p_row @ M` rotates points by M^T in the

@@ -46,6 +46,8 @@ retargeting:
 # only; the simulated hand keeps its full range. With LEAP's +-60 deg abduction and PIP/DIP hyperextension,
 # tip-only objectives reached fist targets by swinging fingers sideways and bending PIPs backwards.
 dexverse:
+  # mirror of the right hand's -6 deg (the global left value is +15)
+  finger_z_rotation_deg: 6.0
   joint_limit_overrides:
     leap_0: [-0.35, 0.35]
     leap_4: [-0.35, 0.35]
