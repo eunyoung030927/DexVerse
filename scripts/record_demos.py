@@ -236,6 +236,14 @@ parser.add_argument(
     ),
 )
 parser.add_argument(
+    "--xr_status_panel",
+    action="store_true",
+    help=(
+        "Show the recording state (READY / REC / SAVED ...) as text inside the headset. Off by default: on n1 the "
+        "widget leaked renderer descriptors every frame after START until the GPU ran out of memory (2026-10-07)."
+    ),
+)
+parser.add_argument(
     "--no_lerobot",
     action="store_true",
     help="Record only the trajectory pickle (no LeRobot dataset, cameras stay off).",
@@ -1192,7 +1200,7 @@ def run_simulation_loop(
     should_reset = False
     reset_reason = "manual_reset"
     running = False  # Start inactive for VR (user activates with START gesture).
-    status = _XrStatusPanel(trajectory_recorder, enabled=bool(args_cli.xr))
+    status = _XrStatusPanel(trajectory_recorder, enabled=bool(args_cli.xr) and args_cli.xr_status_panel)
 
     def reset_recording_instance():
         nonlocal should_reset, reset_reason
