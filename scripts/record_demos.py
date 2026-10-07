@@ -976,12 +976,13 @@ def create_environment_config() -> tuple["ManagerBasedRLEnvCfg | DirectRLEnvCfg"
             " Will not be able to mark recorded demos as successful."
         )
 
+    if not args_cli.enable_cameras:
+        # Without --enable_cameras (XR, or any pickle-only session) spawning the task cameras fails; drop them.
+        # remove_camera_configs() uses delattr() and can expose class-level camera defaults again; set camera
+        # cfgs to None instead.
+        env_cfg = strip_camera_cfgs(env_cfg)
+        env_cfg = prune_stale_obs_refs(env_cfg)
     if args_cli.xr:
-        if not args_cli.enable_cameras:
-            # remove_camera_configs() uses delattr() and can expose class-level
-            # camera defaults again; set camera cfgs to None instead.
-            env_cfg = strip_camera_cfgs(env_cfg)
-            env_cfg = prune_stale_obs_refs(env_cfg)
         env_cfg.sim.render.antialiasing_mode = "DLSS"
 
     if not args_cli.no_lerobot:
