@@ -229,8 +229,8 @@ parser.add_argument(
     default=None,
     help=(
         "Exact LeRobot v3 dataset folder, overriding <datasets_dir>/<task>-<robot_type> (e.g. "
-        "graspcup-v0-floating_shadow_right). The dataset is recorded live next to the trajectory pickle (on by "
-        "default; see --no_lerobot): third-person + wrist camera RGB, joint state, the env action and its "
+        "graspcup-v0-floating_shadow_right). Giving it records the dataset live next to the trajectory pickle "
+        "(like --lerobot): third-person + wrist camera RGB, joint state, the env action and its "
         "end-effector versions for every step of each successful demo; re-running appends to it. Frames go to "
         "<root>.spool and a background CPU writer encodes them."
     ),
@@ -244,9 +244,17 @@ parser.add_argument(
     ),
 )
 parser.add_argument(
+    "--lerobot",
+    action="store_true",
+    help=(
+        "Also record the LeRobot dataset live (cameras on). Off by default: sessions record only the trajectory "
+        "pickle and scripts/teleop_tools/pickle_to_lerobot.sh builds the dataset from it afterwards."
+    ),
+)
+parser.add_argument(
     "--no_lerobot",
     action="store_true",
-    help="Record only the trajectory pickle (no LeRobot dataset, cameras stay off).",
+    help="Record only the trajectory pickle (the default; kept for existing commands).",
 )
 parser.add_argument("--repo_id", type=str, default=None, help="LeRobot repo id (default local/dexverse-<task>-<robot>).")
 parser.add_argument(
@@ -342,18 +350,19 @@ app_launcher_args = vars(args_cli)
 
 if args_cli.replay_demos:
     args_cli.teleop_device = "replay"
-if args_cli.no_lerobot and args_cli.lerobot_root:
-    parser.error("--lerobot_root and --no_lerobot are mutually exclusive")
+if args_cli.no_lerobot and (args_cli.lerobot or args_cli.lerobot_root):
+    parser.error("--no_lerobot cannot be combined with --lerobot / --lerobot_root")
 _xr_device = any(k in args_cli.teleop_device.lower() for k in ("handtracking", "motion_controllers"))
-lerobot_after_session = False
-if _xr_device and not args_cli.no_lerobot and not args_cli.lerobot_root:
-    # Rendering the dataset cameras inside an XR session stalls it, so VR sessions record the trajectory pickle
-    # only; the LeRobot dataset is built afterwards by replaying it (scripts/teleop_tools/pickle_to_lerobot.sh),
-    # which reproduces the demos exactly on the same machine. Pass --lerobot_root to record live anyway.
-    args_cli.no_lerobot = True
-    lerobot_after_session = True
-    print("[lerobot] VR session: recording the trajectory pickle only; build the LeRobot dataset afterwards with "
-          "scripts/teleop_tools/pickle_to_lerobot.sh")
+# Sessions record only the trajectory pickle by default; the LeRobot dataset is built afterwards by replaying it
+# (scripts/teleop_tools/pickle_to_lerobot.sh, which passes --lerobot_root). Rendering the dataset cameras inside an
+# XR session also stalls it, so --lerobot / --lerobot_root there is at your own risk.
+args_cli.no_lerobot = not (args_cli.lerobot or args_cli.lerobot_root)
+lerobot_after_session = args_cli.no_lerobot and not args_cli.replay_demos
+if args_cli.no_lerobot:
+    print("[lerobot] recording the trajectory pickle only; build the LeRobot dataset afterwards with "
+          "scripts/teleop_tools/pickle_to_lerobot.sh (or pass --lerobot to record it live)")
+elif _xr_device:
+    print("[lerobot] WARNING: recording the LeRobot cameras inside an XR session can stall it at the first frame")
 if not args_cli.no_lerobot:
     # The LeRobot recorder captures the task cameras every step; XR runs otherwise strip them.
     app_launcher_args["enable_cameras"] = True

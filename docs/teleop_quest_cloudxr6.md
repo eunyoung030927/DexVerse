@@ -87,7 +87,7 @@ scripts/teleop_tools/run_teleop.sh record_demos --task Dexverse-PickUpStick-v0 -
 
 ## LeRobot 데이터셋
 
-`record_demos`는 trajectory pickle과 함께 **LeRobot v3 데이터셋을 저장**한다(끄려면 `--no_lerobot`). 단 **VR 세션은 pickle만 저장**하고 데이터셋은 녹화 후 `pickle_to_lerobot.sh`로 만든다(아래).
+`record_demos`는 기본으로 **trajectory pickle만 저장**하고, LeRobot v3 데이터셋은 녹화 후 `pickle_to_lerobot.sh`로 만든다(아래). 녹화하면서 바로 LeRobot도 저장하려면 `--lerobot`(또는 `--lerobot_root <폴더>`)을 붙인다. VR 세션에서는 카메라를 찍으면 첫 프레임에서 멈추므로 쓰지 말 것. `--no_lerobot`은 기본 동작이라 붙여도 같다.
 isaac-tasks(UR7e + RH5DG2) 수집기와 같은 방식이다: 녹화하면서 매 스텝 카메라 이미지·상태·action을 spool에
 쌓고, 성공한 에피소드만 별도 CPU 프로세스(writer)가 LeRobot v3로 쓴다.
 
@@ -105,6 +105,8 @@ conda activate lerobot && pip install "lerobot==0.4.2" scipy && conda deactivate
 cd /workspace/dexverse/DexVerse   # n1은 /workspace/local/DexVerse
 scripts/teleop_tools/run_teleop.sh record_demos --task Dexverse-PickCube-v0 --robot_type floating_allegro_right --num_demos 50
 ```
+
+- 위 명령은 pickle만 저장한다. 아래의 LeRobot 실시간 저장은 `--lerobot`을 붙였을 때(VR이 아닌 세션)만 해당한다.
 
 - 저장 폴더: `--datasets_dir <폴더>` (기본 `$DEXVERSE_LEROBOT_DIR` → 없으면 `/workspace/local/datasets`(n1 호스트 마운트)
   → 없으면 `/root/dexverse_datasets`; `--help`에 현재 기본값이 보인다). 그 아래에 LeRobot 데이터셋
