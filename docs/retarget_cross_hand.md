@@ -70,4 +70,8 @@ SPIDER의 확정 실행은 커밋(15프레임)마다 스냅샷을 복원하며 �
 
 ## 결과
 
-(아래는 실행하면서 채운다.)
+| 태스크 · 에피소드 | 목표 손 | stage 2 손끝 오차 | 결과 | 컵 오차 평균 | 재시도 | 시간 (RTX 3090) | 상태 재생 / action 재생 |
+|---|---|---|---|---|---|---|---|
+| GraspCup v0 · ep 0 | floating_allegro_right | 0.17 cm | 성공 (280프레임) | 2.3 cm | 4 | 35.8분 | 성공 / 재현 안 됨 |
+
+영상 비교: `scripts/retarget/render_states.py --pickle <pkl> --episode N --out <mp4>`(기록된 상태를 그대로 렌더).
