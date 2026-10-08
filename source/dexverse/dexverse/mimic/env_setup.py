@@ -57,7 +57,7 @@ def build_env_cfg(task: str, robot_type: str | None, *, device: str = "cpu", num
 
 def attach_mimic_cfg(env_cfg, sides, *, num_subtasks: int = 2, num_trials: int = 10, seed: int = 1,
                      action_noise: float = 0.002, max_num_failures: int = 1000, nn_k: int = 3,
-                     second_ref: str = "object"):
+                     second_ref: str = "object", object_ref: str = "object"):
     """Give ``env_cfg`` the MimicEnvCfg fields the Isaac Lab datagen reads."""
     dg = DataGenConfig()
     dg.name = env_cfg.env_name
@@ -71,7 +71,7 @@ def attach_mimic_cfg(env_cfg, sides, *, num_subtasks: int = 2, num_trials: int =
     dg.max_num_failures = int(max_num_failures)
     dg.seed = int(seed)
 
-    def subtask(term_signal, interp, ref="object"):
+    def subtask(term_signal, interp, ref=object_ref):
         return SubTaskConfig(
             object_ref=ref,
             subtask_term_signal=term_signal,
@@ -99,6 +99,17 @@ def attach_mimic_cfg(env_cfg, sides, *, num_subtasks: int = 2, num_trials: int =
     if not isinstance(env_cfg, MimicEnvCfg):
         env_cfg.__class__ = type(f"{cls.__name__}Mimic", (cls, MimicEnvCfg), {})
     return env_cfg
+
+
+def resolve_object_ref(env_cfg, object_ref: str = "auto") -> str:
+    """auto: the task object ``object`` if the scene has one, else the task articulation (e.g. the laptop)."""
+    if object_ref != "auto":
+        return object_ref
+    if getattr(env_cfg.scene, "object", None) is not None:
+        return "object"
+    if getattr(env_cfg.scene, "articulation", None) is not None:
+        return "articulation"
+    return "object"
 
 
 def layout_sides(robot_type: str) -> list[str]:

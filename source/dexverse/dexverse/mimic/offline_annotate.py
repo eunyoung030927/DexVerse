@@ -92,13 +92,20 @@ def annotate_episode(ep: dict, cache: dict, subtasks: int) -> tuple[dict | None,
         model = WristModel.from_dict(h["model"])
         eef[side] = _palm_poses(model, _joint_values(h["trans"], q, False), _joint_values(h["rot"], q, False), root)
         target[side] = _palm_poses(model, _joint_values(h["trans"], a, True), _joint_values(h["rot"], a, True), root)
-    rigid = states.get("rigid_object", {})
+    rigid = dict(states.get("rigid_object", {}))
+    # non-robot articulations (e.g. the laptop of OpenLaptop) are object frames too (see get_object_poses)
+    rigid.update({n: s for n, s in states.get("articulation", {}).items() if n != "robot" and n not in rigid})
     missing = [n for n in cache["object_names"] if n not in rigid]
     if missing:
         return None, f"states lack rigid objects {missing}"
     objects = {n: _pose_matrices(rigid[n]["root_pose"].astype(np.float64)) for n in cache["object_names"]}
     lift = cache["lift"]
-    lifted = (rigid["object"]["root_pose"][:, 2] - lift["object_default_z"]) > lift["height"]
+    if lift is None or "object" not in rigid:
+        if subtasks == 2:
+            return None, "no lifted object in this task: use --subtasks 1"
+        lifted = np.zeros(T, dtype=bool)
+    else:
+        lifted = (rigid["object"]["root_pose"][:, 2] - lift["object_default_z"]) > lift["height"]
     if subtasks == 2 and (not lifted.any() or lifted[0]):
         return None, "object_lifted never switches 0 -> 1"
 

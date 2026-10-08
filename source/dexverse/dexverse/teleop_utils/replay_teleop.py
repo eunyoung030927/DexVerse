@@ -80,6 +80,10 @@ class ReplayDemoDevice:
             return
         state = _to_torch(ep["initial_state"], self.env.device)
         self.env.reset_to(state, env_ids=None, is_relative=True)
+        # rebase terms that capture a reference at reset (e.g. OpenLaptop base_displaced) on the restored scene
+        from .episode_task_state import reset_managers_after_state_restore  # noqa: PLC0415
+
+        reset_managers_after_state_restore(self.env)
         print(f"[replay] episode {self._ep_idx + 1}/{len(self.episodes)} "
               f"(source episode {ep.get('episode_index')}, {len(ep['actions'])} actions)")
 

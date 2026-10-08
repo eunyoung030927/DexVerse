@@ -50,6 +50,8 @@ def main(argv=None):
     ap.add_argument("--subtasks", type=int, default=2, choices=(1, 2))
     ap.add_argument("--second_ref", default="auto",
                     help="object frame of the second subtask (auto: success_marker if the task has one, else object)")
+    ap.add_argument("--object_ref", default="auto",
+                    help="object frame of the first (or only) subtask (auto: object, else the task articulation)")
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--replay", action="store_true",
                     help="annotate by replaying the demos in the simulator instead of reading their recorded states")
@@ -109,7 +111,8 @@ def main(argv=None):
     run([python, os.path.join(_REPO, "scripts", "mimic", "generate_demos.py"), "--input", annotated,
          "--num_demos", str(args.num_demos), "--output_pickle", generated, "--seed", str(args.seed),
          "--action_noise", str(args.action_noise), "--max_num_failures", str(args.max_num_failures),
-         "--second_ref", args.second_ref, "--headless"], "2_generate.log", generated)
+         "--second_ref", args.second_ref, "--object_ref", args.object_ref, "--headless"],
+        "2_generate.log", generated)
     if args.no_lerobot:
         print(f"[mimicgen] generated pickle: {generated}")
         return 0

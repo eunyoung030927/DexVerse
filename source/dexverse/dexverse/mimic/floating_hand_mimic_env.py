@@ -194,13 +194,16 @@ class FloatingHandMimicEnv(ManagerBasedRLMimicEnv):
         robot_type = str(getattr(self.cfg, "robot_type", "") or "")
         hands = {side: {"trans": h["trans"], "rot": h["rot"], "fingers": h["fingers"],
                         "model": self._models[side].to_dict()} for side, h in self._hands.items()}
-        obj = self.scene["object"]
+        lift = None
+        if "object" in self.scene.rigid_objects:  # articulated tasks (e.g. OpenLaptop) have no lifted object
+            obj = self.scene["object"]
+            lift = {"object_default_z": float(obj.data.default_root_state[0, 2]),
+                    "height": float(getattr(self.cfg, "mimic_lift_height", 0.03))}
         path = save_cache(self.cfg.env_name, robot_type, {
             "action_dim": int(self.action_manager.total_action_dim),
             "joint_names": list(self._robot.joint_names),
             "object_names": list(self.get_object_poses().keys()),
-            "lift": {"object_default_z": float(obj.data.default_root_state[0, 2]),
-                     "height": float(getattr(self.cfg, "mimic_lift_height", 0.03))},
+            "lift": lift,
             "hands": hands,
         })
         print(f"[mimic] kinematics cache -> {path}", flush=True)
@@ -209,6 +212,18 @@ class FloatingHandMimicEnv(ManagerBasedRLMimicEnv):
         return np.array([float(values[j["col"]]) * j["scale"] + j["offset"] for j in h[kind]])
 
     # ----- Mimic API ----------------------------------------------------------------------------------
+    def get_object_poses(self, env_ids: Sequence[int] | None = None) -> dict[str, torch.Tensor]:
+        """Rigid objects (Isaac Lab default) plus the root pose of every non-robot articulation (e.g. the laptop of
+        OpenLaptop, scene key ``articulation``), so articulated tasks can use it as the subtask object frame."""
+        poses = super().get_object_poses(env_ids)
+        sel = slice(None) if env_ids is None else env_ids
+        for name, art in self.scene.articulations.items():
+            if name == "robot" or name in poses:
+                continue
+            p = art.data.root_pos_w[sel] - self.scene.env_origins[sel]
+            poses[name] = _make_pose(p, _quat_wxyz_to_matrix(art.data.root_quat_w[sel]))
+        return poses
+
     def get_robot_eef_pose(self, eef_name: str, env_ids: Sequence[int] | None = None) -> torch.Tensor:
         if env_ids is None:
             env_ids = slice(None)
@@ -259,6 +274,9 @@ class FloatingHandMimicEnv(ManagerBasedRLMimicEnv):
         """``object_lifted``: the task object is >= ``mimic_lift_height`` above its spawn height (grasp done)."""
         if env_ids is None:
             env_ids = slice(None)
+        if "object" not in self.scene.rigid_objects:
+            n = self.scene.env_origins[env_ids].shape[0]
+            return {"object_lifted": torch.zeros(n, dtype=torch.bool, device=self.device)}
         obj = self.scene["object"]
         z = obj.data.root_pos_w[env_ids, 2] - self.scene.env_origins[env_ids, 2]
         z0 = obj.data.default_root_state[env_ids, 2]

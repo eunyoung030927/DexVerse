@@ -36,6 +36,9 @@ ap.add_argument("--subtasks", type=int, default=None, choices=(1, 2), help="over
 ap.add_argument("--second_ref", default="auto",
                 help="object frame of the second subtask; auto: the scene's success_marker (pour / place "
                 "target) if it has one, else object")
+ap.add_argument("--object_ref", default="auto",
+                help="object frame of the first (or only) subtask; auto: object if the scene has one, else the task "
+                "articulation (e.g. the laptop)")
 ap.add_argument("--keep_failed", action="store_true",
                 help="also export failed attempts (<output>_failed.hdf5) for analysis")
 ap.add_argument("--action_noise", type=float, default=0.002, help="noise on the wrist joint targets (m / rad)")
@@ -75,6 +78,7 @@ from dexverse.mimic.env_setup import (  # noqa: E402
     build_env_cfg,
     layout_sides,
     make_env,
+    resolve_object_ref,
     resolve_success_term,
 )
 from isaaclab.envs.mdp.recorders.recorders_cfg import ActionStateRecorderManagerCfg  # noqa: E402
@@ -97,7 +101,10 @@ if second_ref == "auto":
     second_ref = "success_marker" if getattr(env_cfg.scene, "success_marker", None) is not None else "object"
 if args.num_envs != 1:
     raise SystemExit("[mimic] --num_envs must be 1: every attempt starts from env.sim.reset(), which resets all envs")
+object_ref = resolve_object_ref(env_cfg, args.object_ref)
+print(f"[mimic] subtasks {num_subtasks}, object_ref {object_ref}, second_ref {second_ref}", flush=True)
 attach_mimic_cfg(env_cfg, layout_sides(ROBOT), num_subtasks=num_subtasks, second_ref=second_ref,
+                 object_ref=object_ref,
                  num_trials=args.num_demos, seed=args.seed, action_noise=args.action_noise,
                  max_num_failures=args.max_num_failures)
 rec = ActionStateRecorderManagerCfg()
@@ -207,7 +214,8 @@ payload = dict(SIDECAR["pickle_metadata"])
 payload.update({
     "record_state": False,
     "generator": {"type": "isaaclab_mimic", "annotated_dataset": os.path.abspath(args.input),
-                  "subtasks": num_subtasks, "second_ref": second_ref, "seed": args.seed, "env_seed": env_seed,
+                  "subtasks": num_subtasks, "object_ref": object_ref, "second_ref": second_ref, "seed": args.seed,
+                  "env_seed": env_seed,
                   "action_noise": args.action_noise, "attempts": int(G.num_attempts),
                   "successes": int(G.num_success), "sources": SIDECAR.get("sources")},
     "episodes": episodes,

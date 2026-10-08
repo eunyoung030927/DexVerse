@@ -147,6 +147,7 @@ from dexverse.mimic.env_setup import (  # noqa: E402
     build_env_cfg,
     layout_sides,
     make_env,
+    resolve_object_ref,
     resolve_success_term,
 )
 from dexverse.mimic.recorders import MimicAnnotationRecorderManagerCfg  # noqa: E402
@@ -156,7 +157,8 @@ from isaaclab.managers import DatasetExportMode  # noqa: E402
 out_dir = os.path.dirname(os.path.abspath(args.output))
 os.makedirs(out_dir, exist_ok=True)
 env_cfg, success_term = build_env_cfg(TASK, ROBOT, device=args.device)
-attach_mimic_cfg(env_cfg, layout_sides(ROBOT), num_subtasks=args.subtasks)
+attach_mimic_cfg(env_cfg, layout_sides(ROBOT), num_subtasks=args.subtasks,
+                 object_ref=resolve_object_ref(env_cfg))
 rec = MimicAnnotationRecorderManagerCfg()
 rec.dataset_export_dir_path = out_dir
 rec.dataset_filename = os.path.splitext(os.path.basename(args.output))[0]
