@@ -282,6 +282,16 @@ parser.add_argument(
         "pipeline without a headset and for re-exporting existing pickles (e.g. with --lerobot_root)."
     ),
 )
+parser.add_argument(
+    "--replay_states",
+    action="store_true",
+    default=False,
+    help=(
+        "With --replay_demos: after every step write the episode's recorded scene state, so the replay follows the "
+        "recorded states instead of re-simulating the actions. For pickles whose actions do not reproduce "
+        "open-loop (cross-hand retargeting, scripts/retarget: their metadata carries 'retarget')."
+    ),
+)
 
 AppLauncher.add_app_launcher_args(parser)
 # Demonstration recording is also a live teleoperation path, so prefer low
@@ -1365,6 +1375,11 @@ def run_simulation_loop(
                     print(f"✗ Reset attempt recorded as {outcome}; auto-reset ID: {next_reset_id}")
                     status.after_reset("task_termination")
                     continue
+                if getattr(teleop_interface, "replay_states", False):
+                    # --replay_states: the recorded state replaces the re-simulated one (cameras re-render)
+                    teleop_interface.restore_recorded_state()
+                    if trajectory_recorder.lerobot is not None:
+                        trajectory_recorder.lerobot.mark_needs_render()
                 if args_cli.record_state:
                     post_step_state = env.scene.get_state(is_relative=True)
                     trajectory_recorder.record_state(post_step_state)
@@ -1463,7 +1478,7 @@ def main() -> None:
     if args_cli.replay_demos:
         from dexverse.teleop_utils.replay_teleop import ReplayDemoDevice
 
-        teleop_interface = ReplayDemoDevice(env, args_cli.replay_demos)
+        teleop_interface = ReplayDemoDevice(env, args_cli.replay_demos, replay_states=args_cli.replay_states)
         print(f"Using {teleop_interface}")
     else:
         teleop_interface = setup_teleop_device(env_cfg, {})

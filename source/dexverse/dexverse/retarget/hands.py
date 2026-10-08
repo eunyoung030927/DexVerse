@@ -1,0 +1,55 @@
+# Copyright (c) 2025-2026, The DexVerse Project Developers.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
+"""Per-hand facts the cross-hand retargeting needs, keyed by ``robot_type`` (single floating hands).
+
+Fingertips are always listed thumb, index, middle, ring, little; a hand without a finger has ``None`` in
+that slot (a four-finger target simply has no target for the source's little finger). Body names are the
+ones the hand's own ``robot_agents/<hand>/floating.py`` declares; the wrist is the six virtual joints
+(``x/y/z_translation_joint``, ``x/y/z_rotation_joint``) every single floating hand carries.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+FINGERS = ("thumb", "index", "middle", "ring", "little")
+WRIST_TRANS = ("x_translation_joint", "y_translation_joint", "z_translation_joint")
+WRIST_ROT = ("x_rotation_joint", "y_rotation_joint", "z_rotation_joint")
+
+
+@dataclass(frozen=True)
+class HandSpec:
+    robot_type: str
+    palm: str
+    tips: tuple[str | None, str | None, str | None, str | None, str | None]
+
+    @property
+    def wrist_joints(self) -> tuple[str, ...]:
+        return WRIST_TRANS + WRIST_ROT
+
+    def tip_slots(self) -> list[int]:
+        """Finger slots (0 = thumb .. 4 = little) this hand has a tip for."""
+        return [i for i, b in enumerate(self.tips) if b is not None]
+
+
+HANDS: dict[str, HandSpec] = {
+    "floating_shadow_right": HandSpec("floating_shadow_right", "palm", ("thtip", "fftip", "mftip", "rftip", "lftip")),
+    "floating_allegro_right": HandSpec(
+        "floating_allegro_right", "palm", ("link_15_0_tip", "link_3_0_tip", "link_7_0_tip", "link_11_0_tip", None)
+    ),
+    "floating_leap_right": HandSpec(
+        "floating_leap_right", "palm_lower", ("thumb_fingertip", "fingertip", "fingertip_2", "fingertip_3", None)
+    ),
+    "floating_wuji_right": HandSpec(
+        "floating_wuji_right", "right_palm_link", tuple(f"right_finger{i}_tip_link" for i in range(1, 6))
+    ),
+}
+
+
+def get(robot_type: str) -> HandSpec:
+    if robot_type not in HANDS:
+        raise KeyError(f"no retargeting hand spec for '{robot_type}'; known: {sorted(HANDS)}")
+    return HANDS[robot_type]
