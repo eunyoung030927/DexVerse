@@ -5,10 +5,14 @@
 
 """Annotate recorded DexVerse trajectory pickles for Isaac Lab Mimic (MimicGen / DexMimicGen).
 
-Replays every episode headless in the floating-hand Mimic env (initial scene state + recorded actions, CPU
-physics: bit-exact on the recording machine) and records the datagen info the generator needs -- palm poses,
-object poses, the target palm poses of the actions and the subtask termination signals -- into an Isaac Lab HDF5
-dataset. Episodes that do not end in success (or never lift the object, with two subtasks) are skipped.
+Writes the datagen info the generator needs -- palm poses, object poses, the target palm poses of the actions and
+the subtask termination signals -- into an Isaac Lab HDF5 dataset.
+
+By default it is computed from the per-step states the pickle records (no simulator; the wrist kinematics come
+from a cache the Mimic env writes the first time it starts for this task and robot type -- if there is none yet,
+Isaac Sim is started once to measure it). Pickles without per-step states fall back to the replay. ``--replay``
+replays every episode headless in the floating-hand Mimic env instead (initial scene state + recorded actions) and
+also checks that it still succeeds on this machine. Episodes that never lift the object (two subtasks) are skipped.
 
     /workspace/isaaclab/_isaac_sim/python.sh scripts/mimic/annotate_pickles.py <pickle or folder> [...] \
         --output <annotated.hdf5>
@@ -22,6 +26,8 @@ import glob
 import json
 import os
 import pickle
+import sys
+import traceback
 
 from isaaclab.app import AppLauncher
 
@@ -31,6 +37,9 @@ ap.add_argument("--output", required=True, help="annotated Isaac Lab Mimic HDF5 
 ap.add_argument("--subtasks", type=int, default=2, choices=(1, 2),
                 help="2: grasp (until the object is lifted) + the rest, both object-centric; 1: whole demo")
 ap.add_argument("--max_episodes", type=int, default=None, help="annotate at most this many source episodes")
+ap.add_argument("--replay", action="store_true",
+                help="replay every episode in the simulator (also checks it still succeeds here) instead of "
+                     "reading the recorded per-step states")
 ap.add_argument("--num_success_steps", type=int, default=10,
                 help="consecutive success steps that end a demo (record_demos default); the replay is cut there")
 ap.add_argument("--hold_steps", type=int, default=120,
@@ -51,6 +60,11 @@ def _collect(paths):
     return out
 
 
+def _has_states(ep):
+    states, actions = ep.get("states"), ep.get("actions")
+    return isinstance(states, list) and actions is not None and len(states) == len(actions) + 1
+
+
 pickles = _collect(args.inputs)
 payloads = []
 for p in pickles:
@@ -65,10 +79,54 @@ TASK, ROBOT = tasks.pop()
 if not TASK or not ROBOT:
     raise SystemExit("[mimic] pickle metadata lacks task or robot_type")
 
-app = AppLauncher(args).app
+def _write_sidecar(exported, sources, skipped, annotation):
+    meta = {k: v for k, v in payloads[0][1].items() if k != "episodes"}
+    with open(os.path.splitext(args.output)[0] + ".json", "w", encoding="utf-8") as f:
+        json.dump({"task": TASK, "robot_type": ROBOT, "subtasks": args.subtasks, "annotation": annotation,
+                   "annotated": exported, "sources": sources, "skipped": skipped, "pickle_metadata": meta},
+                  f, indent=1, default=str)
+    print(f"[mimic] {exported} annotated, {len(skipped)} skipped -> {os.path.abspath(args.output)}", flush=True)
 
-import sys  # noqa: E402
-import traceback  # noqa: E402
+
+def _annotate_from_states():
+    from dexverse.mimic.offline_annotate import annotate_episode, write_hdf5  # noqa: PLC0415
+
+    demos, sources, skipped = [], [], []
+    for path, payload in payloads:
+        for ep_i, ep in enumerate(payload.get("episodes", [])):
+            if args.max_episodes is not None and len(demos) + len(skipped) >= args.max_episodes:
+                break
+            data, reason = annotate_episode(ep, CACHE, args.subtasks)
+            if data is None:
+                skipped.append({"pickle": os.path.abspath(path), "episode": ep_i, "reason": reason})
+                print(f"[mimic] SKIPPED {os.path.basename(path)} episode {ep_i}: {reason}", flush=True)
+                continue
+            n = len(data["actions"])
+            sources.append({"pickle": os.path.abspath(path), "episode": ep_i, "num_steps": n,
+                            "demo": f"demo_{len(demos)}"})
+            demos.append(data)
+            print(f"[mimic] annotated {os.path.basename(path)} episode {ep_i} ({n} steps, recorded states)",
+                  flush=True)
+    write_hdf5(args.output, TASK, demos)
+    _write_sidecar(len(demos), sources, skipped, "recorded_states")
+
+
+use_replay = args.replay
+if not use_replay and not all(_has_states(ep) for _, d in payloads for ep in d.get("episodes", [])):
+    print("[mimic] some episodes do not record per-step states; replaying them in the simulator", flush=True)
+    use_replay = True
+CACHE = None
+if not use_replay:
+    from dexverse.mimic.wrist_model import cache_path, load_cache
+
+    CACHE = load_cache(TASK, ROBOT)
+    if CACHE is not None:
+        print(f"[mimic] annotating from the recorded states (kinematics cache {cache_path(TASK, ROBOT)})", flush=True)
+        _annotate_from_states()
+        sys.exit(0)
+    print(f"[mimic] no kinematics cache for {TASK} / {ROBOT} yet: starting Isaac Sim once to measure it", flush=True)
+
+app = AppLauncher(args).app
 
 
 def _die(exc_type, exc, tb):
@@ -105,6 +163,14 @@ rec.dataset_filename = os.path.splitext(os.path.basename(args.output))[0]
 rec.dataset_export_mode = DatasetExportMode.EXPORT_ALL
 env_cfg.recorders = rec
 env = make_env(env_cfg)
+if not use_replay:  # the env measured the wrist models and wrote the cache while starting
+    CACHE = load_cache(TASK, ROBOT)
+    if CACHE is None:
+        raise RuntimeError(f"[mimic] the Mimic env did not write {cache_path(TASK, ROBOT)}")
+    env.close()
+    _annotate_from_states()
+    app.close()
+    sys.exit(0)
 success_term = resolve_success_term(env, success_term)
 env.reset()
 
@@ -152,10 +218,6 @@ with torch.inference_mode():
                 print(f"[mimic] SKIPPED {os.path.basename(path)} episode {ep_i}: {reason}", flush=True)
             env.recorder_manager.reset()
 
-meta = {k: v for k, v in payloads[0][1].items() if k != "episodes"}
-with open(os.path.splitext(args.output)[0] + ".json", "w", encoding="utf-8") as f:
-    json.dump({"task": TASK, "robot_type": ROBOT, "subtasks": args.subtasks, "annotated": exported,
-               "sources": sources, "skipped": skipped, "pickle_metadata": meta}, f, indent=1, default=str)
-print(f"[mimic] {exported} annotated, {len(skipped)} skipped -> {os.path.abspath(args.output)}", flush=True)
+_write_sidecar(exported, sources, skipped, "replay")
 env.close()
 app.close()

@@ -29,59 +29,11 @@ import torch
 from isaaclab.envs import ManagerBasedRLMimicEnv
 from scipy.spatial.transform import Rotation
 
-_AXIS_LETTERS = "XYZ"
+from .wrist_model import WristModel, save_cache
 
 
 def _rot_from_matrix(m: np.ndarray) -> Rotation:
     return Rotation.from_matrix(np.asarray(m, dtype=np.float64))
-
-
-class _WristModel:
-    """Closed-form palm pose <-> wrist joint values of one floating hand (all quantities in the robot root frame)."""
-
-    def __init__(self, trans_axes, rot_axes, centre, palm_offset, palm_rot0):
-        self.A = np.asarray(trans_axes, dtype=np.float64).T          # (3, 3): columns = prismatic axes
-        self.w = np.asarray(rot_axes, dtype=np.float64)              # (3, 3): rows = revolute axes, chain order
-        self.c = np.asarray(centre, dtype=np.float64)
-        self.d = np.asarray(palm_offset, dtype=np.float64)
-        self.R0 = palm_rot0
-        # The revolute axes of every DexVerse floating hand are signed coordinate axes -> an Euler sequence.
-        idx, sign = [], []
-        for k in range(3):
-            i = int(np.argmax(np.abs(self.w[k])))
-            if abs(self.w[k, i]) < 0.999:
-                raise RuntimeError(f"wrist revolute axis {k} = {self.w[k]} is not a coordinate axis")
-            idx.append(i)
-            sign.append(float(np.sign(self.w[k, i])))
-        if len(set(idx)) != 3:
-            raise RuntimeError(f"wrist revolute axes {idx} are not three distinct axes")
-        self.seq = "".join(_AXIS_LETTERS[i] for i in idx)          # intrinsic: R = R_a(t1) R_b(t2) R_c(t3)
-        self.sign = np.asarray(sign)
-
-    def wrist_rot(self, q_r) -> Rotation:
-        return Rotation.from_euler(self.seq, np.asarray(q_r, dtype=np.float64) * self.sign)
-
-    def forward(self, q_t, q_r) -> tuple[np.ndarray, Rotation]:
-        rw = self.wrist_rot(q_r)
-        return self.c + self.A @ np.asarray(q_t, dtype=np.float64) + rw.apply(self.d), rw * self.R0
-
-    def inverse(self, pos, rot: Rotation, q_r_ref) -> tuple[np.ndarray, np.ndarray]:
-        """Wrist joint values for a palm pose; among the Euler solutions the one nearest ``q_r_ref``."""
-        rw = rot * self.R0.inv()
-        t = rw.as_euler(self.seq)
-        ref = np.asarray(q_r_ref, dtype=np.float64) * self.sign
-        best, best_d = None, np.inf
-        for cand in (t, np.array([t[0] + np.pi, np.pi - t[1], t[2] + np.pi]),
-                     np.array([t[0] + np.pi, -np.pi - t[1], t[2] + np.pi])):
-            if (Rotation.from_euler(self.seq, cand) * rw.inv()).magnitude() > 1e-6:
-                continue
-            cand = cand + 2.0 * np.pi * np.round((ref - cand) / (2.0 * np.pi))
-            dist = float(np.abs(cand - ref).sum())
-            if dist < best_d:
-                best, best_d = cand, dist
-        q_r = best * self.sign
-        q_t = np.linalg.solve(self.A, np.asarray(pos, dtype=np.float64) - self.c - rw.apply(self.d))
-        return q_t, q_r
 
 
 class FloatingHandMimicEnv(ManagerBasedRLMimicEnv):
@@ -199,7 +151,7 @@ class FloatingHandMimicEnv(ManagerBasedRLMimicEnv):
                     set_q(q1)
                     p1, _ = palm(h["palm_id"])
                     trans_axes.append((p1 - p0) / eps_t)
-                model = _WristModel(
+                model = WristModel(
                     trans_axes=[base.inv().apply(a) for a in trans_axes],
                     rot_axes=[base.inv().apply(w) for w in rot_axes],
                     centre=base.inv().apply(centre_w - root_p),
@@ -235,6 +187,23 @@ class FloatingHandMimicEnv(ManagerBasedRLMimicEnv):
         finally:
             robot.write_joint_state_to_sim(q0, v0)
             sim.forward()
+        self._save_kinematics_cache()
+
+    def _save_kinematics_cache(self):
+        """Wrist models + action-column mapping for the offline annotator (annotate_pickles.py without --replay)."""
+        robot_type = str(getattr(self.cfg, "robot_type", "") or "")
+        hands = {side: {"trans": h["trans"], "rot": h["rot"], "fingers": h["fingers"],
+                        "model": self._models[side].to_dict()} for side, h in self._hands.items()}
+        obj = self.scene["object"]
+        path = save_cache(self.cfg.env_name, robot_type, {
+            "action_dim": int(self.action_manager.total_action_dim),
+            "joint_names": list(self._robot.joint_names),
+            "object_names": list(self.get_object_poses().keys()),
+            "lift": {"object_default_z": float(obj.data.default_root_state[0, 2]),
+                     "height": float(getattr(self.cfg, "mimic_lift_height", 0.03))},
+            "hands": hands,
+        })
+        print(f"[mimic] kinematics cache -> {path}", flush=True)
 
     def _joint_values(self, h: dict, values: torch.Tensor, kind: str) -> np.ndarray:
         return np.array([float(values[j["col"]]) * j["scale"] + j["offset"] for j in h[kind]])

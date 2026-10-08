@@ -7,9 +7,10 @@
 
     scripts/teleop_tools/mimicgen.sh <pickle or folder> [...] --num_demos 30 [--subtasks 2] [--seed 1]
 
-Three headless Isaac Sim processes, all on this machine (replay is bit-exact only on the recording machine):
+Three steps on this machine (headless Isaac Sim, except the annotation when the kinematics cache exists):
 
-1. ``scripts/mimic/annotate_pickles.py``: replay the source demos, record palm / object poses and subtask signals
+1. ``scripts/mimic/annotate_pickles.py``: palm / object poses and subtask signals of the source demos, computed
+   from their recorded per-step states (``--replay``: by replaying them)
    -> ``<datasets_dir>/mimicgen/<task>-<robot_type>/<stamp>/annotated.hdf5``
 2. ``scripts/mimic/generate_demos.py``: Isaac Lab Mimic generation until ``--num_demos`` generated demos succeed
    -> ``.../<stamp>/generated.pkl`` (trajectory pickle, same schema as record_demos)
@@ -50,6 +51,8 @@ def main(argv=None):
     ap.add_argument("--second_ref", default="auto",
                     help="object frame of the second subtask (auto: success_marker if the task has one, else object)")
     ap.add_argument("--seed", type=int, default=1)
+    ap.add_argument("--replay", action="store_true",
+                    help="annotate by replaying the demos in the simulator instead of reading their recorded states")
     ap.add_argument("--action_noise", type=float, default=0.002)
     ap.add_argument("--max_num_failures", type=int, default=1000)
     ap.add_argument("--datasets_dir", default=None, help="default: same as record_demos")
@@ -101,7 +104,8 @@ def main(argv=None):
             raise SystemExit(f"[mimicgen] step failed (exit {rc}, no {os.path.basename(product)}), see {log}")
 
     run([python, os.path.join(_REPO, "scripts", "mimic", "annotate_pickles.py"), *pickles, "--output", annotated,
-         "--subtasks", str(args.subtasks), "--headless"], "1_annotate.log", os.path.splitext(annotated)[0] + ".json")
+         "--subtasks", str(args.subtasks), "--headless", *(["--replay"] if args.replay else [])],
+        "1_annotate.log", os.path.splitext(annotated)[0] + ".json")
     run([python, os.path.join(_REPO, "scripts", "mimic", "generate_demos.py"), "--input", annotated,
          "--num_demos", str(args.num_demos), "--output_pickle", generated, "--seed", str(args.seed),
          "--action_noise", str(args.action_noise), "--max_num_failures", str(args.max_num_failures),

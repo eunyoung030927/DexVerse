@@ -199,8 +199,11 @@ scripts/teleop_tools/mimicgen.sh /workspace/local/datasets/trajectories/function
 
 - 인자: pickle 파일 또는 폴더(하위 `*.pkl` 전부). 한 태스크·한 손 종류만 쓴다(폴더에 여러 손이 섞여 있으면 `--robot_type`으로 고름). **녹화한 서버에서 돌릴 것**(재생 재현이 같은 서버에서만 정확).
 - 단계(모두 헤드리스 Isaac Sim, 결과는 `<datasets_dir>/mimicgen/<task>-<robot_type>/<시각>/`):
-  1. `annotate_pickles.py` — 원본 데모를 재생하며 손바닥·물체 자세와 서브태스크 신호를 기록 → `annotated.hdf5`
-     (+ `.json`). 재생에서 성공하지 못한 데모는 건너뛰고 로그에 표시.
+  1. `annotate_pickles.py` — 원본 데모의 손바닥·물체 자세와 서브태스크 신호를 계산 → `annotated.hdf5`(+ `.json`).
+     기본은 **pkl에 기록된 매 스텝 state에서 바로 계산**(Isaac Sim 없이 수 초). 손목 모델은 태스크·손 종류별 캐시
+     (`~/.cache/dexverse/mimic/<task>__<robot_type>.json`, `$DEXVERSE_MIMIC_CACHE`로 변경)를 쓰며, 처음 한 번만 Isaac Sim을
+     띄워 측정한다. `--replay`를 주면 예전처럼 시뮬레이터에서 재생해 기록한다(이 서버에서도 성공하는지 확인 겸용).
+     state가 없는 pickle은 자동으로 재생한다.
   2. `generate_demos.py` — 성공 데모가 `--num_demos`개 될 때까지 생성 → `generated.pkl`(record_demos와 같은 형식)
   3. `pickle_to_lerobot.sh` — 생성 pickle을 LeRobot 데이터셋 `<datasets_dir>/<task>-<robot_type>-mimicgen`으로
      (사람 데모 데이터셋과 분리. `--no_lerobot`이면 2단계에서 멈춤)
@@ -208,12 +211,12 @@ scripts/teleop_tools/mimicgen.sh /workspace/local/datasets/trajectories/function
   기준 좌표계는 `--second_ref auto`(기본) = 태스크에 `success_marker`가 있으면 그것(따르기·놓기 목표), 없으면 물체.
 - 성공 판정은 record_demos와 같다(성공 조건 10스텝 연속, `--num_success_steps`). 생성 시도마다 시뮬레이터를 완전히
   초기화하므로 생성된 데모는 재생 시 **비트 단위로 재현**된다(그래서 LeRobot 변환에서 빠지는 에피소드가 없다).
-- 옵션: `--seed`, `--action_noise`(손목 목표 잡음, 기본 0.002), `--max_num_failures`(기본 1000), `--datasets_dir`.
-- 시간: 시도 1회 약 10초. 성공률은 태스크·데모 품질에 따라 다르다(아래 실측). 30개 생성에 GraspCup 기준 약 25분(주석 4분 + 생성 12분 + LeRobot 변환 9분).
+- 옵션: `--replay`(주석을 재생으로), `--seed`, `--action_noise`(손목 목표 잡음, 기본 0.002), `--max_num_failures`(기본 1000), `--datasets_dir`.
+- 시간: 주석 수 초(캐시 없을 때 처음 1회 약 1분), 생성 시도 1회 약 10초. 성공률은 태스크·데모 품질에 따라 다르다(아래 실측). 30개 생성에 GraspCup 기준 약 25분(재생 주석 4분 + 생성 12분 + LeRobot 변환 9분; pkl 주석이면 주석 2초).
 
 실측(work1, GraspCup v0, 공개 Shadow 데모 20개 → 생성): 20개 전부 주석 → 시도 62회 중 30개 성공(48%) →
   LeRobot 30/30 재현(8740프레임, 사람 데모와 같은 키). ②의 기준을 물체로 두면 6–7%, 서브태스크 1개면 13%였다(5개 생성 시험).
-VR(손 추적) 세션으로 녹화한 pickle로는 아직 검증 전이다(카메라 없이 녹화 → 카메라 켠 재생에서 재현되는지 확인 필요).
+n1에서 VR로 녹화한 PickCube pickle 1개를 work1에서 돌려도 주석 → 생성 10/16 → LeRobot 10/10 재현을 확인했다(2026-10-07).
 
 ## 트러블슈팅
 
