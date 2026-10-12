@@ -55,8 +55,9 @@ else
 fi
 
 echo "=== [setup 4/4] DexVerse robot + object assets (into the checkout, git-ignored) ==="
-# Retargeting does not render: the six hand bundles, core_assets (task objects/scenes) and the ManiTwin object pool
-# (grasping tasks); no HDRIs (per-reset backgrounds are off in the baselines) and no long-horizon meshes.
+# Retargeting does not render: the six hand bundles (every target hand) and core_assets (one bundle: the objects and
+# scenes of the 9 tasks; the Hub zip cannot be subset further). Not the ManiTwin pool (only grasping/base_cfg tasks),
+# no HDRIs (per-reset backgrounds are off in the baselines), no long-horizon meshes.
 ASTAMP="$REPO_DIR/source/dexverse/dexverse/assets/.dexverse_assets_v1.ok"
 if [ -f "$ASTAMP" ]; then
   echo "assets present ($(cat "$ASTAMP"))"
@@ -65,7 +66,7 @@ else
     set -euo pipefail
     P=/isaac-sim/python.sh
     $P scripts/asset_tools/download_robot_agents.py --all
-    $P scripts/asset_tools/download_assets.py --core --mani-twin
+    $P scripts/asset_tools/download_assets.py --core
   ' || { echo "FATAL: asset download failed"; exit 1; }
   date +%F > "$ASTAMP"
 fi
