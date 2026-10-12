@@ -14,7 +14,7 @@ R="$HOME/dexverse/runs/retarget"
   echo "| per (episode, target): status.json, run.log, spider_aK.json / _traj.pkl.gz, spider.* -> the successful one | \`$R/<task>/demos/epNNN/<target>/\` |"
   echo "| stage-1 reference per episode | \`$R/<task>/demos/epNNN/reference.npz\` |"
   echo "| session logs | \`$R/logs/\` |"
-  echo "| progress report | \`$R/report/STATUS.md\` · live: \`$HOME/dexverse/dvr_status_${TASKS// /_}.md\` |"
+  echo "| progress report | \`$HOME/dexverse/runs/report/STATUS.md\` · live: \`$HOME/dexverse/dvr_status_${TASKS// /_}.md\` |"
   echo "| source demos | \`$HOME/dexverse/demos/demonstrations/v1/<category>/<task>/demos.pkl\` |"
   echo "| uploaded pickle | HF \`<ns>/dexverse-<task>-<hand>-retargeting\`: \`demonstrations/v1/<category>/<task>/demos.pkl\` |"
   echo

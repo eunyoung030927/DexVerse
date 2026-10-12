@@ -4,11 +4,11 @@
 #   $HOME/dexverse/dvr_status_<task>.md   (open it in the OOD Files app)
 # and prints a one-line summary into the worker's SLURM log.
 #   monitor.sh WORKER_LOG [INTERVAL]
-# Shows: progress per (task, target) (runs/retarget/report/STATUS.md, written by run_queue.py), success on the first
+# Shows: progress per (task, target) (runs/report/STATUS.md: status_report.py, refreshed by run_queue.py), success on the first
 # attempt vs a retry, the queue's latest lines and errors, GPU memory / utilisation / sessions, MPS server, node /tmp.
 LOG="$1"; INTERVAL="${2:-300}"
 RUNS="$HOME/dexverse/runs/retarget"
-REPORT="$RUNS/report/STATUS.md"
+REPORT="$HOME/dexverse/runs/report/STATUS.md"
 OUT="$HOME/dexverse/dvr_status_${TASKS// /_}.md"            # one file per task (jobs may run side by side)
 LINE='\] \S+ ep[0-9]+ -> \S+: '
 while true; do

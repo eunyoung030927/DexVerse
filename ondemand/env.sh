@@ -53,6 +53,7 @@ export APPTAINERENV_VK_ICD_FILENAMES="$NODE_HOME/nvidia_icd.json"
 export APPTAINERENV___EGL_VENDOR_LIBRARY_FILENAMES="$NODE_HOME/10_nvidia.json"
 export APPTAINERENV_PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export APPTAINERENV_DEXVERSE_RETARGET_RUNS=/workspace/dexverse/runs/retarget
+export APPTAINERENV_DEXVERSE_EXPERIMENTS=/workspace/dexverse/runs/report   # progress tables outside the checkout (git pull stays clean)
 export APPTAINERENV_HF_HUB_DISABLE_PROGRESS_BARS=1         # no tqdm bars in SLURM logs
 if [ -s "$HOME/.hf_token" ]; then
   export APPTAINERENV_HF_TOKEN="$(tr -d '[:space:]' < "$HOME/.hf_token")"

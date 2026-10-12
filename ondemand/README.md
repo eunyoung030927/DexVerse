@@ -102,7 +102,8 @@ OOD Files 앱에서 `~/dexverse/dvr_status_<task>.md`(5분마다 갱신): (태�
 |---|---|
 | (에피소드, 손)별 결과: `status.json`, `run.log`, `spider_aK.json`·`_traj.pkl.gz`, `spider.*` | `~/dexverse/runs/retarget/<task>/demos/epNNN/<target>/` |
 | stage 1 reference | `~/dexverse/runs/retarget/<task>/demos/epNNN/reference.npz` |
-| 세션 로그 · 진행 표 | `~/dexverse/runs/retarget/logs/` · `report/STATUS.md` |
+| 세션 로그 | `~/dexverse/runs/retarget/logs/` |
+| 진행 표 (레포 `experiments/`와 같은 구조: STATUS.md, `<task>/<target>/STATUS.md`·`results.csv`·`config.yaml`) | `~/dexverse/runs/report/` — 결과를 기록할 때 레포 `experiments/`로 복사 |
 | 잡 로그 | 제출 폴더의 `slurm-dvr-main-<job>.out`, `OUTPUTS.md` |
 
 ## 파일

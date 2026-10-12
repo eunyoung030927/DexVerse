@@ -13,8 +13,8 @@ ondemand/retarget_worker.sbatch; it works the same on a plain GPU box.
   (floating_shadow_right -> floating_allegro_right, floating_shadow_bimanual -> floating_allegro_bimanual).
   A robot_type the retargeting does not support yet (dexverse/retarget/hands.py) is skipped with a log line.
 
-  Progress: one line per finished item in this log, and <runs>/report/STATUS.md (task x target counts),
-  rewritten every 2 minutes.
+  Progress: one line per finished item in this log, and experiments/STATUS.md + experiments/<task>/<target>/
+  (init_experiments.py, status_report.py), refreshed every 2 minutes; $DEXVERSE_EXPERIMENTS moves it (cluster).
 
   python scripts/retarget/run_queue.py --tasks Dexverse-GraspBleach-v1 --demos_root demos/demonstrations/v1 \
       --hands allegro leap wuji --gpus 0 --per_gpu 3
@@ -36,7 +36,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 sys.path.insert(0, str(HERE))
-from run_target import episode_dir, runs_root  # noqa: E402
+from run_target import episode_dir, experiments_root, runs_root  # noqa: E402
 
 ALL_HANDS = ["allegro", "inspire", "leap", "sharpa", "wuji"]
 FINAL = {"recorded", "failed_all_attempts", "stage2_failed"}
@@ -60,29 +60,6 @@ def find_demos(root: Path, task: str) -> Path:
 
 def log(msg):
     print(f"[{time.strftime('%F %T')}] {msg}", flush=True)
-
-
-def write_report(items):
-    """<runs>/report/STATUS.md: per (task, target) counts of recorded / failed / running / waiting."""
-    rows = {}
-    for task, demos, ep, tgt in items:
-        st = episode_dir(task, str(demos), ep) / tgt / "status.json"
-        s = json.load(open(st)).get("state", "?") if st.exists() else "waiting"
-        r = rows.setdefault((task, tgt), {"recorded": 0, "failed": 0, "running": 0, "waiting": 0})
-        key = {"recorded": "recorded", "failed_all_attempts": "failed", "stage2_failed": "failed",
-               "waiting": "waiting"}.get(s, "running")
-        r[key] += 1
-    out = runs_root() / "report" / "STATUS.md"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    lines = [f"updated {time.strftime('%F %T')}", "", "| task | target | recorded | failed | running | waiting |",
-             "|---|---|---|---|---|---|"]
-    tot = {"recorded": 0, "failed": 0, "running": 0, "waiting": 0}
-    for (task, tgt), r in sorted(rows.items()):
-        lines.append(f"| {task} | {tgt} | {r['recorded']} | {r['failed']} | {r['running']} | {r['waiting']} |")
-        for k in tot:
-            tot[k] += r[k]
-    lines += ["", "Total: " + ", ".join(f"{k} {v}" for k, v in tot.items())]
-    out.write_text("\n".join(lines) + "\n")
 
 
 def main():
@@ -131,8 +108,8 @@ def main():
             except subprocess.TimeoutExpired:
                 return 124
 
-    # (task, demos, source robot_type) and the full item list (for the report)
-    plan, items = [], []
+    # (task, demos, source robot_type, episodes, targets)
+    plan = []
     for task in a.tasks:
         demos = find_demos(Path(a.demos_root), task)
         with open(demos, "rb") as f:
@@ -150,15 +127,24 @@ def main():
             targets.append(rt)
         eps = [e for e in a.episodes if e < n_eps]
         plan.append((task, demos, src, eps, targets))
-        items += [(task, demos, e, t) for e in eps for t in targets]
         log(f"{task}: source {src}, {len(eps)} episodes x targets {targets}")
 
     stop = threading.Event()
     if not a.dry_run:
+        import status_report  # noqa: PLC0415
+        subprocess.run([py, str(HERE / "init_experiments.py"), "--demos_root", a.demos_root, "--tasks", *a.tasks,
+                        "--hands", *a.hands])
+
+        def report():
+            try:
+                status_report.write(experiments_root(), status_report.collect(runs_root()), runs_root())
+            except Exception as e:  # noqa: BLE001  (a report error must not stop the queue)
+                log(f"status report failed: {e}")
+
         def reporter():
             while not stop.wait(120):
-                write_report(items)
-        write_report(items)
+                report()
+        report()
         threading.Thread(target=reporter, daemon=True).start()
 
     def target_job(task, demos, ep, tgt, gpu):
@@ -209,7 +195,7 @@ def main():
         th.join()
     stop.set()
     if not a.dry_run:
-        write_report(items)
+        report()
     log("ALL DONE")
 
 

@@ -35,6 +35,11 @@ def runs_root() -> Path:
     return Path(os.environ.get("DEXVERSE_RETARGET_RUNS") or REPO / "results" / "retarget")
 
 
+def experiments_root() -> Path:
+    """Tracked progress tables (experiments/); the cluster points DEXVERSE_EXPERIMENTS outside the checkout."""
+    return Path(os.environ.get("DEXVERSE_EXPERIMENTS") or REPO / "experiments")
+
+
 def episode_dir(task: str, demos: str, episode: int) -> Path:
     """Same layout as dexverse.retarget.paths.run_dir (kept import-free: no Isaac Sim here)."""
     return runs_root() / task.split(":")[-1] / Path(demos).stem / f"ep{episode:03d}"
