@@ -68,6 +68,7 @@ app = AppLauncher(args).app
 import numpy as np  # noqa: E402
 import torch  # noqa: E402
 
+from dexverse.benchmark import action_layout  # noqa: E402
 from dexverse.retarget import env as renv_mod  # noqa: E402
 from dexverse.retarget import paths  # noqa: E402
 from dexverse.retarget.env import to_numpy_state  # noqa: E402
@@ -270,6 +271,7 @@ def main():
     traj["success"] = list(env.success.history)
     traj["initial_state"] = state0
     traj["joint_names"] = renv.joint_names
+    traj["action_layout"] = action_layout(renv.env)        # the target hand's env action (stage 4 metadata)
     with gzip.open(out_dir / f"{args.tag}_traj.pkl.gz", "wb") as fh:
         pickle.dump(traj, fh)
     json.dump(res, open(res_path, "w"), indent=1)

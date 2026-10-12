@@ -1,0 +1,217 @@
+# Copyright (c) 2025-2026, The DexVerse Project Developers.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
+"""Retarget whole tasks: a queue of (task, episode, target hand) items spread over the GPUs, PER_GPU at once.
+
+Per episode: stage 1 once (in a free slot), then scripts/retarget/run_target.py per target hand (stage 2, SPIDER
+with retries). Finished items are skipped, so the command can be stopped and re-run. The cluster runs it from
+ondemand/retarget_worker.sbatch; it works the same on a plain GPU box.
+
+  Targets: --hands are hand families; each becomes the source's robot_type with the hand swapped
+  (floating_shadow_right -> floating_allegro_right, floating_shadow_bimanual -> floating_allegro_bimanual).
+  A robot_type the retargeting does not support yet (dexverse/retarget/hands.py) is skipped with a log line.
+
+  Progress: one line per finished item in this log, and <runs>/report/STATUS.md (task x target counts),
+  rewritten every 2 minutes.
+
+  python scripts/retarget/run_queue.py --tasks Dexverse-GraspBleach-v1 --demos_root demos/demonstrations/v1 \
+      --hands allegro leap wuji --gpus 0 --per_gpu 3
+
+Memory: one SPIDER process with 1024 samples takes a few GB of VRAM; a CUDA OOM corrupts PhysX state.
+"""
+
+import argparse
+import importlib.util
+import json
+import os
+import pickle
+import subprocess
+import sys
+import threading
+import time
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+REPO = HERE.parents[1]
+sys.path.insert(0, str(HERE))
+from run_target import episode_dir, runs_root  # noqa: E402
+
+ALL_HANDS = ["allegro", "inspire", "leap", "sharpa", "wuji"]
+FINAL = {"recorded", "failed_all_attempts", "stage2_failed"}
+
+
+def supported_robot_types() -> set[str]:
+    """Robot types with a retargeting hand spec; hands.py is pure Python, loaded without the dexverse package."""
+    spec = importlib.util.spec_from_file_location("hands", REPO / "source/dexverse/dexverse/retarget/hands.py")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["hands"] = mod                                 # dataclasses look the module up while decorating
+    spec.loader.exec_module(mod)
+    return set(mod.HANDS)
+
+
+def find_demos(root: Path, task: str) -> Path:
+    hits = sorted(root.glob(f"*/{task}/demos.pkl"))
+    if not hits:
+        raise FileNotFoundError(f"no {root}/*/{task}/demos.pkl")
+    return hits[0]
+
+
+def log(msg):
+    print(f"[{time.strftime('%F %T')}] {msg}", flush=True)
+
+
+def write_report(items):
+    """<runs>/report/STATUS.md: per (task, target) counts of recorded / failed / running / waiting."""
+    rows = {}
+    for task, demos, ep, tgt in items:
+        st = episode_dir(task, str(demos), ep) / tgt / "status.json"
+        s = json.load(open(st)).get("state", "?") if st.exists() else "waiting"
+        r = rows.setdefault((task, tgt), {"recorded": 0, "failed": 0, "running": 0, "waiting": 0})
+        key = {"recorded": "recorded", "failed_all_attempts": "failed", "stage2_failed": "failed",
+               "waiting": "waiting"}.get(s, "running")
+        r[key] += 1
+    out = runs_root() / "report" / "STATUS.md"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    lines = [f"updated {time.strftime('%F %T')}", "", "| task | target | recorded | failed | running | waiting |",
+             "|---|---|---|---|---|---|"]
+    tot = {"recorded": 0, "failed": 0, "running": 0, "waiting": 0}
+    for (task, tgt), r in sorted(rows.items()):
+        lines.append(f"| {task} | {tgt} | {r['recorded']} | {r['failed']} | {r['running']} | {r['waiting']} |")
+        for k in tot:
+            tot[k] += r[k]
+    lines += ["", "Total: " + ", ".join(f"{k} {v}" for k, v in tot.items())]
+    out.write_text("\n".join(lines) + "\n")
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--tasks", nargs="+", required=True, help="task ids, e.g. Dexverse-GraspBleach-v1")
+    ap.add_argument("--demos_root", default=str(REPO / "demos" / "demonstrations" / "v1"),
+                    help="<root>/<category>/<task>/demos.pkl (the release layout)")
+    ap.add_argument("--episodes", type=int, nargs="+", default=list(range(50)), help="source episode indices")
+    ap.add_argument("--hands", nargs="+", default=ALL_HANDS, help=f"target hand families (default {ALL_HANDS})")
+    ap.add_argument("--gpus", nargs="+", default=["0"])
+    ap.add_argument("--per_gpu", type=int, default=2, help="concurrent sessions per GPU")
+    ap.add_argument("--max_attempts", type=int, default=3)
+    ap.add_argument("--spider_args", default="")
+    ap.add_argument("--seed_offset", type=int, default=0)
+    ap.add_argument("--retry_failed", action="store_true",
+                    help="also re-run items that ended failed_all_attempts (new attempts if --max_attempts grew)")
+    ap.add_argument("--dry_run", action="store_true")
+    a = ap.parse_args()
+
+    py = os.environ.get("PY", sys.executable)
+    supported = supported_robot_types()
+    final = FINAL - {"failed_all_attempts"} if a.retry_failed else FINAL
+    free = [g for g in a.gpus for _ in range(a.per_gpu)]
+    lock = threading.Condition()
+    logdir = runs_root() / "logs"
+    logdir.mkdir(parents=True, exist_ok=True)
+    env_base = {**os.environ, "PY": py,
+                "PYTHONPATH": f"{REPO / 'source' / 'dexverse'}:{os.environ.get('PYTHONPATH', '')}"}
+
+    def acquire():
+        with lock:
+            while not free:
+                lock.wait()
+            return free.pop(0)
+
+    def release(g):
+        with lock:
+            free.append(g)
+            lock.notify()
+
+    def run(cmd, gpu, logf, timeout):
+        with open(logf, "a") as f:
+            try:
+                return subprocess.run(list(map(str, cmd)), stdout=f, stderr=subprocess.STDOUT, cwd=REPO, timeout=timeout,
+                                      env={**env_base, "CUDA_VISIBLE_DEVICES": str(gpu)}).returncode
+            except subprocess.TimeoutExpired:
+                return 124
+
+    # (task, demos, source robot_type) and the full item list (for the report)
+    plan, items = [], []
+    for task in a.tasks:
+        demos = find_demos(Path(a.demos_root), task)
+        with open(demos, "rb") as f:
+            d = pickle.load(f)
+        src, n_eps = d["robot_type"], len(d["episodes"])
+        del d
+        targets = []
+        for hand in a.hands:
+            rt = src.replace(src.split("_")[1], hand, 1)              # floating_<hand>_<right|left|bimanual>
+            if rt == src:
+                continue
+            if rt not in supported:
+                log(f"skip {task} -> {rt}: not supported by the retargeting yet (dexverse/retarget/hands.py)")
+                continue
+            targets.append(rt)
+        eps = [e for e in a.episodes if e < n_eps]
+        plan.append((task, demos, src, eps, targets))
+        items += [(task, demos, e, t) for e in eps for t in targets]
+        log(f"{task}: source {src}, {len(eps)} episodes x targets {targets}")
+
+    stop = threading.Event()
+    if not a.dry_run:
+        def reporter():
+            while not stop.wait(120):
+                write_report(items)
+        write_report(items)
+        threading.Thread(target=reporter, daemon=True).start()
+
+    def target_job(task, demos, ep, tgt, gpu):
+        try:
+            cmd = [py, "-u", HERE / "run_target.py", "--task", task, "--demos", demos, "--episode", ep, "--target", tgt,
+                   "--max_attempts", a.max_attempts, "--spider_args", a.spider_args, "--seed_offset", a.seed_offset]
+            run(cmd, gpu, logdir / f"{task}_ep{ep:03d}_{tgt}.log", 72 * 3600)
+            st = episode_dir(task, str(demos), ep) / tgt / "status.json"
+            log(f"{task} ep{ep} -> {tgt}: {json.load(open(st)).get('state') if st.exists() else 'no status'}")
+        finally:
+            release(gpu)
+
+    threads = []
+    for task, demos, src, eps, targets in plan:
+        for ep in eps:
+            todo = []
+            for tgt in targets:
+                st = episode_dir(task, str(demos), ep) / tgt / "status.json"
+                if st.exists() and json.load(open(st)).get("state") in final:
+                    continue
+                todo.append(tgt)
+            if not todo:
+                continue
+            ref = episode_dir(task, str(demos), ep) / "reference.npz"
+            if not ref.exists():
+                if a.dry_run:
+                    log(f"would run stage 1 for {task} ep{ep}")
+                else:
+                    gpu = acquire()
+                    log(f"stage 1 {task} ep{ep} on GPU {gpu}")
+                    run([py, "-u", HERE / "stage1_reference.py", "--task", task, "--demos", demos, "--episode", ep,
+                              "--headless", "--device", "cuda:0"], gpu, logdir / f"{task}_ep{ep:03d}_stage1.log", 3600)
+                    release(gpu)
+                    if not ref.exists():                   # (Isaac scripts can exit 0 after an exception)
+                        log(f"stage 1 failed for {task} ep{ep} (see logs/)")
+                        continue
+            for tgt in todo:
+                if a.dry_run:
+                    log(f"would run {task} ep{ep} {src} -> {tgt}")
+                    continue
+                gpu = acquire()
+                log(f"start {task} ep{ep} {src} -> {tgt} on GPU {gpu}")
+                th = threading.Thread(target=target_job, args=(task, demos, ep, tgt, gpu))
+                th.start()
+                threads.append(th)
+                time.sleep(10)                       # stagger Kit start-ups
+    for th in threads:
+        th.join()
+    stop.set()
+    if not a.dry_run:
+        write_report(items)
+    log("ALL DONE")
+
+
+if __name__ == "__main__":
+    main()

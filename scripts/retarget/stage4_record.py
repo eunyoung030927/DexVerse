@@ -44,7 +44,7 @@ def main():
     base = paths.runs_root() / args.task.split(":")[-1] / os.path.splitext(os.path.basename(args.demos))[0]
     eps = args.episodes if args.episodes is not None else sorted(
         int(p.name[2:]) for p in base.glob("ep[0-9][0-9][0-9]") if (p / args.target / f"{args.tag}.json").exists())
-    episodes, skipped = [], []
+    episodes, skipped, layout = [], [], None
     for i in eps:
         d = base / f"ep{i:03d}" / args.target
         res_path = d / f"{args.tag}.json"
@@ -57,6 +57,7 @@ def main():
             continue
         with gzip.open(d / f"{args.tag}_traj.pkl.gz", "rb") as fh:
             traj = pickle.load(fh)
+        layout = traj.get("action_layout", layout)
         n = int(res["success_frame"]) + 1                          # actions up to the held-success frame
         sep = src["episodes"][i]
         episodes.append({
@@ -68,6 +69,8 @@ def main():
                                 "method": "spider", "seed": res.get("seed"), "result": str(res_path)},
         })
     meta = {k: v for k, v in src.items() if k not in ("episodes", "num_episodes", "release_provenance")}
+    if layout is not None:                                         # the source's layout is the source hand's
+        meta["action_layout"] = layout
     meta.update(robot_type=args.target, num_episodes=len(episodes),
                 retarget={"source_robot_type": src["robot_type"], "source_demos": os.path.abspath(args.demos),
                           "replay": "states (stage 3 restores a snapshot every commit; do not replay actions)"})

@@ -129,3 +129,4 @@ env.sh
 
 # cross-hand retargeting outputs
 results/
+!ondemand/env.sh

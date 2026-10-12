@@ -7,8 +7,9 @@
 
 Fingertips are always listed thumb, index, middle, ring, little; a hand without a finger has ``None`` in
 that slot (a four-finger target simply has no target for the source's little finger). Body names are the
-ones the hand's own ``robot_agents/<hand>/floating.py`` declares; the wrist is the six virtual joints
-(``x/y/z_translation_joint``, ``x/y/z_rotation_joint``) every single floating hand carries.
+ones the hand's own ``robot_agents/<hand>/floating.py`` declares; the wrist is the six virtual joints, named
+``x/y/z_translation_joint`` + ``x/y/z_rotation_joint`` (Shadow, Allegro, LEAP) or ``<side>_x/y/z_joint`` +
+``<side>_roll/pitch/yaw_joint`` (Wuji, Sharpa).
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from dataclasses import dataclass
 FINGERS = ("thumb", "index", "middle", "ring", "little")
 WRIST_TRANS = ("x_translation_joint", "y_translation_joint", "z_translation_joint")
 WRIST_ROT = ("x_rotation_joint", "y_rotation_joint", "z_rotation_joint")
+WRIST_RIGHT = ("right_x_joint", "right_y_joint", "right_z_joint", "right_roll_joint", "right_pitch_joint", "right_yaw_joint")
 
 
 @dataclass(frozen=True)
@@ -25,10 +27,11 @@ class HandSpec:
     robot_type: str
     palm: str
     tips: tuple[str | None, str | None, str | None, str | None, str | None]
+    wrist: tuple[str, ...] = WRIST_TRANS + WRIST_ROT
 
     @property
     def wrist_joints(self) -> tuple[str, ...]:
-        return WRIST_TRANS + WRIST_ROT
+        return self.wrist
 
     def tip_slots(self) -> list[int]:
         """Finger slots (0 = thumb .. 4 = little) this hand has a tip for."""
@@ -44,7 +47,11 @@ HANDS: dict[str, HandSpec] = {
         "floating_leap_right", "palm_lower", ("thumb_fingertip", "fingertip", "fingertip_2", "fingertip_3", None)
     ),
     "floating_wuji_right": HandSpec(
-        "floating_wuji_right", "right_palm_link", tuple(f"right_finger{i}_tip_link" for i in range(1, 6))
+        "floating_wuji_right", "right_palm_link", tuple(f"right_finger{i}_tip_link" for i in range(1, 6)), WRIST_RIGHT
+    ),
+    "floating_sharpa_right": HandSpec(
+        "floating_sharpa_right", "right_hand_C_MC",
+        tuple(f"right_{f}_fingertip" for f in ("thumb", "index", "middle", "ring", "pinky")), WRIST_RIGHT
     ),
 }
 
