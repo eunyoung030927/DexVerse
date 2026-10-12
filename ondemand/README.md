@@ -24,13 +24,13 @@ retargeting은 상태를 입력으로 쓰므로 그대로 진행할 수 있다(`
 |---|---|---|
 | 1 | 클러스터 파이프라인 (`ondemand/`, `scripts/retarget/run_queue.py`·`run_target.py`·`upload_task.py`) | 완료. 로컬(GraspBleach-v1 ep0, SPIDER 90프레임 축소)에서 큐 → stage 1–3 → 상태 기록 → stage 4 pickle → 업로드 판정(dry run) → 그 pickle의 상태 재생까지 확인. 클러스터에서는 아직 안 돌림 |
 | 2 | **Sharpa** 지원: `hands.py`에 손바닥·손끝 바디, `right_*` 손목 관절 | 추가함. stage 1–3 동작 확인(stage 2 손끝 오차 평균 0.05 cm), 전체 길이 성공은 미확인 |
-| 3 | **Inspire** 지원: 관절 18개 중 6개가 mimic(따라 움직이는 관절, action은 12). stage 2 IK를 action 12개 기준으로 풀고 mimic 관절은 연동식으로 채움 (Bench2Dex RH56DFX `coupling` 방식) | 미구현 |
+| 3 | **Inspire** 지원: 관절 18개 중 6개가 mimic(따라 움직이는 관절, action은 12). stage 2 IK를 action 12개 기준으로 풀고 mimic 관절은 연동식으로 채움 (Bench2Dex RH56DFX `coupling` 방식) | 구현함 (2026-10-13). `hands.py`에 Inspire 오른손·양손 스펙 + URDF `<mimic>` 계수(driver→mimic 비율·오프셋), stage 2는 mimic을 뺀 관절(손목 6 + driver 6 = action 12)만 변수로 풀고 mimic은 `q = C x + d`로 채움. 계수·홈 자세는 CPU에서 확인, Isaac 실행은 미확인(로컬 GPU 불가) → 클러스터 continuation job에서 첫 검증 |
 | 4 | **양손** 지원 (태스크 4개): `hands.py`에 `floating_<hand>_bimanual` 스펙(손별 손목 6관절·손끝 10개), stage 1–3를 손 개수에 대해 일반화 | 구현함 (2026-10-12). Allegro·LEAP·Sharpa·Wuji 양손; 로컬에서 LiftCarton ep15 stage 1–3 배관 확인 |
 | 5 | 각 (태스크, 손)을 로컬에서 에피소드 1개로 끝까지 검증한 뒤 클러스터 제출 | 한 손 태스크 × Allegro/LEAP/Sharpa/Wuji부터 (Wuji는 손목 관절 이름 수정 후 stage 1–3 동작) |
 | 6 | `env_check`: 클러스터에서 TASKS 하나, EPISODES=1로 먼저 돌려 셋업·다운로드·stage 1–3 확인 | 제출 전 |
 
-지원하지 않는 손은 큐가 `skip ... not supported` 한 줄을 남기고 건너뛴다. 그래서 지금 제출하면 9개 태스크 × Allegro·LEAP·Sharpa·Wuji(36 조합)가 돈다.
-Inspire(3)가 들어가면 같은 잡을 다시 제출하면 된다(끝난 것은 건너뜀).
+지원하지 않는 손은 큐가 `skip ... not supported` 한 줄을 남기고 건너뛴다. 2026-10-13부터 5개 손 모두 지원(9 × 5 = 45 조합).
+`dd78096`으로 시작한 잡은 Inspire를 건너뛰고, continuation job(포크를 다시 pull)부터 Inspire 항목이 큐에 들어간다.
 
 주의: DexVerse README에 따르면 `BimanualLiftTray-v1`에서 Allegro/LEAP 양손은 명령한 손목·손가락 응답이 부족했다(v0는 통과).
 

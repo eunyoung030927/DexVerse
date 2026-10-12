@@ -33,6 +33,9 @@ class Hand:
     palm: str
     tips: tuple[str | None, str | None, str | None, str | None, str | None]
     wrist: tuple[str, str, str, str, str, str]
+    # underactuated hands: (joint, driver joint, multiplier, offset) -- joint = multiplier * driver + offset, the
+    # URDF <mimic> that the USD keeps as a PhysX mimic constraint. Stage 2 solves only the drivers.
+    mimic: tuple[tuple[str, str, float, float], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -58,6 +61,10 @@ class HandSpec:
         """Wrist joints of every hand, 6 per hand, hand-major."""
         return tuple(j for h in self.hands for j in h.wrist)
 
+    @property
+    def mimic(self) -> tuple[tuple[str, str, float, float], ...]:
+        return tuple(m for h in self.hands for m in h.mimic)
+
     def tip_slots(self) -> list[int]:
         """Slots (5 * hand + finger) this robot has a fingertip for."""
         return [i for i, b in enumerate(self.tips) if b is not None]
@@ -73,13 +80,13 @@ def _w(pattern: tuple[str, ...], side_prefix: str) -> tuple[str, ...]:
     return tuple(p.format(s=side_prefix) for p in pattern)
 
 
-def _single(robot_type, palm, tips, wrist) -> HandSpec:
-    return HandSpec(robot_type, (Hand("right", palm, tuple(tips), tuple(wrist)),))
+def _single(robot_type, palm, tips, wrist, mimic=()) -> HandSpec:
+    return HandSpec(robot_type, (Hand("right", palm, tuple(tips), tuple(wrist), tuple(mimic)),))
 
 
-def _bimanual(robot_type, palms, tips_by_side, wrist_by_side) -> HandSpec:
-    return HandSpec(robot_type, tuple(Hand(s, palms[i], tuple(tips_by_side[i]), tuple(wrist_by_side[i]))
-                                      for i, s in enumerate(SIDES)))
+def _bimanual(robot_type, palms, tips_by_side, wrist_by_side, mimic_by_side=((), ())) -> HandSpec:
+    return HandSpec(robot_type, tuple(Hand(s, palms[i], tuple(tips_by_side[i]), tuple(wrist_by_side[i]),
+                                           tuple(mimic_by_side[i])) for i, s in enumerate(SIDES)))
 
 
 _ALLEGRO = ("link_15_0_tip", "link_3_0_tip", "link_7_0_tip", "link_11_0_tip", None)   # thumb, index, middle, ring
@@ -87,10 +94,20 @@ _LEAP = ("thumb_fingertip", "fingertip", "fingertip_2", "fingertip_3", None)
 _SHADOW = ("thtip", "fftip", "mftip", "rftip", "lftip")
 _SHARPA = ("thumb_fingertip", "index_fingertip", "middle_fingertip", "ring_fingertip", "pinky_fingertip")
 _WUJI = tuple(f"finger{i}_tip_link" for i in range(1, 6))
+_INSPIRE = ("thumb_tip", "index_tip", "middle_tip", "ring_tip", "pinky_tip")
+# robot_agents/inspire/floating_inspire_hand_right/*.urdf <mimic> (6 drivers, 6 mimics; both hands alike)
+_INSPIRE_MIMIC = (("thumb_intermediate_joint", "thumb_proximal_pitch_joint", 1.334, 0.0),
+                  ("thumb_distal_joint", "thumb_proximal_pitch_joint", 0.667, 0.0),
+                  *((f"{f}_intermediate_joint", f"{f}_proximal_joint", 1.06399, -0.04545)
+                    for f in ("index", "middle", "ring", "pinky")))
 
 
 def _pre(tips, prefix):
     return tuple(None if t is None else prefix + t for t in tips)
+
+
+def _pre_mimic(mimic, prefix):
+    return tuple((prefix + j, prefix + d, m, b) for j, d, m, b in mimic)
 
 
 HANDS: dict[str, HandSpec] = {
@@ -100,6 +117,7 @@ HANDS: dict[str, HandSpec] = {
     "floating_leap_right": _single("floating_leap_right", "palm_lower", _LEAP, _w(WRIST_XYZ, "")),
     "floating_wuji_right": _single("floating_wuji_right", "right_palm_link", _pre(_WUJI, "right_"), _w(WRIST_RPY, "right_")),
     "floating_sharpa_right": _single("floating_sharpa_right", "right_hand_C_MC", _pre(_SHARPA, "right_"), _w(WRIST_RPY, "right_")),
+    "floating_inspire_right": _single("floating_inspire_right", "hand_base_link", _INSPIRE, _w(WRIST_XYZ, ""), _INSPIRE_MIMIC),
     # ---- bimanual (right, left)
     "floating_shadow_bimanual": _bimanual(
         "floating_shadow_bimanual", ("rh_palm", "lh_palm"), (_pre(_SHADOW, "rh_"), _pre(_SHADOW, "lh_")),
@@ -116,8 +134,10 @@ HANDS: dict[str, HandSpec] = {
     "floating_sharpa_bimanual": _bimanual(
         "floating_sharpa_bimanual", ("right_hand_C_MC", "left_hand_C_MC"), (_pre(_SHARPA, "right_"), _pre(_SHARPA, "left_")),
         (_w(WRIST_RPY, "right_"), _w(WRIST_RPY, "left_"))),
-    # Inspire (right / bimanual): 6 mimic joints per hand that the action does not command; stage 2 needs the
-    # coupling before it can be a target, so it is left out on purpose (run_queue.py skips it).
+    "floating_inspire_bimanual": _bimanual(
+        "floating_inspire_bimanual", ("right_hand_base_link", "left_hand_base_link"),
+        (_pre(_INSPIRE, "right_"), _pre(_INSPIRE, "left_")), (_w(WRIST_TRANS_ROT, "right_"), _w(WRIST_TRANS_ROT, "left_")),
+        (_pre_mimic(_INSPIRE_MIMIC, "right_"), _pre_mimic(_INSPIRE_MIMIC, "left_"))),
 }
 
 

@@ -71,6 +71,17 @@ class RetargetEnv:
             device=self.device)
         lim = self.robot.data.soft_joint_pos_limits[0]
         self.q_lo, self.q_hi = lim[:, 0].clone(), lim[:, 1].clone()
+        # mimic coupling q = C x + d over the free (non-mimic) joints x; identity for fully actuated hands
+        mimic = {self.joint_names.index(j): (self.joint_names.index(drv), m, b) for j, drv, m, b in self.spec.mimic}
+        self.mimic_ids = torch.tensor(sorted(mimic), dtype=torch.long, device=self.device)
+        self.free_ids = torch.tensor([i for i in range(len(self.joint_names)) if i not in mimic],
+                                     dtype=torch.long, device=self.device)
+        self.C = torch.zeros(len(self.joint_names), len(self.free_ids), device=self.device)
+        self.d = torch.zeros(len(self.joint_names), device=self.device)
+        col = {int(i): k for k, i in enumerate(self.free_ids.tolist())}
+        self.C[self.free_ids, torch.arange(len(self.free_ids), device=self.device)] = 1.0
+        for j, (drv, m, b) in mimic.items():
+            self.C[j, col[drv]], self.d[j] = m, b
         self.q_target = self.robot.data.joint_pos.clone()
         # task objects: dynamic rigid objects and the links of non-robot articulations
         self.objects: dict[str, RigidObject | Articulation] = {}
@@ -124,6 +135,10 @@ class RetargetEnv:
             a = self.objects[k]
             out.append(a.root_physx_view.link_paths[0][i] if k in self.art_ids else a.root_physx_view.prim_paths[0])
         return out
+
+    def expand(self, x: torch.Tensor) -> torch.Tensor:
+        """Free-joint values (..., n_free) -> full joint vector (..., n_joints), mimic joints following."""
+        return x @ self.C.T + self.d
 
     # ----------------------------------------------------------------- state
     def get_state(self):

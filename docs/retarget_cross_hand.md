@@ -68,7 +68,9 @@ SPIDER의 확정 실행은 커밋(15프레임)마다 스냅샷을 복원하며 �
   (`hands.py`). 양손 로봇은 손마다 손바닥·손끝 5슬롯·손목 관절 6개를 갖고(오른손, 왼손 순), 손끝 슬롯 `5·손 + 손가락`으로
   소스 오른손 → 목표 오른손, 왼손 → 왼손으로 맞춘다. stage 2는 손목 12 + 손가락 관절을 한 번에 풀고, stage 3 잔차는
   손목 12 + 명령되는 손가락 관절 전부에 걸린다. action이 명령하지 않는 관절(Sharpa 양손의 head 6개)은 잔차를 받지 않는다.
-- mimic 관절이 있는 손(inspire: 관절 18개 중 action 12개)은 아직 없다 — stage 2에 연동식이 필요하다.
+- mimic 관절이 있는 손(Inspire: 손당 관절 18개 중 action 12개): `hands.py`의 `Hand.mimic`에 URDF `<mimic>` 계수를 두고,
+  `RetargetEnv`가 `q = C x + d`(x = mimic이 아닌 관절)를 만든다. stage 2는 x만 변수로 풀고(유한차분도 x 위에서), 저장되는
+  `q`는 mimic까지 채운 전체 벡터다. stage 3는 물리 스텝이라 PhysX mimic 제약이 그대로 잡고, 잔차는 driver에만 걸린다.
 - 물체: 동적 rigid object와 로봇이 아닌 articulation(링크 단위). 테이블·`success_marker`는 접촉 대상에서 뺀다.
 
 ## 결과

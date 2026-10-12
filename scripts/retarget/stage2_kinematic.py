@@ -11,7 +11,9 @@ right hand to right hand and left to left). Tips in contact weigh 10, free tips 
 softly on the source palm's rotation from its home pose, applied to the target's home palm (every floating hand
 homes palm-down over the table, which is what the teleop retargeter assumes too); a small pull keeps each frame
 near the previous one, and frames are solved in order, each warm-started from the last. All wrists and fingers of
-the robot are solved together (12 wrist + 2 x finger joints for a bimanual target).
+the robot are solved together (12 wrist + 2 x finger joints for a bimanual target). An underactuated hand's mimic
+joints (Inspire: 6 per hand, ``hands.py``) are not variables: they follow their driver, ``q = C x + d``, exactly
+as the PhysX mimic constraint holds them in the task.
 
 Kinematics come from the target hand's own USD in the simulator: the Jacobian is a finite difference over N =
 joints + 1 copies of the hand written kinematically (no physics step), so nothing collides and nothing moves
@@ -69,14 +71,16 @@ def main():
     H = meta.get("n_hands", 1)
     if H != hands.get(args.target).n_hands:
         raise RuntimeError(f"source has {H} hand(s), target {args.target} {hands.get(args.target).n_hands}")
-    env, _ = renv.build(args.task, args.target, 64 if H == 1 else 72, args.device, gravity=False)   # >= joints + 1
+    env, _ = renv.build(args.task, args.target, 64 if H == 1 else 72, args.device, gravity=False)   # >= free + 1
     dev, names = env.device, env.joint_names
-    J = len(names)
+    free = env.free_ids                                               # IK variables: every non-mimic joint
+    J = len(free)
     assert env.num_envs >= J + 1, (env.num_envs, J)
     fd_ids = torch.arange(J + 1, device=dev)
+    x_lo, x_hi = env.q_lo[free], env.q_hi[free]
     slots = [s for s in env.slots if s in meta["source_slots"]]
     sel = [env.slots.index(s) for s in slots]                       # rows of env.tips() used
-    print(f"target {args.target}: {J} joints, fingers {slots}; limits "
+    print(f"target {args.target}: {len(names)} joints ({J} free, {len(env.mimic_ids)} mimic), fingers {slots}; limits "
           + ", ".join(f"{n} [{env.q_lo[i]:.2f},{env.q_hi[i]:.2f}]" for i, n in enumerate(names[:6])), flush=True)
 
     t = lambda a: torch.as_tensor(np.asarray(a), dtype=torch.float32, device=dev)
@@ -86,6 +90,7 @@ def main():
 
     home = env.robot.data.default_joint_pos[0].clone()
     env.teleport(q=home)
+    home = home[free]
     tgt_home_q = env.palm_pose()[0, :, 3:7].clone()                                   # (H,4)
     # palm rotation target per hand: the source palm's rotation from its home, applied to the target's home palm
     d_rot = quat_mul(src_palm[:, :, 3:7].reshape(-1, 4), quat_conjugate(src_home[:, 3:7]).repeat(T, 1))
@@ -94,9 +99,9 @@ def main():
     eye = torch.eye(J, device=dev)
     probe_dx = torch.cat([args.eps * eye, torch.zeros(1, J, device=dev)], 0)   # env J = the point itself
 
-    def features(q):
-        """q (J+1,J) -> tips (J+1,F*3), palm quats (J+1,H,4)."""
-        env.teleport(q=q, env_ids=fd_ids)
+    def features(x):
+        """free joints x (J+1,J) -> tips (J+1,F*3), palm quats (J+1,H,4)."""
+        env.teleport(q=env.expand(x), env_ids=fd_ids)
         return env.tips()[: J + 1, sel].reshape(J + 1, -1), env.palm_pose()[: J + 1, :, 3:7]
 
     def rot_err(qa, qb):
@@ -106,7 +111,7 @@ def main():
 
     def solve(f, x, x_reg, iters):
         for _ in range(iters):
-            q = torch.max(torch.min(x[None] + probe_dx, env.q_hi), env.q_lo)
+            q = torch.max(torch.min(x[None] + probe_dx, x_hi), x_lo)
             tips, quat = features(q)
             base_tips, base_quat = tips[J], quat[J]
             dq = q[:J] - q[J]
@@ -119,7 +124,7 @@ def main():
             e = torch.cat([e_tip, e_rot, W_REG * (x_reg - x)])
             Jx = torch.cat([Jt * w[:, None], W_PALM_ROT * Jr, W_REG * eye])
             H = Jx.T @ Jx + DAMPING * eye
-            x = torch.max(torch.min(x + torch.linalg.solve(H, Jx.T @ e), env.q_hi), env.q_lo)
+            x = torch.max(torch.min(x + torch.linalg.solve(H, Jx.T @ e), x_hi), x_lo)
         return x
 
     xs = [solve(0, home, home, args.iters0)]
@@ -127,7 +132,7 @@ def main():
         xs.append(solve(f, xs[-1], xs[-1], args.iters))
         if f % 50 == 0:
             print(f"  frame {f}/{T}", flush=True)
-    q = torch.stack(xs)
+    q = env.expand(torch.stack(xs))                                   # (T, n_joints), mimic joints filled in
 
     tips_all, palm_all = [], []
     for s in range(0, T, env.num_envs):
@@ -147,7 +152,7 @@ def main():
            "tip_err_cm_per_finger": [round(100 * v, 2) for v in err.mean(0).tolist()],
            "palm_rot_err_deg_mean": [round(float(np.degrees(v)), 1) for v in rot_e.mean(0).tolist()],
            "q_jump_max_rad": round((q[1:] - q[:-1]).abs().max().item(), 3),
-           "at_limit_frac": round(((q <= env.q_lo + 1e-4) | (q >= env.q_hi - 1e-4)).float().mean().item(), 3),
+           "at_limit_frac": round(((q[:, free] <= x_lo + 1e-4) | (q[:, free] >= x_hi - 1e-4)).float().mean().item(), 3),
            "fingers": slots}
     out_dir.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(out, q=q.cpu().numpy(), joint_names=np.array(names), tips=tips5.cpu().numpy(),

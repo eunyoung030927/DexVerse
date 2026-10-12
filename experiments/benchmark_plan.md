@@ -31,7 +31,7 @@ Joints / action dims / fingertips from `scripts/retarget/check_hand_in_task.py` 
 |---|---|---|---|
 | Shadow (source) | 28 / 28 / 5 | 56 / 56 / 10 | source |
 | Allegro | 22 / 22 / 4 | 44 / 44 / 8 | yes |
-| Inspire | 18 / 12 / 5 (6 mimic joints) | 36 / 24 / 10 | no (needs mimic coupling in stage 2) |
+| Inspire | 18 / 12 / 5 (6 mimic joints) | 36 / 24 / 10 | yes (2026-10-13: stage 2 solves the 12 non-mimic joints, mimics follow the URDF coupling; Isaac run not yet verified) |
 | LEAP | 22 / 22 / 4 | 44 / 44 / 8 | yes |
 | Sharpa Wave | 28 / 28 / 5 | 62 / 56 / 10 (6 head joints, no residual) | yes (stage 1-3 tested) |
 | Wuji | 26 / 26 / 5 | 52 / 52 / 10 | yes |
@@ -70,7 +70,9 @@ Cluster: `ondemand/` (README there), tasks one job each, strictly in order.
 - Full-length result so far: GraspCup **v0** ep0 -> Allegro, success (2.3 cm mean cup error, 35.8 min, 4 backtracks).
 - Not started: any full-length v1 episode, the cluster run.
 - Bimanual targets implemented 2026-10-12 (per-hand palms / tips / wrists, slot = 5 * hand + finger); plumbing tested on LiftCarton-v1 ep15.
-- To do: Inspire (mimic coupling), per-pair 1-episode check, cluster `EPISODES=1` run.
+- Inspire coupling added 2026-10-13 (coefficients and home pose checked on CPU; first Isaac run on the cluster).
+- Cluster: first `main_job.sbatch` submitted 2026-10-13 08:45 KST with the defaults (9 tasks x 50 episodes, 4 hands at dd78096).
+- To do: per-pair 1-episode check of Inspire.
 
 ## 6. Compute estimate (rough, from one episode)
 

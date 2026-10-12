@@ -11,7 +11,7 @@ ondemand/retarget_worker.sbatch; it works the same on a plain GPU box.
 
   Targets: --hands are hand families; each becomes the source's robot_type with the hand swapped
   (floating_shadow_right -> floating_allegro_right, floating_shadow_bimanual -> floating_allegro_bimanual).
-  A robot_type the retargeting does not support yet (dexverse/retarget/hands.py) is skipped with a log line.
+  A robot_type without a spec in dexverse/retarget/hands.py is skipped with a log line (none of the 5 hands today).
 
   Progress: one line per finished item in this log, and experiments/STATUS.md + experiments/<task>/<target>/
   (init_experiments.py, status_report.py), refreshed every 2 minutes; $DEXVERSE_EXPERIMENTS moves it (cluster).
