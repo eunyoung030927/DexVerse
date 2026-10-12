@@ -70,7 +70,11 @@ def main():
     ap.add_argument("--episodes", type=int, nargs="+", default=list(range(50)), help="source episode indices")
     ap.add_argument("--hands", nargs="+", default=ALL_HANDS, help=f"target hand families (default {ALL_HANDS})")
     ap.add_argument("--gpus", nargs="+", default=["0"])
-    ap.add_argument("--per_gpu", type=int, default=2, help="concurrent sessions per GPU")
+    ap.add_argument("--per_gpu", type=int, default=2, help="max concurrent sessions per GPU")
+    ap.add_argument("--min_free_gb", type=float, default=0.0,
+                    help="start a session on a GPU only if this much VRAM is free there (0: slots only). Sessions "
+                         "started in the last 2 min count as --session_gb each, since they have not allocated yet")
+    ap.add_argument("--session_gb", type=float, default=6.0, help="VRAM one SPIDER session ends up using")
     ap.add_argument("--max_attempts", type=int, default=3)
     ap.add_argument("--spider_args", default="")
     ap.add_argument("--seed_offset", type=int, default=0)
@@ -89,11 +93,38 @@ def main():
     env_base = {**os.environ, "PY": py,
                 "PYTHONPATH": f"{REPO / 'source' / 'dexverse'}:{os.environ.get('PYTHONPATH', '')}"}
 
+    recent = []                                              # (time, gpu) of sessions started in the last 2 min
+
+    def free_vram_gb():
+        """Free VRAM per entry of --gpus (nvidia-smi rows in the same order as the job's GPUs); None if unknown."""
+        try:
+            out = subprocess.run(["nvidia-smi", "--query-gpu=memory.free", "--format=csv,noheader,nounits"],
+                                 capture_output=True, text=True, timeout=30).stdout.split()
+            rows = [float(x) / 1024 for x in out]
+            return dict(zip(a.gpus, rows)) if len(rows) >= len(a.gpus) else None
+        except Exception:  # noqa: BLE001
+            return None
+
     def acquire():
+        """A free slot, on the GPU with the most usable VRAM; waits while every GPU is full. Items are offered in
+        queue order (task 1's episodes first, then task 2, ...), so the GPUs fill in that order without idling."""
         with lock:
-            while not free:
-                lock.wait()
-            return free.pop(0)
+            while True:
+                if free:
+                    if a.min_free_gb <= 0:
+                        return free.pop(0)
+                    now = time.time()
+                    recent[:] = [(t, g) for t, g in recent if now - t < 120]
+                    vram = free_vram_gb()
+                    if vram is None:
+                        return free.pop(0)
+                    usable = {g: vram[g] - a.session_gb * sum(1 for _, x in recent if x == g) for g in set(free)}
+                    best = max(usable, key=usable.get)
+                    if usable[best] >= a.min_free_gb:
+                        free.remove(best)
+                        recent.append((now, best))
+                        return best
+                lock.wait(timeout=30)                        # re-check VRAM every 30 s
 
     def release(g):
         with lock:

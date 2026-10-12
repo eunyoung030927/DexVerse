@@ -25,7 +25,7 @@ from isaaclab.utils.math import quat_apply
 from . import hands
 
 # Rigid objects that are part of the set, not of the task: never contact targets, never manipulated.
-STATIC_PREFIXES = ("table", "success_marker", "ground")
+STATIC_PREFIXES = ("table", "success_marker", "ground", "goal")   # goal_frame / goal_pad: markers
 
 
 def build(task: str, robot_type: str, num_envs: int, device: str, *, gravity: bool = True):
@@ -57,13 +57,18 @@ class RetargetEnv:
         self.robot: Articulation = self.scene["robot"]
         self.joint_names = list(self.robot.joint_names)
         bodies = list(self.robot.body_names)
-        self.palm_id = bodies.index(self.spec.palm)
-        self.slots = self.spec.tip_slots()
+        self.n_hands = self.spec.n_hands
+        self.palm_ids = torch.tensor([bodies.index(p) for p in self.spec.palms], device=self.device)
+        self.slots = self.spec.tip_slots()                 # 5 * hand + finger, over the robot's hands
         self.tip_ids = torch.tensor([bodies.index(self.spec.tips[s]) for s in self.slots], device=self.device)
         self.wrist_ids = torch.tensor([self.joint_names.index(j) for j in self.spec.wrist_joints], device=self.device)
+        self._action_map = self._build_action_map()
+        # finger joints = every joint the env action commands that is not a wrist joint (a joint the action does
+        # not command -- Sharpa bimanual's head, Inspire's mimic joints -- is never given a residual)
+        commanded = {j for j, _, _, _ in self._action_map}
         self.finger_ids = torch.tensor(
-            [i for i, n in enumerate(self.joint_names) if n not in self.spec.wrist_joints], device=self.device
-        )
+            [i for i, n in enumerate(self.joint_names) if i in commanded and n not in self.spec.wrist_joints],
+            device=self.device)
         lim = self.robot.data.soft_joint_pos_limits[0]
         self.q_lo, self.q_hi = lim[:, 0].clone(), lim[:, 1].clone()
         self.q_target = self.robot.data.joint_pos.clone()
@@ -83,7 +88,6 @@ class RetargetEnv:
                 self.bodies += [(k, b, i) for i, b in enumerate(a.body_names)]
             else:
                 self.bodies.append((k, k, 0))
-        self._action_map = self._build_action_map()
 
     # ----------------------------------------------------------------- reads
     def origins(self):
@@ -94,9 +98,9 @@ class RetargetEnv:
         return self.robot.data.body_pos_w[:, self.tip_ids] - self.origins()[:, None]
 
     def palm_pose(self) -> torch.Tensor:
-        """(N, 7) palm pose."""
-        return torch.cat([self.robot.data.body_pos_w[:, self.palm_id] - self.origins(),
-                          self.robot.data.body_quat_w[:, self.palm_id]], -1)
+        """(N, n_hands, 7) palm pose per hand (right, then left)."""
+        return torch.cat([self.robot.data.body_pos_w[:, self.palm_ids] - self.origins()[:, None],
+                          self.robot.data.body_quat_w[:, self.palm_ids]], -1)
 
     def object_body_poses(self) -> torch.Tensor:
         o = self.origins()

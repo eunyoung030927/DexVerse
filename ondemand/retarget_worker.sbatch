@@ -1,5 +1,6 @@
 #!/bin/bash
-# Two pro6000 GPUs, CUDA MPS on, PER_GPU (default 10) retargeting sessions per GPU at once.
+# Two pro6000 GPUs, CUDA MPS on, one queue over all TASKS: a new session starts whenever a slot is free (up to PER_GPU
+# per GPU) and that GPU still has MIN_FREE_GB of VRAM; items are offered in TASKS order (task 1 first).
 # Run by ondemand/main_job.sbatch inside its own allocation (bash, not sbatch); can also be submitted on its own to
 # resume a task whose demos are already downloaded (sbatch --export=ALL,TASKS=Dexverse-GraspBleach-v1 ...).
 #
@@ -8,13 +9,13 @@
 # the attempt schedule). Stage 1 runs once per episode in a free slot. Finished items are skipped, failed ones get
 # new attempts if MAX_ATTEMPTS grew, so resubmitting resumes. No rendering, no upload (finalize.sbatch decides).
 #
-# Progress: $HOME/dexverse/dvr_status_<task>.md (OOD Files app), rewritten every 5 min by ondemand/monitor.sh.
+# Progress: $HOME/dexverse/dvr_status.md (OOD Files app), rewritten every 5 min by ondemand/monitor.sh.
 #
 #SBATCH --job-name=dvr-retarget
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:pro6000:2
-#SBATCH --cpus-per-task=32
-#SBATCH --mem=192G
+#SBATCH --cpus-per-task=48
+#SBATCH --mem=320G
 #SBATCH --time=3-00:00:00
 #SBATCH --output=slurm-dvr-retarget-%j.out
 
@@ -26,7 +27,9 @@ sync_repo
 cd "$REPO_DIR"
 EPISODES="${EPISODES:-50}"
 HANDS="${HANDS:-allegro inspire leap sharpa wuji}"
-PER_GPU="${PER_GPU:-10}"
+PER_GPU="${PER_GPU:-16}"
+MIN_FREE_GB="${MIN_FREE_GB:-10}"
+SESSION_GB="${SESSION_GB:-6}"
 MAX_ATTEMPTS="${MAX_ATTEMPTS:-3}"
 echo "=== dvr-retarget: [$TASKS] eps 0..$(( EPISODES - 1 )) hands [$HANDS] on $(hostname), CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-?} $(date) ==="
 nvidia-smi --query-gpu=index,name,uuid,memory.total --format=csv,noheader
@@ -57,17 +60,17 @@ for cand in "0 1" "$(echo "${CUDA_VISIBLE_DEVICES:-}" | tr ',' ' ')"; do
   if [ "${#u[@]}" -eq 2 ] && [ -n "${u[0]}" ] && [ -n "${u[1]}" ] && [ "${u[0]}" != "${u[1]}" ]; then GPUS="$cand"; break; fi
 done
 [ -n "$GPUS" ] || { echo "FATAL: could not address two distinct GPUs"; exit 1; }
-echo "sessions use CUDA_VISIBLE_DEVICES in [$GPUS], $PER_GPU per GPU, MPS=$MPS"
+echo "sessions use CUDA_VISIBLE_DEVICES in [$GPUS], up to $PER_GPU per GPU while >= $MIN_FREE_GB GB free, MPS=$MPS"
 
 # ------------------------------------------------------------------ queue
 bash "$CODE_DIR/outputs_note.sh" || true     # OUTPUTS.md in the job folder: where the results go
 MYLOG="$(scontrol show job "${SLURM_JOB_ID:-0}" 2>/dev/null | grep -o 'StdOut=[^ ]*' | cut -d= -f2)"
 bash "$CODE_DIR/monitor.sh" "${MYLOG:-/dev/null}" "${MONITOR_S:-300}" &
 MON=$!
-echo "live status: $HOME/dexverse/dvr_status_${TASKS// /_}.md (every ${MONITOR_S:-300} s)"
+echo "live status: $HOME/dexverse/dvr_status.md (every ${MONITOR_S:-300} s)"
 "${ISAAC[@]}" env PY="$PY" "$PY" scripts/retarget/run_queue.py --tasks $TASKS --demos_root "$DEMOS_ROOT" \
   --episodes $(seq 0 $(( EPISODES - 1 ))) --hands $HANDS \
-  --gpus $GPUS --per_gpu "$PER_GPU" --max_attempts "$MAX_ATTEMPTS" --spider_args "${SPIDER_ARGS:-}" --retry_failed
+  --gpus $GPUS --per_gpu "$PER_GPU" --min_free_gb "$MIN_FREE_GB" --session_gb "$SESSION_GB" --max_attempts "$MAX_ATTEMPTS" --spider_args "${SPIDER_ARGS:-}" --retry_failed
 
 kill "$MON" 2>/dev/null || true
 timeout 20 bash "$CODE_DIR/monitor.sh" "${MYLOG:-/dev/null}" 99999 || true     # final snapshot

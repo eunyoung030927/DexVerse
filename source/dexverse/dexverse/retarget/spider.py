@@ -7,8 +7,9 @@
 
 Ported from bench2dex_retarget retarget/spider_env.py (SPIDER v2). Control per env:
 
-  wrist    a residual on the six virtual wrist joints around the kinematic reference
+  wrist    a residual on the six virtual wrist joints of every hand around the kinematic reference
            (``wrist_trans_scale`` m, ``wrist_rot_scale`` rad per unit action) -- a floating hand needs no IK.
+           Action layout: [wrist of hand 0 (6), wrist of hand 1 (6), ...] then every commanded finger joint.
   fingers  a residual on every finger joint, +-``finger_res_cap`` rad around the reference.
   gate     residuals are faded in only around the frames the hand manipulates something
            (``gate_margin``, ``gate_ramp``); elsewhere the hand replays the reference.
@@ -79,7 +80,10 @@ class SpiderEnv:
         self.update_command()
         self.wrist_ids = renv.wrist_ids
         self.finger_ids = renv.finger_ids
-        self.n_act = 6 + len(self.finger_ids)
+        self.n_wrist = len(self.wrist_ids)                                # 6 per hand
+        self.n_act = self.n_wrist + len(self.finger_ids)
+        self.wrist_scale = torch.tensor(([cfg.wrist_trans_scale] * 3 + [cfg.wrist_rot_scale] * 3) * renv.n_hands,
+                                        device=dev)
         self.actions = torch.zeros(self.num_envs, self.n_act, device=dev)
         self.res = torch.zeros(self.num_envs, len(renv.joint_names), device=dev)
         self.frame = torch.zeros(self.num_envs, dtype=torch.long, device=dev)
@@ -162,10 +166,9 @@ class SpiderEnv:
             return
         g = self.gate[f1][:, None]
         a = self.actions * g
-        scale = torch.tensor([cfg.wrist_trans_scale] * 3 + [cfg.wrist_rot_scale] * 3, device=self.device)
         res = torch.zeros_like(e.q_target)
-        res[:, self.wrist_ids] = scale * a[:, :6]
-        res[:, self.finger_ids] = cfg.finger_res_cap * a[:, 6:]
+        res[:, self.wrist_ids] = self.wrist_scale * a[:, : self.n_wrist]
+        res[:, self.finger_ids] = cfg.finger_res_cap * a[:, self.n_wrist:]
         # the low-pass acts on the residual only: filtering the whole target (Bench2Dex) would add ~0.25 s of
         # lag to the moving reference on top of the PD lag
         self.res = cfg.action_ema * self.res + (1.0 - cfg.action_ema) * res

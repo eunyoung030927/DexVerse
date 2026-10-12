@@ -1,7 +1,7 @@
 #!/bin/bash
 # Live status of a running retargeting worker -- started BY the worker in the background (nothing to type on the
 # cluster). Every INTERVAL seconds (default 300) it rewrites
-#   $HOME/dexverse/dvr_status_<task>.md   (open it in the OOD Files app)
+#   $HOME/dexverse/dvr_status.md   (open it in the OOD Files app)
 # and prints a one-line summary into the worker's SLURM log.
 #   monitor.sh WORKER_LOG [INTERVAL]
 # Shows: progress per (task, target) (runs/report/STATUS.md: status_report.py, refreshed by run_queue.py), success on the first
@@ -9,7 +9,7 @@
 LOG="$1"; INTERVAL="${2:-300}"
 RUNS="$HOME/dexverse/runs/retarget"
 REPORT="$HOME/dexverse/runs/report/STATUS.md"
-OUT="$HOME/dexverse/dvr_status_${TASKS// /_}.md"            # one file per task (jobs may run side by side)
+OUT="$HOME/dexverse/dvr_status.md"            # one dvr job at a time
 LINE='\] \S+ ep[0-9]+ -> \S+: '
 while true; do
   fin=$(grep -cE "$LINE" "$LOG" 2>/dev/null || true)

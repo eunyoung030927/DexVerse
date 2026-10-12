@@ -8,33 +8,35 @@
 #   2. git sync   clone or fast-forward $HOME/dexverse/DexVerse, the fork eunyoung030927/DexVerse, branch
 #                 retarget/shadow-cross-hand (this pipeline is its ondemand/ folder)
 #   3. setup      Isaac Sim 5.1 SIF (Bench2Dex's if present), Isaac Lab v2.3.2, DexVerse + deps, robot/object assets
-#   4. fetch      the task's released v1 demos (dexverse/DexVerse_release; skips what is there)
-#   5. retarget   IN THIS JOB, on the 2 pro6000 GPUs it holds: CUDA MPS, PER_GPU (10) sessions per GPU = 20 at once,
-#                 through every (episode, target hand): SPIDER (v2 settings, 60 Hz) until the task's own success term
-#                 holds 10 steps, up to MAX_ATTEMPTS (ondemand/retarget_worker.sbatch -> scripts/retarget/run_queue.py
-#                 -> run_target.py; no rendering on the cluster)
-#   6. upload     IN THIS JOB (ondemand/finalize.sbatch): per target hand, the successful runs become one trajectory
-#                 pickle (record_demos format) pushed to <ns>/dexverse-<task>-<hand>-retargeting ONLY if all
+#   4. fetch      the released v1 demos of every task in TASKS (dexverse/DexVerse_release; skips what is there)
+#   5. retarget   IN THIS JOB, on the 2 pro6000 GPUs it holds, ONE queue over all TASKS: items are (task, episode,
+#                 target hand) in TASKS order, so free GPU capacity is filled with task 1's items first, then task 2's,
+#                 ... without waiting for a task to finish. A new session starts whenever a slot is free (PER_GPU per
+#                 GPU) and that GPU has MIN_FREE_GB of VRAM left; CUDA MPS. Each item: SPIDER (v2 settings, 60 Hz)
+#                 until the task's own success term holds 10 steps, up to MAX_ATTEMPTS
+#                 (ondemand/retarget_worker.sbatch -> scripts/retarget/run_queue.py -> run_target.py; no rendering)
+#   6. upload     IN THIS JOB (ondemand/finalize.sbatch): per (task, target hand), the successful runs become one
+#                 trajectory pickle (record_demos format) pushed to <ns>/dexverse-<task>-<hand>-retargeting ONLY if all
 #                 EPISODES source episodes succeeded
 #
-# Live status: ~/dexverse/dvr_status_<task>.md (OOD Files app), rewritten every 5 min; summary lines in this log.
+# Walltime: at its start the job queues a continuation of itself (--dependency=afterany on this job). If this job
+# finishes every item, it cancels the continuation; if it hits the walltime, the continuation resumes the queue
+# (finished items are skipped). At most MAX_CHAIN jobs in a row. To stop: cancel the running job AND the queued one.
+#
+# Live status: ~/dexverse/dvr_status.md (OOD Files app), rewritten every 5 min; summary lines in this log.
 #
 # Everything after step 2 is read from the pulled fork, so edits to scripts/retarget/, source/ and ondemand/*.sh
-# only need a push. Only an edit to THIS file needs re-pasting.
-#
-# Intended use: submit ONCE; the tasks of TASK_QUEUE run one after another, one job each, all 50 source episodes.
-# Resubmitting is always safe: finished stages and successful episodes are skipped; a job that starts while another
-# job on the same task runs requeues itself behind it. To stop the chain, cancel the running job AND the queued one.
+# only need a push. Only an edit to THIS file needs re-pasting. Resubmitting is always safe.
 #
 # Knobs (sbatch --export=ALL,KNOB=value, or edit the defaults below):
-#   TASK_QUEUE="Dexverse-GraspBleach-v1 ..."  (TASKS=<task> runs one task alone)  HANDS="allegro wuji"  EPISODES=50
-#   MAX_ATTEMPTS=3  PER_GPU=10  MPS_ON=1  SPIDER_ARGS="" (v2)  PARALLEL=0  UPLOAD=1  HF_NAMESPACE (default: token's user)
+#   TASKS="Dexverse-GraspBleach-v1 ..." (order = fill order)  HANDS="allegro wuji"  EPISODES=50  MAX_ATTEMPTS=3
+#   PER_GPU=16  MIN_FREE_GB=10  SESSION_GB=6  MPS_ON=1  SPIDER_ARGS="" (v2)  UPLOAD=1  HF_NAMESPACE  MAX_CHAIN=10
 #
 #SBATCH --job-name=dvr-main
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:pro6000:2        # held from the start through download, retargeting and upload
-#SBATCH --cpus-per-task=32
-#SBATCH --mem=192G
+#SBATCH --cpus-per-task=48          # up to 32 sessions x ~1.4 cores (Bench2Dex measurement)
+#SBATCH --mem=320G                  # up to 32 sessions x ~6.6 GB + headroom
 #SBATCH --time=3-00:00:00
 #SBATCH --output=slurm-dvr-main-%j.out
 
@@ -45,35 +47,23 @@ echo "=== dvr-main start: $(date) on $(hostname) ==="
 
 REPO_URL="${REPO_URL:-https://github.com/eunyoung030927/DexVerse.git}"
 export REPO_BRANCH="${REPO_BRANCH:-retarget/shadow-cross-hand}"
-# Tasks run one per job, in this order: this job takes the first, and right at its start queues the next job for
-# the rest (--dependency=afterany on this one), so the chain goes on even if a task fails or hits the walltime.
-ALONE=0; [ -n "${TASKS:-}" ] && [ -z "${TASK_QUEUE:-}" ] && ALONE=1      # TASKS=<task> alone: no chain
-TASK_QUEUE="${TASK_QUEUE:-Dexverse-GraspBleach-v1 Dexverse-GraspPan-v1 Dexverse-GraspKettle-v1 Dexverse-FunctionalPourMug-v1 Dexverse-FunctionalHammerStrike-v1 Dexverse-BimanualLiftTray-v1 Dexverse-BimanualLiftCarton-v1 Dexverse-SlideUtilityKnife-v1 Dexverse-OpenFlatFolder-v1}"
-export TASKS="${TASKS:-${TASK_QUEUE%% *}}"
+export TASKS="${TASKS:-Dexverse-GraspBleach-v1 Dexverse-GraspPan-v1 Dexverse-GraspKettle-v1 Dexverse-FunctionalPourMug-v1 Dexverse-FunctionalHammerStrike-v1 Dexverse-BimanualLiftTray-v1 Dexverse-BimanualLiftCarton-v1 Dexverse-SlideUtilityKnife-v1 Dexverse-OpenFlatFolder-v1}"
 export HANDS="${HANDS:-allegro inspire leap sharpa wuji}"   # target hand families; unsupported ones are skipped with a log line
-REST="$(echo " $TASK_QUEUE " | sed "s/ $TASKS / /" | xargs)"
-[ "$ALONE" = 1 ] && REST=""
 export EPISODES="${EPISODES:-50}"
-echo "task $TASKS now (hands: $HANDS); queued after it: [${REST:-none}]"
+export PER_GPU="${PER_GPU:-16}" MIN_FREE_GB="${MIN_FREE_GB:-10}" SESSION_GB="${SESSION_GB:-6}"
+CHAIN_N="${CHAIN_N:-1}"; MAX_CHAIN="${MAX_CHAIN:-10}"
+echo "tasks (fill order): $TASKS"
+echo "hands: $HANDS · episodes 0..$(( EPISODES - 1 )) · up to $PER_GPU sessions/GPU while >= ${MIN_FREE_GB} GB VRAM free · job $CHAIN_N/$MAX_CHAIN of the chain"
 
-# Jobs for different tasks may run side by side; a job that finds another RUNNING job on the same task requeues
-# itself behind it. PARALLEL=0 (default): one dvr job at a time, so the tasks run strictly one after another.
-LOCK="$HOME/dexverse/locks/${TASKS}.jobid"; mkdir -p "$(dirname "$LOCK")"
-if [ "${PARALLEL:-0}" = "1" ]; then
-  BUSY="$(cat "$LOCK" 2>/dev/null || true)"
-  [ -n "$BUSY" ] && [ "$BUSY" != "${SLURM_JOB_ID:-0}" ] && squeue -h -j "$BUSY" -t R 2>/dev/null | grep -q . || BUSY=""
-else
-  BUSY="$(squeue -h -u "$USER" -t R -o '%i %j' 2>/dev/null | awk -v me="${SLURM_JOB_ID:-0}" '$1 != me && $2 ~ /^dvr-(main|retarget)/ {print $1}' | head -1)"
-fi
+# One dvr job at a time: a job that finds another RUNNING one requeues itself behind it.
+SELF="$(scontrol show job "${SLURM_JOB_ID:-0}" 2>/dev/null | grep -o 'Command=[^ ]*' | cut -d= -f2)"
+[ -r "$SELF" ] || SELF="$0"                      # this very file (the pasted one)
+BUSY="$(squeue -h -u "$USER" -t R -o '%i %j' 2>/dev/null | awk -v me="${SLURM_JOB_ID:-0}" '$1 != me && $2 ~ /^dvr-(main|retarget)/ {print $1}' | head -1)"
 if [ -n "$BUSY" ]; then
-  SELF="$(scontrol show job "${SLURM_JOB_ID:-0}" 2>/dev/null | grep -o 'Command=[^ ]*' | cut -d= -f2)"
-  [ -r "$SELF" ] || SELF="$0"
-  NEXT="$(sbatch --parsable --chdir="${SLURM_SUBMIT_DIR:-$PWD}" --dependency="afterany:$BUSY" \
-          --export=ALL,TASK_QUEUE="$TASK_QUEUE",TASKS="$TASKS" "$SELF")"
-  echo "dvr job $BUSY is running on $TASKS: requeued as job $NEXT after it; exiting"
+  NEXT="$(sbatch --parsable --chdir="${SLURM_SUBMIT_DIR:-$PWD}" --dependency="afterany:$BUSY" --export=ALL,CHAIN_N="$CHAIN_N" "$SELF")"
+  echo "dvr job $BUSY is running: requeued as job $NEXT after it; exiting"
   exit 0
 fi
-echo "${SLURM_JOB_ID:-$$}" > "$LOCK"
 
 echo "=== [1/6] preflight ==="
 [ -s "$HOME/.hf_token" ] || { echo "FATAL: ~/.hf_token missing or empty. Create it in the OOD Files app."; exit 1; }
@@ -98,25 +88,35 @@ fi
 # shellcheck source=/dev/null
 source "$D/ondemand/env.sh"
 echo "DexVerse fork @ $(GIT -C "$REPO_DIR" rev-parse --short HEAD) ($REPO_BRANCH)"
-if [ -n "$REST" ]; then      # queue the next task now (from the freshly pulled copy of this file)
-  NEXT="$(sbatch --parsable --chdir="${SLURM_SUBMIT_DIR:-$PWD}" --dependency="afterany:${SLURM_JOB_ID}" \
-          --export=ALL,TASK_QUEUE="$REST",TASKS="${REST%% *}" "$CODE_DIR/main_job.sbatch")"
-  echo "next task ${REST%% *} queued as job $NEXT (runs after this one); then [$(echo " $REST " | sed "s/ ${REST%% *} / /" | xargs)]"
+CONT=""
+if [ "$CHAIN_N" -lt "$MAX_CHAIN" ]; then     # continuation in case this job hits the walltime (from the pulled copy)
+  CONT="$(sbatch --parsable --chdir="${SLURM_SUBMIT_DIR:-$PWD}" --dependency="afterany:${SLURM_JOB_ID}" \
+          --export=ALL,CHAIN_N="$(( CHAIN_N + 1 ))" "$CODE_DIR/main_job.sbatch")"
+  echo "continuation queued as job $CONT (cancelled below if this job finishes the queue)"
 fi
 
 echo "=== [3/6] setup ==="
 # shellcheck source=/dev/null
 source "$CODE_DIR/setup.sh"
 
-echo "=== [4/6] fetch: [$TASKS] demos ==="
+echo "=== [4/6] fetch: demos of [$TASKS] ==="
 export APPTAINERENV_TASKS="$TASKS"
 "${ISAAC[@]}" "$PY" ondemand/fetch_data.py
 
-echo "=== [5/6] retarget (this job, 2 GPUs) ==="
+echo "=== [5/6] retarget (this job, 2 GPUs, one queue over all tasks) ==="
 bash "$CODE_DIR/retarget_worker.sbatch" || echo "[warn] retargeting ended with an error (see above); deciding the upload anyway"
 
-echo "=== [6/6] upload (all-or-nothing per target hand) ==="
+echo "=== [6/6] upload (all-or-nothing per task and target hand) ==="
 if [ "${UPLOAD:-1}" = "1" ]; then
   bash "$CODE_DIR/finalize.sbatch" || echo "[warn] upload step failed"
+fi
+
+# Queue finished? (no item left that is neither recorded nor out of attempts) -> no continuation needed.
+LEFT="$("${ISAAC[@]}" "$PY" scripts/retarget/run_queue.py --tasks $TASKS --demos_root "$DEMOS_ROOT" \
+        --episodes $(seq 0 $(( EPISODES - 1 ))) --hands $HANDS --dry_run 2>/dev/null | grep -c "would run" || true)"
+if [ -n "$CONT" ] && [ "${LEFT:-1}" = "0" ]; then
+  scancel "$CONT" && echo "queue finished: continuation job $CONT cancelled"
+else
+  echo "items left: ${LEFT:-?}${CONT:+ -> continuation job $CONT resumes them}"
 fi
 echo "=== dvr-main done: $(date) ==="

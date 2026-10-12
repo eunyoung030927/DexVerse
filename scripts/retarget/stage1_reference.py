@@ -11,13 +11,14 @@ everything the later stages need is read from the same USDs the benchmark simula
 
   body_pose      (T,B,7)  every task-object body (rigid objects; each link of a non-robot articulation)
   obj_root       (T,O,7)  task-object root poses (as recorded)
-  src_tips       (T,5,3)  source fingertips thumb..little (NaN where the source hand has no such finger)
-  src_palm       (T,7)    source palm pose;  src_palm_home (7,) at the hand's home joints
-  contact_body   (T,5)    body each tip touches (-1: none), surface within 2 cm
-  contact_local  (T,5,3)  closest surface point, in that body's frame
+  src_tips       (T,K,3)  source fingertips, slot 5*hand+finger (thumb..little; NaN where the hand has no such
+                          finger); K = 5 for a single hand, 10 for a bimanual robot (right, then left)
+  src_palm       (T,H,7)  source palm pose per hand;  src_palm_home (H,7) at the robot's home joints
+  contact_body   (T,K)    body each tip touches (-1: none), surface within 2 cm
+  contact_local  (T,K,3)  closest surface point, in that body's frame
   active         (T,)     body the hand manipulates: moving, and within 3 cm of a tip
 
-Ported from bench2dex_retarget tools/retarget/stage1_reference.py (single floating hand, DexVerse states).
+Ported from bench2dex_retarget tools/retarget/stage1_reference.py (floating hands, single or bimanual, DexVerse states).
 
   python scripts/retarget/stage1_reference.py --task Dexverse-GraspCup-v0 \
       --demos <demos.pkl> --episode 0 --headless
@@ -75,6 +76,7 @@ def main():
     env, _ = renv.build(args.task, src_type, min(args.chunk, T), args.device, gravity=False)
     dev, N = env.device, env.num_envs
     spec = env.spec
+    K = 5 * spec.n_hands                                              # fingertip slots over the robot's hands
 
     import omni.usd  # noqa: PLC0415
 
@@ -94,19 +96,19 @@ def main():
     tips_h, palm, body, roots = (torch.cat(x) for x in (tips, palm, body, roots))
     # palm at the hand's home joints: stage 2 maps palm rotations through each hand's home pose
     env.teleport(q=env.robot.data.default_joint_pos[0], env_ids=torch.arange(1, device=dev))
-    palm_home = env.palm_pose()[0]
+    palm_home = env.palm_pose()[0]                                    # (H,7)
     rec = np.stack([np.asarray(s["rigid_object"][env.obj_ids[0]]["root_pose"]).reshape(-1)
                     for s in states]) if env.obj_ids and env.obj_ids[0] not in env.art_ids else None
     if rec is not None:
         print(f"written vs recorded root of {env.obj_ids[0]}: "
               f"{100 * np.abs(roots[:, 0, :3].cpu().numpy() - rec[:, :3]).max():.4f} cm max", flush=True)
-    tips5 = torch.full((T, 5, 3), float("nan"), device=dev)
+    tips5 = torch.full((T, K, 3), float("nan"), device=dev)
     tips5[:, env.slots] = tips_h
 
     # contacts: signed distance of every tip to every body surface
     B = len(env.bodies)
-    dist = torch.full((T, 5, B), float("inf"), device=dev)
-    local = torch.zeros(T, 5, B, 3, device=dev)
+    dist = torch.full((T, K, B), float("inf"), device=dev)
+    local = torch.zeros(T, K, B, 3, device=dev)
     have = torch.isfinite(tips5[..., 0])
     for bi, m in enumerate(meshes):
         if m is None:
@@ -115,9 +117,9 @@ def main():
         Fc = torch.as_tensor(m[1], device=dev)
         p, qb = body[:, bi, :3], body[:, bi, 3:7]
         rel = (torch.nan_to_num(tips5, nan=1e3) - p[:, None]).reshape(-1, 3)
-        loc = quat_apply(quat_conjugate(qb).repeat_interleave(5, 0), rel)
+        loc = quat_apply(quat_conjugate(qb).repeat_interleave(K, 0), rel)
         d, cpt = geometry.signed_distance(loc, V, Fc)
-        dist[:, :, bi], local[:, :, bi] = d.reshape(T, 5), cpt.reshape(T, 5, 3)
+        dist[:, :, bi], local[:, :, bi] = d.reshape(T, K), cpt.reshape(T, K, 3)
     dist = geometry.effective_distance(dist)
     dist[~have] = float("inf")
     dmin, nearest = dist.min(-1)
@@ -159,7 +161,8 @@ def main():
             "n_frames": T, "fps": fps, "obj_ids": env.obj_ids, "bodies": names,
             "body_obj": [env.obj_ids.index(k) for k, _, _ in env.bodies],
             "art": {k: list(env.objects[k].joint_names) for k in env.art_ids},
-            "segments": segs, "fingers": list(hands.FINGERS), "source_slots": env.slots}
+            "segments": segs, "fingers": list(hands.FINGERS), "n_hands": spec.n_hands,
+            "hands": [h.side for h in spec.hands], "source_slots": env.slots}
     arrays = {"body_pose": body, "obj_root": roots, "src_tips": tips5, "src_palm": palm, "src_palm_home": palm_home,
               "contact_body": contact_body, "contact_local": contact_local, "contact_dist": dmin}
     arrays = {k: v.cpu().numpy() for k, v in arrays.items()}
@@ -171,7 +174,7 @@ def main():
     np.savez_compressed(out_dir / "meshes.npz", **{f"{i}/v": m[0] for i, m in enumerate(meshes) if m is not None},
                         **{f"{i}/f": m[1] for i, m in enumerate(meshes) if m is not None})
     ct = (arrays["contact_body"] >= 0).mean(0)
-    print(f"contact fraction per finger {dict(zip(hands.FINGERS, np.round(ct, 2).tolist()))}")
+    print(f"contact fraction per finger {dict(zip([spec.slot_name(i) for i in range(K)], np.round(ct, 2).tolist()))}")
     print(json.dumps(segs, indent=1))
     print(f"RESULT stage1 {args.task} ep{args.episode}: {T} frames, {B} bodies -> {out}", flush=True)
 

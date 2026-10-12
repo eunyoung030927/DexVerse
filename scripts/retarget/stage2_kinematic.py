@@ -5,11 +5,13 @@
 
 """Stage 2: kinematic retargeting, source fingertips -> target floating hand (wrist + finger IK).
 
-Both hands live in the same task scene over the same objects, so target fingertip k goes to source fingertip k
-(thumb..ring; a source finger the target lacks is dropped). Tips in contact weigh 10, free tips 2. The palm
-orientation is kept softly on the source palm's rotation from its home pose, applied to the target's home palm
-(every floating hand homes palm-down over the table, which is what the teleop retargeter assumes too); a small
-pull keeps each frame near the previous one, and frames are solved in order, each warm-started from the last.
+Both robots live in the same task scene over the same objects, so target fingertip slot k goes to source fingertip
+slot k (slot = 5 * hand + finger, thumb..little; a source finger the target lacks is dropped; a bimanual source maps
+right hand to right hand and left to left). Tips in contact weigh 10, free tips 2. Each palm's orientation is kept
+softly on the source palm's rotation from its home pose, applied to the target's home palm (every floating hand
+homes palm-down over the table, which is what the teleop retargeter assumes too); a small pull keeps each frame
+near the previous one, and frames are solved in order, each warm-started from the last. All wrists and fingers of
+the robot are solved together (12 wrist + 2 x finger joints for a bimanual target).
 
 Kinematics come from the target hand's own USD in the simulator: the Jacobian is a finite difference over N =
 joints + 1 copies of the hand written kinematically (no physics step), so nothing collides and nothing moves
@@ -44,7 +46,7 @@ import numpy as np  # noqa: E402
 import torch  # noqa: E402
 
 from dexverse.retarget import env as renv  # noqa: E402
-from dexverse.retarget import paths  # noqa: E402
+from dexverse.retarget import hands, paths  # noqa: E402
 from isaaclab.utils.math import axis_angle_from_quat, quat_conjugate, quat_mul  # noqa: E402
 
 W_TIP_CONTACT = 10.0
@@ -64,9 +66,13 @@ def main():
     ref = np.load(rdir / "reference.npz", allow_pickle=True)
     meta = json.loads(str(ref["meta"]))
     T = meta["n_frames"]
-    env, _ = renv.build(args.task, args.target, 64, args.device, gravity=False)   # >= joints + 1 of any hand
+    H = meta.get("n_hands", 1)
+    if H != hands.get(args.target).n_hands:
+        raise RuntimeError(f"source has {H} hand(s), target {args.target} {hands.get(args.target).n_hands}")
+    env, _ = renv.build(args.task, args.target, 64 if H == 1 else 72, args.device, gravity=False)   # >= joints + 1
     dev, names = env.device, env.joint_names
     J = len(names)
+    assert env.num_envs >= J + 1, (env.num_envs, J)
     fd_ids = torch.arange(J + 1, device=dev)
     slots = [s for s in env.slots if s in meta["source_slots"]]
     sel = [env.slots.index(s) for s in slots]                       # rows of env.tips() used
@@ -76,22 +82,27 @@ def main():
     t = lambda a: torch.as_tensor(np.asarray(a), dtype=torch.float32, device=dev)
     tgt_tips = t(ref["src_tips"])[:, slots]                          # (T,F,3)
     w_tip = torch.where(torch.as_tensor(ref["contact_body"], device=dev)[:, slots] >= 0, W_TIP_CONTACT, W_TIP_FREE)
-    src_palm, src_home = t(ref["src_palm"]), t(ref["src_palm_home"])
+    src_palm, src_home = t(ref["src_palm"]).reshape(T, H, 7), t(ref["src_palm_home"]).reshape(H, 7)
 
     home = env.robot.data.default_joint_pos[0].clone()
     env.teleport(q=home)
-    tgt_home_q = env.palm_pose()[0, 3:7].clone()
-    # palm rotation target: the source palm's rotation from its home, applied to the target's home palm
-    d_rot = quat_mul(src_palm[:, 3:7], quat_conjugate(src_home[3:7]).expand(T, -1))
-    tgt_palm_q = quat_mul(d_rot, tgt_home_q.expand(T, -1))
+    tgt_home_q = env.palm_pose()[0, :, 3:7].clone()                                   # (H,4)
+    # palm rotation target per hand: the source palm's rotation from its home, applied to the target's home palm
+    d_rot = quat_mul(src_palm[:, :, 3:7].reshape(-1, 4), quat_conjugate(src_home[:, 3:7]).repeat(T, 1))
+    tgt_palm_q = quat_mul(d_rot, tgt_home_q.repeat(T, 1)).reshape(T, H, 4)
 
     eye = torch.eye(J, device=dev)
     probe_dx = torch.cat([args.eps * eye, torch.zeros(1, J, device=dev)], 0)   # env J = the point itself
 
     def features(q):
-        """q (J+1,J) -> tips (J+1,F*3), palm quat (J+1,4)."""
+        """q (J+1,J) -> tips (J+1,F*3), palm quats (J+1,H,4)."""
         env.teleport(q=q, env_ids=fd_ids)
-        return env.tips()[: J + 1, sel].reshape(J + 1, -1), env.palm_pose()[: J + 1, 3:7]
+        return env.tips()[: J + 1, sel].reshape(J + 1, -1), env.palm_pose()[: J + 1, :, 3:7]
+
+    def rot_err(qa, qb):
+        """axis-angle of qa * conj(qb) per hand, flattened: (..., H, 4) x (..., H, 4) -> (..., H*3)."""
+        aa = axis_angle_from_quat(quat_mul(qa.reshape(-1, 4), quat_conjugate(qb.reshape(-1, 4))))
+        return aa.reshape(*qa.shape[:-2], H * 3)
 
     def solve(f, x, x_reg, iters):
         for _ in range(iters):
@@ -101,11 +112,10 @@ def main():
             dq = q[:J] - q[J]
             dd = torch.diagonal(dq).clamp(min=1e-9) * torch.sign(torch.diagonal(dq) + 1e-12)
             Jt = ((tips[:J] - base_tips) / dd[:, None]).T                                  # (F*3, J)
-            rot_d = axis_angle_from_quat(quat_mul(quat[:J], quat_conjugate(base_quat).expand(J, -1)))
-            Jr = (rot_d / dd[:, None]).T                                                    # (3, J)
+            Jr = (rot_err(quat[:J], base_quat[None].expand(J, -1, -1)) / dd[:, None]).T     # (H*3, J)
             w = w_tip[f].repeat_interleave(3)
             e_tip = (tgt_tips[f].reshape(-1) - base_tips) * w
-            e_rot = W_PALM_ROT * axis_angle_from_quat(quat_mul(tgt_palm_q[f], quat_conjugate(base_quat)))
+            e_rot = W_PALM_ROT * rot_err(tgt_palm_q[f], base_quat)
             e = torch.cat([e_tip, e_rot, W_REG * (x_reg - x)])
             Jx = torch.cat([Jt * w[:, None], W_PALM_ROT * Jr, W_REG * eye])
             H = Jx.T @ Jx + DAMPING * eye
@@ -126,16 +136,16 @@ def main():
         tips_all.append(env.tips()[: e - s])
         palm_all.append(env.palm_pose()[: e - s])
     tips_h, palm = torch.cat(tips_all), torch.cat(palm_all)
-    tips5 = torch.full((T, 5, 3), float("nan"), device=dev)
+    tips5 = torch.full((T, 5 * H, 3), float("nan"), device=dev)
     tips5[:, env.slots] = tips_h
     err = (tips_h[:, sel] - tgt_tips).norm(dim=-1)
-    rot_err = axis_angle_from_quat(quat_mul(tgt_palm_q, quat_conjugate(palm[:, 3:7]))).norm(dim=-1)
+    rot_e = rot_err(tgt_palm_q, palm[:, :, 3:7]).reshape(T, H, 3).norm(dim=-1)           # (T,H)
     contact = w_tip == W_TIP_CONTACT
     rep = {"tip_err_cm_mean": round(100 * err.mean().item(), 2),
            "tip_err_cm_contact": round(100 * err[contact].mean().item(), 2) if contact.any() else None,
            "tip_err_cm_p95": round(100 * err.quantile(0.95).item(), 2),
            "tip_err_cm_per_finger": [round(100 * v, 2) for v in err.mean(0).tolist()],
-           "palm_rot_err_deg_mean": round(float(np.degrees(rot_err.mean().item())), 1),
+           "palm_rot_err_deg_mean": [round(float(np.degrees(v)), 1) for v in rot_e.mean(0).tolist()],
            "q_jump_max_rad": round((q[1:] - q[:-1]).abs().max().item(), 3),
            "at_limit_frac": round(((q <= env.q_lo + 1e-4) | (q >= env.q_hi - 1e-4)).float().mean().item(), 3),
            "fingers": slots}

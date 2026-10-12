@@ -30,11 +30,11 @@ Joints / action dims / fingertips from `scripts/retarget/check_hand_in_task.py` 
 | hand | right: joints / action / tips | bimanual: joints / action / tips | retargeting support (2026-10-12) |
 |---|---|---|---|
 | Shadow (source) | 28 / 28 / 5 | 56 / 56 / 10 | source |
-| Allegro | 22 / 22 / 4 | 44 / 44 / 8 | right: yes · bimanual: no |
+| Allegro | 22 / 22 / 4 | 44 / 44 / 8 | yes |
 | Inspire | 18 / 12 / 5 (6 mimic joints) | 36 / 24 / 10 | no (needs mimic coupling in stage 2) |
-| LEAP | 22 / 22 / 4 | 44 / 44 / 8 | right: yes · bimanual: no |
-| Sharpa Wave | 28 / 28 / 5 | 62 / 56 / 10 (6 head joints) | right: yes (stage 1-3 tested) · bimanual: no |
-| Wuji | 26 / 26 / 5 | 52 / 52 / 10 | right: yes (wrist joint names fixed) · bimanual: no |
+| LEAP | 22 / 22 / 4 | 44 / 44 / 8 | yes |
+| Sharpa Wave | 28 / 28 / 5 | 62 / 56 / 10 (6 head joints, no residual) | yes (stage 1-3 tested) |
+| Wuji | 26 / 26 / 5 | 52 / 52 / 10 | yes |
 
 DexVerse README: Allegro / LEAP bimanual showed insufficient commanded wrist/finger response in `BimanualLiftTray-v1`
 (passed v0).
@@ -69,7 +69,8 @@ Cluster: `ondemand/` (README there), tasks one job each, strictly in order.
   stage 4 pickle -> upload decision -> state replay of that pickle, for Allegro / LEAP / Sharpa / Wuji right.
 - Full-length result so far: GraspCup **v0** ep0 -> Allegro, success (2.3 cm mean cup error, 35.8 min, 4 backtracks).
 - Not started: any full-length v1 episode, the cluster run.
-- To do: Inspire (mimic coupling), bimanual targets (4 tasks), per-pair 1-episode check, cluster `EPISODES=1` run.
+- Bimanual targets implemented 2026-10-12 (per-hand palms / tips / wrists, slot = 5 * hand + finger); plumbing tested on LiftCarton-v1 ep15.
+- To do: Inspire (mimic coupling), per-pair 1-episode check, cluster `EPISODES=1` run.
 
 ## 6. Compute estimate (rough, from one episode)
 
