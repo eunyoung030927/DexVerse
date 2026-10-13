@@ -65,6 +65,18 @@ actions, joint positions for the state) by the product of exponentials over join
 at startup, so no per-hand Euler convention is assumed; ``meta.json`` reports how far the measured palm rotation
 is from the command (``ee_rot_check_deg``).
 
+TACTILE (default ON for every hand with a pad definition ``data_collection/tactile_pads/<robot_type>.npz``; off with
+``DEXVERSE_TACTILE=0``; see ``dexverse/data_collection/tactile_logging.py``). No env-config change: the recorder
+opens read-only PhysX contact views after the env is built. Features: per-finger pad-body forces
+``observation.tactile.force`` / ``.normal`` / ``.force_w`` / ``.net_normal``; virtual fingerprint pads
+``observation.tactile.pad.*`` + ``observation.tactile.palm``; the real-hand (RH5DG2) layout ``observation.touch``
+(per hand 8 pads x (fn, ftx, fty), N, driver order little, ring, middle, index, thumb, palm_r, palm_c, palm_l),
+``observation.touch_valid`` / ``observation.touch_contact`` (uint8 per pad) and the diagnostic
+``observation.touch_fn_substep_max``. Every value is the AVERAGE over the physics substeps of the env.step that led
+to the frame (``DEXVERSE_TACTILE_REDUCE=last``: last substep only). Appending to a dataset / spool recorded without
+tactile features turns tactile logging off (warning; recorded in ``spool.json`` ``tactile_logging``). Definitions
+in ``dexverse/data_collection/tactile.py`` / ``tactile_pads.py`` and in ``spool.json`` / ``meta/isaac_tasks.json``.
+
 IMPORT NOTE. The module body is stdlib + numpy only: the writer loads it BY PATH outside Isaac Sim.
 Everything that needs torch / Isaac Lab / scipy is imported inside :class:`LeRobotSpoolRecorder`.
 """
@@ -220,7 +232,9 @@ def load_episode(ep_dir) -> dict:
         meta = json.load(f)
     d = np.load(os.path.join(ep_dir, DATA_FILE))
     keep = d["keep_idx"].astype(np.int64)
-    arrays = {k: d[k].astype(np.float32) for k in d.files if k != "keep_idx"}
+    # float features -> float32; integer features (observation.touch_valid / touch_contact, uint8) keep their dtype
+    arrays = {k: (d[k].astype(np.float32) if np.issubdtype(d[k].dtype, np.floating) else d[k])
+              for k in d.files if k != "keep_idx"}
     frames = {}
     n_cap = int(meta["n_captured"])
     for key, fname in meta["frame_files"].items():
@@ -438,6 +452,13 @@ class LeRobotSpoolRecorder:
                                        "rotation joints in the chain; ee_delta assumes translate-then-rotate")
             self._measure_wrist_axes()
 
+        # Tactile logging (default on; dexverse.data_collection.tactile_logging): per-pad forces, virtual pads /
+        # palm zones, observation.touch; read-only PhysX contact views opened here (no env-config change).
+        self.tactile = None
+        self.tactile_pads = None
+        self.tactile_log = None
+        self.tactile_status = self._setup_tactile(env)
+
         self._features = self._build_features()
         os.makedirs(self.spool, exist_ok=True)
         self._check_or_write_spool_info()
@@ -453,6 +474,40 @@ class LeRobotSpoolRecorder:
         self.n_committed = 0
         print(f"[lerobot] recording {self.task_id} ({self.robot_type}) at {self.fps} fps -> {self.root} "
               f"(repo_id {self.repo_id}, task {self.task!r}); spool {self.spool}")
+
+    # ----- tactile ------------------------------------------------------------------------------------
+    def _existing_features(self):
+        """Feature dict of the dataset / spool this recorder appends to (None for a new one)."""
+        for path in (os.path.join(self.spool, SPOOL_INFO), os.path.join(self.root, "meta", "info.json")):
+            if os.path.exists(path):
+                try:
+                    with open(path, encoding="utf-8") as f:
+                        return dict(json.load(f).get("features") or {})
+                except (OSError, ValueError):
+                    return {}
+        return None
+
+    def _setup_tactile(self, env) -> dict:
+        from dexverse.data_collection import tactile_logging as TL  # noqa: PLC0415
+
+        if not TL.tactile_enabled():
+            return {"enabled": False, "reason": f"{TL.ENABLE_ENV}=0"}
+        existing = self._existing_features()
+        if existing is not None and not any(k.startswith(("observation.tactile", "observation.touch")) for k in existing):
+            reason = ("appending to an existing dataset / spool recorded without tactile features: tactile logging "
+                      "is OFF for this session so the episodes stay compatible")
+            print(f"[lerobot] WARNING {reason} ({self.root})")
+            return {"enabled": False, "reason": reason}
+        try:
+            log = TL.TactileLogger(env, self.robot_type)
+        except (FileNotFoundError, RuntimeError, KeyError, ValueError) as exc:
+            reason = f"{type(exc).__name__}: {exc}"
+            print(f"[lerobot] WARNING tactile logging OFF for {self.robot_type}: {reason}")
+            return {"enabled": False, "reason": reason}
+        self.tactile_log, self.tactile, self.tactile_pads = log, log.tactile, log.pads
+        print(f"[lerobot] tactile logging ON ({log.reduce} over {log.decimation} substeps of {log.physics_dt:.6f} s; "
+              f"{TL.ENABLE_ENV}=0 to disable): pad bodies {log.tactile.bodies}, targets {log.targets}")
+        return {"enabled": True, **log.info()}
 
     # ----- static description ------------------------------------------------------------------------
     def _resolve_cameras(self, env_cfg):
@@ -599,6 +654,43 @@ class LeRobotSpoolRecorder:
             for key, block in {**EE_STATE_BLOCKS, **EE_ACTION_BLOCKS}.items():
                 names = ee_names(self.action_names, self.ee_hands, block)
                 feats[key] = {"dtype": "float32", "shape": [len(names)], "names": names}
+        if self.tactile is not None:
+            from dexverse.data_collection.tactile import (  # noqa: PLC0415
+                TACTILE_FEATURE_PREFIX,
+                TACTILE_QUANTITIES,
+                tactile_feature_names,
+            )
+
+            names = tactile_feature_names(self.tactile.bodies)
+            for q in TACTILE_QUANTITIES:
+                feats[TACTILE_FEATURE_PREFIX + q] = {"dtype": "float32", "shape": [len(names)], "names": names}
+        if self.tactile_pads is not None:
+            from dexverse.data_collection.tactile_pads import (  # noqa: PLC0415
+                PAD_FEATURE_PREFIX,
+                PAD_FEATURES,
+                PALM_FEATURE,
+                pad_feature_names,
+            )
+
+            names = pad_feature_names(self.tactile_pads.fingers)
+            for q in PAD_FEATURES:
+                feats[PAD_FEATURE_PREFIX + q] = {"dtype": "float32", "shape": [len(names)], "names": names}
+            pnames = pad_feature_names(self.tactile_pads.d["palms"])
+            feats[PALM_FEATURE] = {"dtype": "float32", "shape": [len(pnames)], "names": pnames}
+            if self.tactile_pads.touch_on:
+                from dexverse.data_collection.tactile_pads import (  # noqa: PLC0415
+                    TOUCH_CONTACT_FEATURE,
+                    TOUCH_FEATURE,
+                    TOUCH_VALID_FEATURE,
+                )
+
+                tn, sn = self.tactile_pads.touch_names(), self.tactile_pads.touch_slot_names()
+                feats[TOUCH_FEATURE] = {"dtype": "float32", "shape": [len(tn)], "names": tn}
+                feats[TOUCH_VALID_FEATURE] = {"dtype": "uint8", "shape": [len(sn)], "names": sn}
+                feats[TOUCH_CONTACT_FEATURE] = {"dtype": "uint8", "shape": [len(sn)], "names": sn}
+                from dexverse.data_collection.tactile_logging import TOUCH_FN_MAX_FEATURE  # noqa: PLC0415
+
+                feats[TOUCH_FN_MAX_FEATURE] = {"dtype": "float32", "shape": [len(sn)], "names": sn}
         return feats
 
     def _spool_info(self):
@@ -644,7 +736,73 @@ class LeRobotSpoolRecorder:
             } if self.ee_hands else None,
             "ee_hands": self.ee_hands,
             "alignment": "frame t = (observation before action t, action t)",
+            "tactile_logging": self.tactile_status,
+            **({"tactile": self._tactile_info()} if self.tactile is not None else {}),
+            **({"tactile_pads": self._tactile_pad_info()} if self.tactile_pads is not None else {}),
         }
+
+    def _tactile_pad_info(self):
+        import hashlib  # noqa: PLC0415
+
+        from dexverse.data_collection.tactile_pads import PAD_DEFINITIONS  # noqa: PLC0415
+
+        d = self.tactile_pads.d
+        with open(d["path"], "rb") as fh:
+            sha = hashlib.sha256(fh.read()).hexdigest()
+        info = {"robot_type": d["robot_type"], "variant": d["variant"], "fingers": d["fingers"], "distal": d["distal"],
+                "bundle_links": d["links"], "palms": d["palms"], "palm_links": d["palm_links"],
+                "targets": self.tactile_pads.targets,
+                "definition_file": os.path.basename(d["path"]), "definition_sha256": sha,
+                "layout": "per finger [x, y, z] in the order of `fingers` (distal phalanx link names)",
+                "definitions": PAD_DEFINITIONS}
+        if self.tactile_pads.touch_on:
+            from dexverse.data_collection.tactile_pads import (  # noqa: PLC0415
+                PALM_ZONES,
+                TOUCH_COMPONENTS,
+                TOUCH_CONTACT_N,
+                TOUCH_DEFINITIONS,
+                TOUCH_PADS,
+            )
+
+            t = d["touch"]
+            js = d["path"].replace(".npz", ".json")
+            pp = {}
+            if os.path.exists(js):
+                with open(js, encoding="utf-8") as fh:
+                    pp = json.load(fh).get("palm_pads", {})
+            info["touch"] = {
+                "pads": list(TOUCH_PADS), "components": list(TOUCH_COMPONENTS), "units": "N",
+                "hands": t["hand_names"], "palm_zones": list(PALM_ZONES),
+                "finger_to_pad": {f: {"pad": c, "hand": t["hand_names"][h]}
+                                  for f, c, h in zip(d["fingers"], t["finger_canon"], t["finger_hand"])},
+                "valid": self.tactile_pads.touch_valid.tolist(), "contact_threshold_N": TOUCH_CONTACT_N,
+                "normal_sign": "fn > 0 = pad pressed (compression); fn = -F . n, n = pad outward normal",
+                "axes": {"ftx": "hand-common distal direction", "fty": "hand-common thumb-side direction"},
+                "palm_left_right_assumption": "palm_l = thumb side, palm_r = little side, anatomical (mirrored for "
+                                              "a left hand); not verified against the real RH5DG2",
+                "recording_instant": ("average over the physics substeps of the env.step that led to the frame"
+                                      if self.tactile_log.reduce == "mean" else
+                                      "last physics substep of the env.step that led to the frame"),
+                "tare": "none in simulation (raw = tared)",
+                "fty_rule": {x["finger"]: x["fty_rule"] for x in pp.get("touch", {}).get("fingers", [])},
+                "palm_zone_geometry": [{k: v for k, v in q.items() if k in (
+                    "palm", "hand", "bundle", "zone_width_mm", "palmar_face_lateral_extent_mm",
+                    "palm_band_u_mm_from_face_centre", "lateral_rule", "palm_band_rule")} for q in pp.get("palms", [])],
+                "real_format": "real RH5DG2 export: observation.touch float32 [24] in the same pad order, fn/ftx/fty "
+                               "in N after tare, separate from observation.state, no names; real per-pad raw "
+                               "direction conventions differ (see definitions.real_correspondence)",
+                "definitions": TOUCH_DEFINITIONS}
+        return info
+
+    def _tactile_info(self):
+        if self.tactile is None:
+            return None
+        from dexverse.data_collection.tactile import TACTILE_DEFINITIONS  # noqa: PLC0415
+
+        return {"bodies": self.tactile.bodies, "targets": self.tactile.targets,
+                "layout": "per body [fx, fy, fz], bodies in the order of `bodies` (finger order of "
+                          "robot_config.fingertip_body_names)",
+                "units": "N", "definitions": TACTILE_DEFINITIONS}
 
     def _check_or_write_spool_info(self):
         path = os.path.join(self.spool, SPOOL_INFO)
@@ -699,7 +857,9 @@ class LeRobotSpoolRecorder:
         self._ep = {
             "seq": seq, "dir": tmp, "info": dict(info or {}), "t0": time.time(), "capture_s": 0.0,
             "files": {key: open(os.path.join(tmp, f), "wb", buffering=8 << 20) for key, _c, f in self.cameras},
-            "state": [], "joint_vel": [], "action": [], "palm_quat": [], "n": 0,
+            "state": [], "joint_vel": [], "action": [], "palm_quat": [], "tactile": [], "tactile_pads": [],
+            "pad_diag": {"resid_max": 0.0, "rows": 0, "boundary_rows": 0, "force": 0.0, "force_boundary": 0.0,
+                         "pose_source": {}, "palm_resid_max": 0.0, "substeps": []}, "n": 0,
         }
         self._needs_render = True
 
@@ -742,6 +902,24 @@ class LeRobotSpoolRecorder:
         if self.palm_ids:
             q = self.robot.data.body_link_pose_w[0, self.palm_ids, 3:7].detach().to("cpu").numpy()
             ep["palm_quat"].append(q.astype(np.float64))
+        if self.tactile_log is not None:
+            # Right after a reset / state restore no contact has been solved yet (PhysX still holds the pre-reset
+            # contacts): zeros for that frame (and the substep accumulator restarts).
+            tac, pads, dg = self.tactile_log.capture(force)
+            ep["tactile"].append(tac)
+            ep["tactile_pads"].append(pads)
+            pd = ep["pad_diag"]
+            pd["substeps"].append(int(dg.get("substeps", 0)) if dg else 0)
+            if dg and dg.get("substeps", 0):
+                pd["resid_max"] = max(pd["resid_max"], dg["sum_resid_max_N"])
+                pd["rows"] += dg["rows"]
+                pd["boundary_rows"] += dg["boundary_rows"]
+                pd["force"] += dg["force_rows"]
+                pd["force_boundary"] += dg["force_boundary"]
+                src = dg["pose_source"] if isinstance(dg["pose_source"], dict) else {dg["pose_source"]: 1}
+                for k, v in src.items():
+                    pd["pose_source"][k] = pd["pose_source"].get(k, 0) + v
+                pd["palm_resid_max"] = max(pd["palm_resid_max"], dg.get("palm_resid_max_N", 0.0))
         ep["n"] += 1
         ep["capture_s"] += time.time() - t0
 
@@ -797,6 +975,45 @@ class LeRobotSpoolRecorder:
         if self.ee_hands:
             arrays.update(ee_state_columns(joint_pos, self.ee_hands, self.action_joint_ids))
             arrays.update(ee_action_columns(action, joint_pos, self.ee_hands))
+        tactile_peak = None
+        if self.tactile is not None:
+            for q in ep["tactile"][0]:
+                arrays[f"observation.tactile.{q}"] = np.stack([fr[q].reshape(-1) for fr in ep["tactile"]])
+            mag = np.linalg.norm(np.stack([fr["force"] for fr in ep["tactile"]]), axis=-1)   # (T, n_bodies)
+            tactile_peak = {b: {"max_N": float(mag[:, i].max()), "frames_in_contact": int((mag[:, i] > 1e-3).sum())}
+                            for i, b in enumerate(self.tactile.bodies)}
+        pad_meta = None
+        if self.tactile_pads is not None:
+            from dexverse.data_collection.tactile_pads import PAD_FEATURE_PREFIX, PAD_FEATURES, PALM_FEATURE  # noqa: PLC0415
+
+            for q in PAD_FEATURES:
+                arrays[PAD_FEATURE_PREFIX + q] = np.stack([fr[q].reshape(-1) for fr in ep["tactile_pads"]])
+            arrays[PALM_FEATURE] = np.stack([fr["palm"].reshape(-1) for fr in ep["tactile_pads"]])
+            if self.tactile_pads.touch_on:
+                from dexverse.data_collection.tactile_pads import (  # noqa: PLC0415
+                    TOUCH_CONTACT_FEATURE,
+                    TOUCH_FEATURE,
+                    TOUCH_VALID_FEATURE,
+                )
+
+                arrays[TOUCH_FEATURE] = np.stack([fr["touch"] for fr in ep["tactile_pads"]]).astype(np.float32)
+                arrays[TOUCH_VALID_FEATURE] = np.stack([fr["touch_valid"] for fr in ep["tactile_pads"]]).astype(np.uint8)
+                arrays[TOUCH_CONTACT_FEATURE] = np.stack([fr["touch_contact"]
+                                                          for fr in ep["tactile_pads"]]).astype(np.uint8)
+                from dexverse.data_collection.tactile_logging import TOUCH_FN_MAX_FEATURE  # noqa: PLC0415
+
+                arrays[TOUCH_FN_MAX_FEATURE] = np.stack([fr["touch_fn_substep_max"]
+                                                         for fr in ep["tactile_pads"]]).astype(np.float32)
+            pd = ep["pad_diag"]
+            pad_meta = {"pad_plus_nonpad_minus_total_max_N": pd["resid_max"], "normal_rows": pd["rows"],
+                        "boundary_rows_1mm": pd["boundary_rows"],
+                        "boundary_force_share": pd["force_boundary"] / max(pd["force"], 1e-9),
+                        "pose_source_substeps": pd["pose_source"],
+                        "reduce": self.tactile_log.reduce,
+                        "substeps_per_frame": {str(k): int(v) for k, v in zip(*np.unique(pd["substeps"],
+                                                                                        return_counts=True))},
+                        **({"palm_zones_plus_nonpad_minus_total_max_N": pd["palm_resid_max"]}
+                           if self.tactile_pads.zones_on else {})}
         np.savez(os.path.join(ep["dir"], DATA_FILE), **arrays)
         meta = {
             "task": self.task,
@@ -808,6 +1025,8 @@ class LeRobotSpoolRecorder:
             "image_shapes": self.image_shapes,
             "frame_files": {key: f for key, _c, f in self.cameras},
             "ee_rot_check_deg": ee_check,
+            **({"tactile_summary": tactile_peak} if tactile_peak is not None else {}),
+            **({"tactile_pads_check": pad_meta} if pad_meta is not None else {}),
             "timing": {"episode_wall_s": time.time() - ep["t0"], "capture_overhead_s": ep["capture_s"]},
             **ep["info"],
             **(extra_meta or {}),
