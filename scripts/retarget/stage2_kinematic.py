@@ -12,8 +12,9 @@ softly on the source palm's rotation from its home pose, applied to the target's
 homes palm-down over the table, which is what the teleop retargeter assumes too); a small pull keeps each frame
 near the previous one, and frames are solved in order, each warm-started from the last. All wrists and fingers of
 the robot are solved together (12 wrist + 2 x finger joints for a bimanual target). An underactuated hand's mimic
-joints (Inspire: 6 per hand, ``hands.py``) are not variables: they follow their driver, ``q = C x + d``, exactly
-as the PhysX mimic constraint holds them in the task.
+joints (Inspire: 6 per hand, ``hands.py``) are not variables: they follow their driver, ``q = C x + d``, with the
+coefficients measured on the simulator first (``RetargetEnv.calibrate_mimic``), i.e. what the PhysX mimic constraint
+actually holds in the task.
 
 Kinematics come from the target hand's own USD in the simulator: the Jacobian is a finite difference over N =
 joints + 1 copies of the hand written kinematically (no physics step), so nothing collides and nothing moves
@@ -78,6 +79,9 @@ def main():
     assert env.num_envs >= J + 1, (env.num_envs, J)
     fd_ids = torch.arange(J + 1, device=dev)
     x_lo, x_hi = env.q_lo[free], env.q_hi[free]
+    coupling = env.calibrate_mimic()                                   # measured on the sim; {} for actuated hands
+    if coupling:
+        print("mimic coupling (simulator fit):", json.dumps(coupling), flush=True)
     slots = [s for s in env.slots if s in meta["source_slots"]]
     sel = [env.slots.index(s) for s in slots]                       # rows of env.tips() used
     print(f"target {args.target}: {len(names)} joints ({J} free, {len(env.mimic_ids)} mimic), fingers {slots}; limits "
@@ -156,7 +160,8 @@ def main():
            "fingers": slots}
     out_dir.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(out, q=q.cpu().numpy(), joint_names=np.array(names), tips=tips5.cpu().numpy(),
-                        palm=palm.cpu().numpy(), tip_err=err.cpu().numpy(), report=np.array(json.dumps(rep)))
+                        palm=palm.cpu().numpy(), tip_err=err.cpu().numpy(), report=np.array(json.dumps(rep)),
+                        coupling=np.array(json.dumps(coupling)))
     print(f"RESULT stage2 {args.task} ep{args.episode} -> {args.target}: {rep}", flush=True)
 
 

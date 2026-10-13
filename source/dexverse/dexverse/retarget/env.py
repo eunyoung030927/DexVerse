@@ -140,6 +140,54 @@ class RetargetEnv:
         """Free-joint values (..., n_free) -> full joint vector (..., n_joints), mimic joints following."""
         return x @ self.C.T + self.d
 
+    def calibrate_mimic(self, steps: int = 120) -> dict:
+        """Fit each mimic joint's ``multiplier * driver + offset`` on the simulator itself (objects parked, every
+        driver swept over its range across the envs, physics settled ``steps`` frames) and use that in ``expand``.
+        The USD's PhysX mimic constraint is what stage 3 runs under, and it need not equal the URDF numbers (units,
+        conversion); returns the fit per mimic joint. No-op for a fully actuated hand."""
+        if len(self.mimic_ids) == 0:
+            return {}
+        n = self.num_envs
+        home = self.robot.data.default_joint_pos[0].clone()
+        x = home[self.free_ids].expand(n, -1).clone()
+        drivers = sorted({self.joint_names.index(d) for _, d, _, _ in self.spec.mimic})
+        col = {int(i): k for k, i in enumerate(self.free_ids.tolist())}
+        # one driver at a time (the others at home): closing every finger at once makes them collide
+        per = n // len(drivers)
+        assert per >= 4, (n, len(drivers))
+        block = {}
+        for k, dj in enumerate(drivers):
+            ids = torch.arange(k * per, (k + 1) * per, device=self.device)
+            frac = torch.linspace(0.0, 1.0, per, device=self.device)
+            x[ids, col[dj]] = self.q_lo[dj] + frac * (self.q_hi[dj] - self.q_lo[dj])
+            block[dj] = ids
+        self.park_static()
+        self.teleport(q=self.expand(x))
+        for _ in range(steps):
+            self.physics_step()
+        q = self.robot.data.joint_pos.clone()                           # (n, J) settled under the constraint
+        cmd = self.expand(x)
+        fit = {}
+        for j, d, m0, b0 in self.spec.mimic:
+            ji, di = self.joint_names.index(j), self.joint_names.index(d)
+            ids = block[di]
+            # a sample whose driver did not stay where it was put was pushed by a self-collision (Inspire thumb at
+            # home yaw below pitch 0.22): not the constraint, so not fitted
+            ok = (q[ids, di] - cmd[ids, di]).abs() < 2e-3
+            qd, qj = q[ids][ok, di], q[ids][ok, ji]
+            if ok.sum() >= 4:
+                A = torch.stack([qd, torch.ones_like(qd)], 1)
+                (m, b), *_ = torch.linalg.lstsq(A, qj[:, None])
+                m, b = float(m), float(b)
+            else:
+                m, b = m0, b0
+            resid = float((qj - (m * qd + b)).abs().max()) if len(qj) else float("nan")
+            self.C[ji, col[di]], self.d[ji] = m, b
+            fit[j] = {"driver": d, "multiplier": round(m, 5), "offset": round(b, 5), "max_resid_rad": round(resid, 5),
+                      "samples": int(ok.sum()), "urdf": [m0, b0]}
+        self.teleport(q=home)
+        return fit
+
     # ----------------------------------------------------------------- state
     def get_state(self):
         return self.scene.get_state(is_relative=True)

@@ -235,11 +235,25 @@ class SpiderEnv:
                 a.write_joint_state_to_sim(v, torch.zeros_like(v))
 
     # ------------------------------------------------------------- reset / snapshots
-    def initial_state(self, src_initial_state):
-        """The episode's initial scene state with the target hand at the reference's first frame."""
+    def initial_state(self, src_initial_state, settle: int = 60):
+        """The episode's initial scene state with the target hand settled onto the reference's first frame.
+
+        The kinematic solve ignores self-collision; a hand written straight into a self-penetrating pose is thrown
+        apart by the depenetration (LEAP: 50 rad wrist error within 6 frames). So the hand is PD-driven from its
+        home pose onto reference frame 0 with the objects parked, and the pose it settles in (contacts holding
+        the penetrating links apart) is the initial joint state."""
         st = copy.deepcopy(src_initial_state)
-        r = self.e.robot
-        q0 = self.ref_q[0].cpu().numpy()[None]
+        e, r = self.e, self.e.robot
+        e.park_static()
+        e.teleport(q=r.data.default_joint_pos[0])
+        e.q_target[:] = self.ref_q[0]
+        for _ in range(settle):
+            e.physics_step()
+        q0t = r.data.joint_pos[0].clone()
+        dq = (q0t - self.ref_q[0]).abs()
+        print(f"  initial pose: settled from home onto reference frame 0 in {settle} frames; deviation max wrist "
+              f"{dq[self.wrist_ids].max():.3f}, fingers {dq[self.finger_ids].max():.3f} rad", flush=True)
+        q0 = q0t.cpu().numpy()[None]
         root = r.data.default_root_state[0].cpu().numpy()
         st["articulation"]["robot"] = {"root_pose": root[None, :7].astype(np.float32),
                                        "root_velocity": np.zeros((1, 6), np.float32),
