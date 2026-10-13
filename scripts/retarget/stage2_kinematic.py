@@ -101,7 +101,7 @@ def main():
     tgt_palm_q = quat_mul(d_rot, tgt_home_q.repeat(T, 1)).reshape(T, H, 4)
 
     eye = torch.eye(J, device=dev)
-    probe_dx = torch.cat([args.eps * eye, torch.zeros(1, J, device=dev)], 0)   # env J = the point itself
+    eye64 = torch.eye(J, device=dev, dtype=torch.float64)
 
     def features(x):
         """free joints x (J+1,J) -> tips (J+1,F*3), palm quats (J+1,H,4)."""
@@ -115,20 +115,23 @@ def main():
 
     def solve(f, x, x_reg, iters):
         for _ in range(iters):
-            q = torch.max(torch.min(x[None] + probe_dx, x_hi), x_lo)
+            # finite-difference probes: +eps, or -eps for a joint within eps of its upper limit (a probe clamped
+            # onto the limit divides by ~0 and makes the normal matrix singular)
+            step = torch.where(x + args.eps <= x_hi, args.eps, -args.eps)
+            q = torch.cat([x[None] + torch.diag(step), x[None]], 0)                        # env J = the point itself
             tips, quat = features(q)
             base_tips, base_quat = tips[J], quat[J]
-            dq = q[:J] - q[J]
-            dd = torch.diagonal(dq).clamp(min=1e-9) * torch.sign(torch.diagonal(dq) + 1e-12)
-            Jt = ((tips[:J] - base_tips) / dd[:, None]).T                                  # (F*3, J)
-            Jr = (rot_err(quat[:J], base_quat[None].expand(J, -1, -1)) / dd[:, None]).T     # (H*3, J)
+            Jt = ((tips[:J] - base_tips) / step[:, None]).T                                # (F*3, J)
+            Jr = (rot_err(quat[:J], base_quat[None].expand(J, -1, -1)) / step[:, None]).T   # (H*3, J)
             w = w_tip[f].repeat_interleave(3)
             e_tip = (tgt_tips[f].reshape(-1) - base_tips) * w
             e_rot = W_PALM_ROT * rot_err(tgt_palm_q[f], base_quat)
             e = torch.cat([e_tip, e_rot, W_REG * (x_reg - x)])
             Jx = torch.cat([Jt * w[:, None], W_PALM_ROT * Jr, W_REG * eye])
-            H = Jx.T @ Jx + DAMPING * eye
-            x = torch.max(torch.min(x + torch.linalg.solve(H, Jx.T @ e), x_hi), x_lo)
+            Jx64 = Jx.double()
+            H = Jx64.T @ Jx64 + DAMPING * eye64
+            dx = torch.linalg.solve(H, Jx64.T @ e.double()).float()
+            x = torch.max(torch.min(x + dx, x_hi), x_lo)
         return x
 
     xs = [solve(0, home, home, args.iters0)]

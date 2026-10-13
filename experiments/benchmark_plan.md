@@ -77,6 +77,8 @@ Cluster: `ondemand/` (README there), tasks one job each, strictly in order.
   (hold pass 118 cm). Stage 3 now settles the hand from home onto reference frame 0 under PD first: LEAP 13.9 cm,
   Allegro 6.7 -> 5.7 cm, Inspire 3.3 cm, Sharpa 2.6 cm, Wuji 1.2 cm (hold-pass tip shift, GraspBleach ep0).
 - Cluster: first `main_job.sbatch` submitted 2026-10-13 08:45 KST with the defaults (9 tasks x 50 episodes, 4 hands at dd78096).
+- Stage 2 singular-matrix failure fixed 2026-10-13 (cluster job 1649: 6 of the first 40 items, Wuji/Sharpa, `stage2_failed`
+  within 20 s): a finite-difference probe clamped onto a joint limit divided by ~0. Signed probes + float64 solve.
 - To do: per-pair 1-episode check of Inspire.
 
 ## 6. Compute estimate (rough, from one episode)
