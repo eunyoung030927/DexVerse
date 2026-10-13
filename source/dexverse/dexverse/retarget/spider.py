@@ -113,6 +113,19 @@ class SpiderEnv:
             out.append(f"{k} {getattr(spawn, 'usd_path', '') or ''}")
         return out
 
+    def extend_hold(self, n: int):
+        """Append ``n`` frames that hold the last reference frame: the hand keeps optimising (and the task's success
+        can fire) after the demo's last frame instead of freezing on its final command."""
+        if n <= 0:
+            return
+        rep = lambda x: torch.cat([x, x[-1:].expand(n, *x.shape[1:])], 0)
+        self.ref_q, self.ref_tips, self.ref_body, self.ref_root = map(rep, (self.ref_q, self.ref_tips, self.ref_body, self.ref_root))
+        self.ref_art = {k: rep(v) for k, v in self.ref_art.items()}
+        self.contact_body, self.contact_local, self.gate = map(rep, (self.contact_body, self.contact_local, self.gate))
+        self.active = np.concatenate([self.active, np.repeat(self.active[-1:], n)])
+        self.T += n
+        self.update_command()
+
     def update_command(self):
         """``ref_cmd``: the joint targets that make the PD-driven hand follow ``ref_q``."""
         v = torch.zeros_like(self.ref_q)

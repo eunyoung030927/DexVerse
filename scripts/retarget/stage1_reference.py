@@ -14,7 +14,9 @@ everything the later stages need is read from the same USDs the benchmark simula
   src_tips       (T,K,3)  source fingertips, slot 5*hand+finger (thumb..little; NaN where the hand has no such
                           finger); K = 5 for a single hand, 10 for a bimanual robot (right, then left)
   src_palm       (T,H,7)  source palm pose per hand;  src_palm_home (H,7) at the robot's home joints
-  contact_body   (T,K)    body each tip touches (-1: none), surface within 2 cm
+  contact_body   (T,K)    body each tip touches (-1: none): the tip link's COLLISION surface within 2 cm (not its
+                          origin -- Shadow's thumb tip origin sits ~3.5 cm behind its pad, so origin distance missed
+                          every thumb contact)
   contact_local  (T,K,3)  closest surface point, in that body's frame
   active         (T,)     body the hand manipulates: moving, and within 3 cm of a tip
 
@@ -84,16 +86,38 @@ def main():
     for (k, b, _), m in zip(env.bodies, meshes):
         print(f"  body {k}/{b}: {'no mesh' if m is None else f'{len(m[0])} verts {len(m[1])} faces'}", flush=True)
 
-    tips, palm, body, roots = [], [], [], []
+    # collision surface of every tip (link frame): contact is judged on it, not on the tip origin. A tip body that
+    # is a bare frame (Shadow's thtip / fftip: no collision geometry) uses the nearest body that has some -- its
+    # distal link.
+    link_paths = list(env.robot.root_physx_view.link_paths[0])
+    all_samples = geometry.collision_samples(omni.usd.get_context().get_stage(), link_paths, 48)
+    env.teleport(q=env.robot.data.default_joint_pos[0], env_ids=torch.arange(1, device=dev))
+    bpos0 = env.robot.data.body_pos_w[0]
+    with_coll = [i for i, p in enumerate(all_samples) if p is not None]
+    cbody = []
+    for i in env.tip_ids.tolist():
+        if all_samples[i] is not None:
+            cbody.append(i)
+        else:
+            dd = torch.stack([(bpos0[c] - bpos0[i]).norm() for c in with_coll])
+            cbody.append(with_coll[int(dd.argmin())])
+    cbody_t = torch.tensor(cbody, device=dev)
+    tip_samples = [torch.as_tensor(all_samples[c], device=dev) for c in cbody]
+    print("contact bodies per tip slot:", {spec.slot_name(s): env.robot.body_names[c] for s, c in zip(env.slots, cbody)},
+          flush=True)
+
+    tips, cpos, cquat, palm, body, roots = [], [], [], [], [], []
     for s in range(0, T, N):
         e = min(s + N, T)
         ids = torch.arange(e - s, device=dev)
         env.set_state(stack_states(states[s:e]), env_ids=ids)
         tips.append(env.tips()[: e - s])
+        cpos.append(env.robot.data.body_pos_w[: e - s, cbody_t] - env.origins()[: e - s, None])
+        cquat.append(env.robot.data.body_quat_w[: e - s, cbody_t])
         palm.append(env.palm_pose()[: e - s])
         body.append(env.object_body_poses()[: e - s])
         roots.append(env.object_roots()[: e - s])
-    tips_h, palm, body, roots = (torch.cat(x) for x in (tips, palm, body, roots))
+    tips_h, cpos, cquat, palm, body, roots = (torch.cat(x) for x in (tips, cpos, cquat, palm, body, roots))
     # palm at the hand's home joints: stage 2 maps palm rotations through each hand's home pose
     env.teleport(q=env.robot.data.default_joint_pos[0], env_ids=torch.arange(1, device=dev))
     palm_home = env.palm_pose()[0]                                    # (H,7)
@@ -105,7 +129,7 @@ def main():
     tips5 = torch.full((T, K, 3), float("nan"), device=dev)
     tips5[:, env.slots] = tips_h
 
-    # contacts: signed distance of every tip to every body surface
+    # contacts: signed distance of every tip link's collision surface to every body surface
     B = len(env.bodies)
     dist = torch.full((T, K, B), float("inf"), device=dev)
     local = torch.zeros(T, K, B, 3, device=dev)
@@ -116,10 +140,17 @@ def main():
         V = torch.as_tensor(m[0], dtype=torch.float32, device=dev)
         Fc = torch.as_tensor(m[1], device=dev)
         p, qb = body[:, bi, :3], body[:, bi, 3:7]
-        rel = (torch.nan_to_num(tips5, nan=1e3) - p[:, None]).reshape(-1, 3)
-        loc = quat_apply(quat_conjugate(qb).repeat_interleave(K, 0), rel)
-        d, cpt = geometry.signed_distance(loc, V, Fc)
-        dist[:, :, bi], local[:, :, bi] = d.reshape(T, K), cpt.reshape(T, K, 3)
+        for j, slot in enumerate(env.slots):
+            S = len(tip_samples[j])
+            pw = cpos[:, j, None] + quat_apply(cquat[:, j, None].expand(-1, S, -1).reshape(-1, 4),
+                                               tip_samples[j].repeat(T, 1)).reshape(T, S, 3)
+            loc = quat_apply(quat_conjugate(qb).repeat_interleave(S, 0), (pw - p[:, None]).reshape(-1, 3))
+            d, cpt = geometry.signed_distance(loc, V, Fc)
+            d, cpt = d.reshape(T, S), cpt.reshape(T, S, 3)
+            d = torch.where(d < -geometry.MAX_DEPTH, torch.full_like(d, float("inf")), d)
+            dmin, k = d.min(1)
+            dist[:, slot, bi] = dmin
+            local[:, slot, bi] = cpt[torch.arange(T, device=dev), k]
     dist = geometry.effective_distance(dist)
     dist[~have] = float("inf")
     dmin, nearest = dist.min(-1)

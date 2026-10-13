@@ -128,3 +128,92 @@ def signed_distance(p, verts, faces):
     n = torch.cross(tri[f, 1] - tri[f, 0], tri[f, 2] - tri[f, 0], dim=-1)
     inside = ((p - cpt) * n).sum(-1) < 0
     return torch.where(inside, -d, d), cpt
+
+def collision_samples(stage, body_prim_paths: list[str], per_prim: int = 64, seed: int = 0) -> list[np.ndarray | None]:
+    """Surface sample points (body frame, scale baked) of every body's COLLISION geometry.
+
+    What PhysX collides with is what matters for a penetration term: a hand link's collision prim is often a
+    primitive (Allegro: boxes, Shadow: cylinders / spheres, Inspire: boxes + a cylinder) that is fatter than its
+    visual mesh, and ``body_meshes`` (UsdGeom.Mesh only) misses it. Prims with ``UsdPhysics.CollisionAPI`` are
+    used; a body without any falls back to its meshes. Mesh prims: ``per_prim`` random vertices; Cube: corners,
+    edge midpoints, face centres and a grid on each face; Sphere / Cylinder / Capsule / Cone: rings.
+    """
+    from pxr import Gf, Usd, UsdGeom, UsdPhysics
+
+    rng = np.random.default_rng(seed)
+    cache = UsdGeom.XformCache()
+
+    def ring(n, r, z):
+        a = np.linspace(0, 2 * np.pi, n, endpoint=False)
+        return np.stack([r * np.cos(a), r * np.sin(a), np.full(n, z)], 1)
+
+    def primitive_points(p):
+        t = p.GetTypeName()
+        g = UsdGeom.Gprim(p)
+        if t == "Cube":
+            h = 0.5 * float(UsdGeom.Cube(p).GetSizeAttr().Get() or 2.0)
+            u = np.linspace(-1, 1, 5)
+            pts = [np.array([x, y, s * 1.0]) for s in (-1, 1) for x in u for y in u]          # faces z
+            pts += [np.array([x, s * 1.0, z]) for s in (-1, 1) for x in u for z in u]         # faces y
+            pts += [np.array([s * 1.0, y, z]) for s in (-1, 1) for y in u for z in u]         # faces x
+            return np.unique(np.array(pts), axis=0) * h
+        axis_attr = p.GetAttribute("axis")
+        axis = (axis_attr.Get() if axis_attr else "Z") or "Z"
+        if t == "Sphere":
+            r = float(UsdGeom.Sphere(p).GetRadiusAttr().Get() or 1.0)
+            pts = np.concatenate([ring(12, r * np.cos(e), r * np.sin(e)) for e in np.linspace(-1.2, 1.2, 5)]
+                                 + [np.array([[0, 0, r], [0, 0, -r]])])
+        elif t in ("Cylinder", "Capsule", "Cone"):
+            geom = {"Cylinder": UsdGeom.Cylinder, "Capsule": UsdGeom.Capsule, "Cone": UsdGeom.Cone}[t](p)
+            r = float(geom.GetRadiusAttr().Get() or 1.0)
+            hgt = float(geom.GetHeightAttr().Get() or 2.0)
+            zs = np.linspace(-hgt / 2, hgt / 2, 5)
+            pts = [ring(12, r if t != "Cone" else r * (0.5 - z / hgt), z) for z in zs]
+            if t == "Capsule":
+                pts += [ring(12, r * np.cos(e), hgt / 2 + r * np.sin(e)) for e in (0.5, 1.0)]
+                pts += [ring(12, r * np.cos(e), -hgt / 2 - r * np.sin(e)) for e in (0.5, 1.0)]
+                pts += [np.array([[0, 0, hgt / 2 + r], [0, 0, -hgt / 2 - r]])]
+            else:
+                pts += [np.array([[0, 0, hgt / 2], [0, 0, -hgt / 2]])]
+            pts = np.concatenate(pts)
+        else:
+            return None
+        if axis == "X":
+            pts = pts[:, [2, 1, 0]] * np.array([1, 1, -1])
+        elif axis == "Y":
+            pts = pts[:, [0, 2, 1]] * np.array([1, 1, -1])
+        return pts
+
+    out = []
+    for path in body_prim_paths:
+        body = stage.GetPrimAtPath(path)
+        if not body.IsValid():
+            out.append(None)
+            continue
+        T = Gf.Transform(cache.GetLocalToWorldTransform(body))
+        inv = Gf.Matrix4d(T.GetRotation(), T.GetTranslation()).GetInverse()
+        coll, meshes = [], []
+        it = iter(Usd.PrimRange(body, Usd.TraverseInstanceProxies()))
+        for p in it:
+            if p != body and p.HasAPI(UsdPhysics.RigidBodyAPI):
+                it.PruneChildren()
+                continue
+            is_coll = p.HasAPI(UsdPhysics.CollisionAPI)
+            if p.IsA(UsdGeom.Mesh):
+                pts = UsdGeom.Mesh(p).GetPointsAttr().Get()
+                if not pts:
+                    continue
+                P = np.asarray(pts, dtype=np.float64)
+                P = P[rng.choice(len(P), min(len(P), per_prim), replace=False)]
+            elif p.GetTypeName() in ("Cube", "Sphere", "Cylinder", "Capsule", "Cone"):
+                P = primitive_points(p)
+                if P is None:
+                    continue
+            else:
+                continue
+            M = np.array(cache.GetLocalToWorldTransform(p) * inv)
+            P = P @ M[:3, :3] + M[3, :3]
+            (coll if is_coll else meshes).append(P)
+        src = coll or meshes
+        out.append(np.concatenate(src).astype(np.float32) if src else None)
+    return out

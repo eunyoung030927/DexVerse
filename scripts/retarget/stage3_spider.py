@@ -54,7 +54,10 @@ ap.add_argument("--max_retries", type=int, default=3, help="backtracks per resta
 ap.add_argument("--backtrack", type=int, default=2, help="commits to go back after a drop")
 ap.add_argument("--gate_look", type=int, default=90, help="optimise only when manipulation is this many frames ahead")
 ap.add_argument("--drop_jump", type=float, default=0.025, help="m; error increase per commit counted as a drop")
-ap.add_argument("--settle", type=int, default=120)
+ap.add_argument("--settle", type=int, default=120, help="frames the last reference frame is held and still optimised")
+ap.add_argument("--success_bonus", type=float, default=1.0, help="cost credit per frame a sample satisfies the task's success term")
+ap.add_argument("--squeeze_to", default="centroid", choices=["centroid", "origin"], help="ablation: inward direction target")
+ap.add_argument("--no_keypoints", action="store_true", help="ablation: track the body root position only")
 ap.add_argument("--success_steps", type=int, default=10, help="consecutive success frames (record_demos default)")
 ap.add_argument("--no_hold_pass", action="store_true")
 ap.add_argument("--max_frames", type=int, default=0, help="debug: stop the episode early")
@@ -73,22 +76,41 @@ from dexverse.retarget import env as renv_mod  # noqa: E402
 from dexverse.retarget import paths  # noqa: E402
 from dexverse.retarget.env import to_numpy_state  # noqa: E402
 from dexverse.retarget.spider import SpiderCfg, SpiderEnv  # noqa: E402
+from isaaclab.utils.math import quat_apply  # noqa: E402
 
 ART_W = 10.0
+
+
+def keypoints_w(pose, kp):
+    """Body-frame keypoints (B,K,3) placed on poses (...,B,7) -> (...,B,K,3)."""
+    B, K, _ = kp.shape
+    q = pose[..., 3:7].unsqueeze(-2).expand(*pose.shape[:-1], K, 4).reshape(-1, 4)
+    p = quat_apply(q, kp.expand(*pose.shape[:-1], B, K, 3).reshape(-1, 3)).reshape(*pose.shape[:-1], K, 3)
+    return p + pose[..., None, :3]
 
 
 def step_cost(env: SpiderEnv):
     f = env.f()
     roots = env.e.object_roots()
     ref = env.ref_root[f]
-    c = (10.0 * (ref[..., :3] - roots[..., :3]).norm(dim=-1)
-         + 0.5 * env.obj_rot_dist(roots[..., 3:7], ref[..., 3:7])).sum(-1)
+    # position: the root and the far ends of each body's mesh (a pour task's success is judged at the bottle's
+    # spout, 40 cm from its root: root position + tilt alone left the spout free to swing 3-6 cm)
+    if args.no_keypoints:
+        pos = (ref[..., :3] - roots[..., :3]).norm(dim=-1)
+    else:
+        pos = (keypoints_w(ref, env.body_keypoints) - keypoints_w(roots, env.body_keypoints)).norm(dim=-1).mean(-1)
+    c = (10.0 * pos + 0.5 * env.obj_rot_dist(roots[..., 3:7], ref[..., 3:7])).sum(-1)
     for k, v in env.e.object_qpos().items():
         c = c + ART_W * (env.ref_art[k][f] - v).abs().sum(-1)
     body = env.e.object_body_poses()
     ctgt, valid, idx = env.demo_contact_world(body, f)
     if args.squeeze > 0:
-        centre = torch.gather(body[..., :3], 1, idx[..., None].expand(-1, -1, 3))
+        # inward = towards the body's mesh centroid (the root origin can sit at an end of the body: the GraspBleach
+        # bottle's is at its cap, so "towards the origin" ran along the bottle instead of into its wall)
+        bp = torch.gather(body[..., :3], 1, idx[..., None].expand(-1, -1, 3))
+        bq = torch.gather(body[..., 3:7], 1, idx[..., None].expand(-1, -1, 4))
+        cen = env.body_centroid[idx] if args.squeeze_to == "centroid" else torch.zeros_like(ctgt)   # body frame
+        centre = bp + quat_apply(bq.reshape(-1, 4), cen.reshape(-1, 3)).reshape(bp.shape)
         inward = centre - ctgt
         ctgt = ctgt + args.squeeze * inward / inward.norm(dim=-1, keepdim=True).clamp(min=1e-6)
     tips = env.tips()
@@ -96,6 +118,8 @@ def step_cost(env: SpiderEnv):
     v = valid.float()
     c = c + 5.0 * (cd * v).sum(-1) / v.sum(-1).clamp(min=1)
     c = c + 1.0 * (env.ref_tips[f] - tips).norm(dim=-1).mean(-1)
+    if args.success_bonus > 0:
+        c = c - args.success_bonus * env.success.evaluate().float()      # the task's own criterion, per sample
     return torch.nan_to_num(c, nan=1e3, posinf=1e3)
 
 
@@ -160,9 +184,27 @@ def main():
 
     renv, success_term = renv_mod.build(args.task, args.target, args.num_samples, args.device)
     env = SpiderEnv(renv, ref, kin, SpiderCfg(), success_term, args.success_steps)
+    meshes = np.load(rdir / "meshes.npz")
+    env.body_centroid = torch.stack([torch.as_tensor(meshes[f"{i}/v"].mean(0), dtype=torch.float32, device=env.device)
+                                     if f"{i}/v" in meshes else torch.zeros(3, device=env.device)
+                                     for i in range(len(renv.bodies))])
+    # keypoints per body (body frame): origin, centroid, the mesh's two extreme vertices along its principal axis
+    kps = []
+    for i in range(len(renv.bodies)):
+        if f"{i}/v" in meshes:
+            v = meshes[f"{i}/v"].astype(np.float64)
+            cen = v.mean(0)
+            axis = np.linalg.svd(v - cen, full_matrices=False)[2][0]
+            t = (v - cen) @ axis
+            kps.append(np.stack([np.zeros(3), cen, v[t.argmin()], v[t.argmax()]]))
+        else:
+            kps.append(np.zeros((4, 3)))
+    env.body_keypoints = torch.as_tensor(np.stack(kps), dtype=torch.float32, device=env.device)   # (B,4,3)
+    print("  object keypoints (body frame, cm):", {renv.bodies[i][1]: np.round(100 * k, 1).tolist() for i, k in enumerate(kps)}, flush=True)
     state0 = env.initial_state(src_ep["initial_state"])
     if not args.no_hold_pass:
         hold_pass(env, state0)
+    env.extend_hold(args.settle)                      # the last demo frame is held and optimised for `settle` frames
     if args.hold_only:
         return
     if args.max_frames:
@@ -254,7 +296,7 @@ def main():
             print(f"  frame {int(env.frame[0])}/{T} obj err cm {np.round(100 * traj['err'][-1], 1).tolist()} "
                   f"success now {env.success.history[-1]} ({time.time() - t0:.0f}s, {n_opt} optimised)", flush=True)
 
-    for _ in range(args.settle):
+    for _ in range(10):                               # a short plain hold after the optimised one
         commit_step(None)
 
     done = env.success.done_frame()

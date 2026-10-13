@@ -11,7 +11,11 @@ right hand to right hand and left to left). Tips in contact weigh 10, free tips 
 softly on the source palm's rotation from its home pose, applied to the target's home palm (every floating hand
 homes palm-down over the table, which is what the teleop retargeter assumes too); a small pull keeps each frame
 near the previous one, and frames are solved in order, each warm-started from the last. All wrists and fingers of
-the robot are solved together (12 wrist + 2 x finger joints for a bimanual target). An underactuated hand's mimic
+the robot are solved together (12 wrist + 2 x finger joints for a bimanual target). The hand has a volume: sample
+points on every hand link's mesh are kept out of the task objects (signed distance to the stage-1 meshes >= a
+margin, one-sided, ``--pen_weight`` per point, the ``--pen_per_link`` deepest points of a link per iteration);
+fingertip-only IK put Allegro's phalanges 3 cm and LEAP's palm 5 cm inside the GraspBleach bottle, which the hold
+pass then threw out of the grasp. An underactuated hand's mimic
 joints (Inspire: 6 per hand, ``hands.py``) are not variables: they follow their driver, ``q = C x + d``, with the
 coefficients measured on the simulator first (``RetargetEnv.calibrate_mimic``), i.e. what the PhysX mimic constraint
 actually holds in the task.
@@ -41,6 +45,11 @@ ap.add_argument("--target", required=True, help="target robot_type, e.g. floatin
 ap.add_argument("--iters0", type=int, default=300, help="iterations on the first frame")
 ap.add_argument("--iters", type=int, default=8, help="iterations per later frame (warm-started)")
 ap.add_argument("--eps", type=float, default=1e-3, help="finite-difference step (m / rad)")
+ap.add_argument("--pen_weight", type=float, default=3.0, help="weight per penetrating hand-surface point (0: off)")
+ap.add_argument("--pen_margin", type=float, default=0.002, help="m; hand surface kept this far outside the objects")
+ap.add_argument("--pen_samples", type=int, default=64, help="sample points per collision mesh of a hand link")
+ap.add_argument("--pen_per_link", type=int, default=8, help="deepest points of a link that enter the solve")
+ap.add_argument("--max_step", type=float, default=0.2, help="rad per frame a joint may move (wrist translation: /10 m)")
 AppLauncher.add_app_launcher_args(ap)
 args = ap.parse_args()
 app = AppLauncher(args).app
@@ -49,8 +58,8 @@ import numpy as np  # noqa: E402
 import torch  # noqa: E402
 
 from dexverse.retarget import env as renv  # noqa: E402
-from dexverse.retarget import hands, paths  # noqa: E402
-from isaaclab.utils.math import axis_angle_from_quat, quat_conjugate, quat_mul  # noqa: E402
+from dexverse.retarget import geometry, hands, paths  # noqa: E402
+from isaaclab.utils.math import axis_angle_from_quat, quat_apply, quat_conjugate, quat_mul  # noqa: E402
 
 W_TIP_CONTACT = 10.0
 W_TIP_FREE = 2.0
@@ -92,6 +101,70 @@ def main():
     w_tip = torch.where(torch.as_tensor(ref["contact_body"], device=dev)[:, slots] >= 0, W_TIP_CONTACT, W_TIP_FREE)
     src_palm, src_home = t(ref["src_palm"]).reshape(T, H, 7), t(ref["src_palm_home"]).reshape(H, 7)
 
+    # hand surface samples (link frame) and the task-object meshes (body frame), for the penetration term
+    pen = args.pen_weight > 0
+    if pen:
+        import omni.usd  # noqa: PLC0415
+        link_pts = geometry.collision_samples(omni.usd.get_context().get_stage(),
+                                              list(env.robot.root_physx_view.link_paths[0]), args.pen_samples)
+        pts, owner = [], []
+        for i, P in enumerate(link_pts):
+            if P is None:
+                continue
+            pts.append(t(P))
+            owner += [i] * len(P)
+        pen_pts, pen_owner = torch.cat(pts), torch.tensor(owner, device=dev)
+        pen_links = sorted(set(owner))
+        obj_meshes = np.load(rdir / "meshes.npz")
+        obj_mesh = {i: (t(obj_meshes[f"{i}/v"]), torch.as_tensor(obj_meshes[f"{i}/f"], device=dev))
+                    for i in range(len(meta["bodies"])) if f"{i}/v" in obj_meshes}
+        body_pose = t(ref["body_pose"])                                                 # (T,B,7)
+        print(f"penetration term: {len(pen_pts)} surface points on {len(pen_links)} links vs "
+              f"{len(obj_mesh)} object meshes", flush=True)
+
+    def hand_points(n):
+        """World positions of the hand surface samples in envs 0..n-1: (n,P,3)."""
+        bp = env.robot.data.body_pos_w[:n, pen_owner] - env.origins()[:n, None]
+        bq = env.robot.data.body_quat_w[:n, pen_owner]
+        return bp + quat_apply(bq.reshape(-1, 4), pen_pts.repeat(n, 1)).reshape(n, -1, 3)
+
+    def penetration(p, f):
+        """Signed distance of points p (P,3) to the nearest task body at frame f, and the outward unit direction."""
+        d = torch.full((len(p),), float("inf"), device=dev)
+        n = torch.zeros_like(p)
+        for i, (V, Fc) in obj_mesh.items():
+            pb, qb = body_pose[f, i, :3], body_pose[f, i, 3:7]
+            loc = quat_apply(quat_conjugate(qb)[None].expand(len(p), -1), p - pb)
+            di, cpt = geometry.signed_distance(loc, V, Fc)
+            di = torch.where(di < -geometry.MAX_DEPTH, torch.full_like(di, float("inf")), di)   # open-mesh artefacts
+            cw = quat_apply(qb[None].expand(len(p), -1), cpt) + pb
+            ni = torch.sign(di)[:, None] * (p - cw)
+            closer = di < d
+            d = torch.where(closer, di, d)
+            n = torch.where(closer[:, None], ni, n)
+        return d, n / n.norm(dim=-1, keepdim=True).clamp(min=1e-9)
+
+    def pen_rows(f, J):
+        """Error (n,) and Jacobian (n,J) of the penetrating hand points: push each out to the margin."""
+        if not pen:
+            return None, None
+        pw = hand_points(J + 1)
+        d, nrm = penetration(pw[J], f)
+        rows = []
+        for li in pen_links:
+            m = (pen_owner == li) & (d < args.pen_margin)
+            if m.any():
+                idx = torch.nonzero(m)[:, 0]
+                rows.append(idx[torch.argsort(d[idx])[: args.pen_per_link]])
+        if not rows:
+            return None, None
+        idx = torch.cat(rows)
+        e = args.pen_weight * (args.pen_margin - d[idx])
+        step = nonlocal_step[0]
+        dp = (pw[:J, idx] - pw[J, idx][None]) / step[:, None, None]                    # (J,n,3)
+        Jp = args.pen_weight * (dp * nrm[idx][None]).sum(-1).T                          # (n,J)
+        return e, Jp
+
     home = env.robot.data.default_joint_pos[0].clone()
     env.teleport(q=home)
     home = home[free]
@@ -113,11 +186,14 @@ def main():
         aa = axis_angle_from_quat(quat_mul(qa.reshape(-1, 4), quat_conjugate(qb.reshape(-1, 4))))
         return aa.reshape(*qa.shape[:-2], H * 3)
 
+    nonlocal_step = [None]
+
     def solve(f, x, x_reg, iters):
         for _ in range(iters):
             # finite-difference probes: +eps, or -eps for a joint within eps of its upper limit (a probe clamped
             # onto the limit divides by ~0 and makes the normal matrix singular)
             step = torch.where(x + args.eps <= x_hi, args.eps, -args.eps)
+            nonlocal_step[0] = step
             q = torch.cat([x[None] + torch.diag(step), x[None]], 0)                        # env J = the point itself
             tips, quat = features(q)
             base_tips, base_quat = tips[J], quat[J]
@@ -128,25 +204,37 @@ def main():
             e_rot = W_PALM_ROT * rot_err(tgt_palm_q[f], base_quat)
             e = torch.cat([e_tip, e_rot, W_REG * (x_reg - x)])
             Jx = torch.cat([Jt * w[:, None], W_PALM_ROT * Jr, W_REG * eye])
+            e_pen, J_pen = pen_rows(f, J)
+            if e_pen is not None:
+                e, Jx = torch.cat([e, e_pen]), torch.cat([Jx, J_pen])
             Jx64 = Jx.double()
             H = Jx64.T @ Jx64 + DAMPING * eye64
             dx = torch.linalg.solve(H, Jx64.T @ e.double()).float()
             x = torch.max(torch.min(x + dx, x_hi), x_lo)
         return x
 
+    # per-frame step cap: a 60 Hz reference the PD hand can follow (the penetration term can otherwise flip a finger
+    # 0.9 rad between frames when a link enters or leaves the margin)
+    cap = torch.full((J,), args.max_step, device=dev)
+    cap[[k for k, i in enumerate(free.tolist()) if names[i] in env.spec.wrist_joints[:3]
+         or any(names[i] == h.wrist[a] for h in env.spec.hands for a in range(3))]] = args.max_step / 10
     xs = [solve(0, home, home, args.iters0)]
     for f in range(1, T):
-        xs.append(solve(f, xs[-1], xs[-1], args.iters))
+        x = solve(f, xs[-1], xs[-1], args.iters)
+        xs.append(xs[-1] + torch.max(torch.min(x - xs[-1], cap), -cap))
         if f % 50 == 0:
             print(f"  frame {f}/{T}", flush=True)
     q = env.expand(torch.stack(xs))                                   # (T, n_joints), mimic joints filled in
 
-    tips_all, palm_all = [], []
+    tips_all, palm_all, depth = [], [], []
     for s in range(0, T, env.num_envs):
         e = min(s + env.num_envs, T)
         env.teleport(q=q[s:e], env_ids=torch.arange(e - s, device=dev))
         tips_all.append(env.tips()[: e - s])
         palm_all.append(env.palm_pose()[: e - s])
+        if pen:
+            pw = hand_points(e - s)
+            depth += [(-penetration(pw[i], s + i)[0].min()).clamp(min=0.0).item() for i in range(e - s)]
     tips_h, palm = torch.cat(tips_all), torch.cat(palm_all)
     tips5 = torch.full((T, 5 * H, 3), float("nan"), device=dev)
     tips5[:, env.slots] = tips_h
@@ -160,6 +248,8 @@ def main():
            "palm_rot_err_deg_mean": [round(float(np.degrees(v)), 1) for v in rot_e.mean(0).tolist()],
            "q_jump_max_rad": round((q[1:] - q[:-1]).abs().max().item(), 3),
            "at_limit_frac": round(((q[:, free] <= x_lo + 1e-4) | (q[:, free] >= x_hi - 1e-4)).float().mean().item(), 3),
+           "pen_depth_cm_max": round(100 * max(depth), 2) if depth else None,
+           "pen_depth_cm_mean": round(100 * float(np.mean(depth)), 2) if depth else None,
            "fingers": slots}
     out_dir.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(out, q=q.cpu().numpy(), joint_names=np.array(names), tips=tips5.cpu().numpy(),
