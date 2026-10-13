@@ -79,13 +79,14 @@ def main():
     ap.add_argument("--spider_args", default="")
     ap.add_argument("--seed_offset", type=int, default=0)
     ap.add_argument("--retry_failed", action="store_true",
-                    help="also re-run items that ended failed_all_attempts (new attempts if --max_attempts grew)")
+                    help="also re-run items that ended failed_all_attempts (new attempts if --max_attempts grew) "
+                         "or stage2_failed (stage 2 is re-run; a crash there is a bug, not a verdict)")
     ap.add_argument("--dry_run", action="store_true")
     a = ap.parse_args()
 
     py = os.environ.get("PY", sys.executable)
     supported = supported_robot_types()
-    final = FINAL - {"failed_all_attempts"} if a.retry_failed else FINAL
+    final = {"recorded"} if a.retry_failed else FINAL
     free = [g for g in a.gpus for _ in range(a.per_gpu)]
     lock = threading.Condition()
     logdir = runs_root() / "logs"
