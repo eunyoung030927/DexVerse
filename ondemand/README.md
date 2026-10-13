@@ -53,7 +53,7 @@ retargeting은 상태를 입력으로 쓰므로 그대로 진행할 수 있다(`
 3. setup (`setup.sh`, 최초 1회) — Isaac Sim 5.1 SIF(**Bench2Dex가 만든 `$HOME/b2d/sif`가 있으면 재사용**), Isaac Lab v2.3.2,
    **DexVerse 패키지와 의존성, 손 6종 에셋 + core_assets + ManiTwin 물체**(렌더링하지 않으므로 HDRI·long-horizon 제외)
 4. fetch (`fetch_data.py`) — **태스크의 v1 데모 pickle**(`dexverse/DexVerse_release`)
-5. retarget (`retarget_worker.sbatch`) — CUDA MPS, GPU당 `PER_GPU`(10) 세션 = 20개 동시. (에피소드, 목표 손) 큐를
+5. retarget (`retarget_worker.sbatch`) — CUDA MPS, GPU당 `PER_GPU`(16) 세션, VRAM `MIN_FREE_GB` 남을 때만 새 세션(2 GPU에서 실측 34개 동시). (에피소드, 목표 손) 큐를
    **`scripts/retarget/run_queue.py` → `run_target.py`** 로 처리: 에피소드마다 stage 1 한 번, 손마다 stage 2(기구학 IK) → stage 3(SPIDER v2, 60 Hz).
    판정은 **태스크 자신의 `success` 조건 10스텝 유지**(record_demos 규칙). 렌더링 없음
 6. upload (`finalize.sbatch` → **`scripts/retarget/upload_task.py`**) — 손별로 50개 모두 성공했을 때만,
@@ -88,9 +88,8 @@ retargeting은 상태를 입력으로 쓰므로 그대로 진행할 수 있다(`
 | `HANDS` | `allegro inspire leap sharpa wuji` | 목표 손 |
 | `EPISODES` | `50` | 소스 에피소드 0..N-1 |
 | `MAX_ATTEMPTS` | `3` | (에피소드, 손)당 SPIDER 시도 횟수 |
-| `PER_GPU` · `MPS_ON` | `10` · `1` | GPU당 세션 수 · MPS |
+| `PER_GPU` · `MIN_FREE_GB` · `SESSION_GB` · `MPS_ON` | `16` · `10` · `6` · `1` | GPU당 세션 상한 · 새 세션을 띄울 최소 여유 VRAM · 세션당 VRAM 가정 · MPS |
 | `SPIDER_ARGS` | 없음 (v2) | stage 3 추가 인자 |
-| `PARALLEL` | `0` | `0`: 태스크를 1번 → 2번 → 3번 순서로 하나씩(앞 태스크 잡이 끝나야 다음 잡 시작). `1`: 다른 태스크 잡과 동시 실행 허용 |
 | `UPLOAD` · `HF_NAMESPACE` | `1` · 토큰 사용자 | 업로드 |
 
 ## 진행 확인 (클러스터 셸 없음 → 잡이 스스로 보고)
@@ -120,5 +119,11 @@ OOD Files 앱에서 `~/dexverse/dvr_status_<task>.md`(5분마다 갱신): (태�
 | `finalize.sbatch` | 손별 업로드 판정 (50/50일 때만 pickle + 카드) |
 | `upload_job.sbatch` | (붙여넣기용) 부분 업로드 |
 
-**비용 미실측.** 로컬 RTX 3090에서 GraspCup v0 에피소드 하나(280프레임) → Allegro가 36분이었다. v1 데모는 300–1200 스텝이라 더 걸린다.
-`TASKS=Dexverse-GraspBleach-v1 EPISODES=1`로 먼저 돌려 시간과 메모리를 재고 `PER_GPU`를 정한다.
+**실측 (잡 1651, 2026-10-13):** p1의 pro6000 2장, 세션 34개 동시(GPU 사용률 100%, VRAM 66/98 GB), GraspBleach 한 손 항목당
+Allegro 28분·Inspire 46분(1차 성공 기준). 재시도 포함 평균 ~1시간/항목으로 보면 처리량 ≈ 34항목/시간 → 한 손 1,250항목 ≈ 1.5일,
+양손 1,000항목(프레임 1.5배·관절 2배) ≈ 3.5~4일, 전체 5~6일. 양손 실측이 쌓이면 다시 잡는다.
+
+**노드 사양 (p1, sysinfo 잡 1534 — Bench2Dex `experiments/ENVIRONMENT.md`):** pro6000 96 GB **4장**, EPYC 9135 ×2 = 64스레드,
+RAM 500000M, `/tmp` 7 TB(99% 사용). 현재 잡(`gres 2 / cpus 48 / mem 320G`)은 사양 안. 노드 전체를 쓰려면 `main_job.sbatch` 상단
+`--gres=gpu:pro6000:4 --cpus-per-task=64 --mem=440G`, `PER_GPU=11`(세션당 ~1.4코어 → 64스레드에 ~45세션). CPU가 먼저 한계라
+2장 대비 처리량은 1.3~2배 사이(세션당 GPU 몫이 커져 빨라지는 만큼). 워커는 잡이 받은 GPU 수를 그대로 쓴다.

@@ -37,6 +37,9 @@
 #SBATCH --gres=gpu:pro6000:2        # held from the start through download, retargeting and upload
 #SBATCH --cpus-per-task=48          # up to 32 sessions x ~1.4 cores (Bench2Dex measurement)
 #SBATCH --mem=320G                  # up to 32 sessions x ~6.6 GB + headroom
+# p1 = 4x pro6000 96 GB, 64 threads, 500000M (sysinfo job 1534, Bench2Dex experiments/ENVIRONMENT.md). The whole
+# node: --gres=gpu:pro6000:4 --cpus-per-task=64 --mem=440G with PER_GPU=11 (64 threads / ~1.4 cores per session);
+# the worker addresses however many GPUs the job holds.
 #SBATCH --time=3-00:00:00
 #SBATCH --output=slurm-dvr-main-%j.out
 

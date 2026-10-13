@@ -51,15 +51,18 @@ trap 'kill ${MON:-} 2>/dev/null; [ "$MPS" = 1 ] && echo quit | nvidia-cuda-mps-c
 
 # ------------------------------------------------------------------ GPU ids as the sessions see them
 # A session pins its GPU with CUDA_VISIBLE_DEVICES=<id>. Depending on cgroups / MPS that id is the job-relative
-# ordinal (0 1) or the node id SLURM gave; take the first form that reaches two distinct GPUs.
+# ordinal (0 1 ...) or the node id SLURM gave; take the first form that reaches N distinct GPUs, N = the GPUs this
+# job holds (--gres=gpu:pro6000:N; p1 has 4).
 probe() { "${ISAAC[@]}" "$PY" -c 'import torch; print(torch.cuda.get_device_properties(0).uuid)' 2>/dev/null | tail -1; }
+NGPU="${SLURM_GPUS_ON_NODE:-$(echo "${CUDA_VISIBLE_DEVICES:-0,1}" | tr ',' '\n' | grep -c .)}"
 GPUS=""
-for cand in "0 1" "$(echo "${CUDA_VISIBLE_DEVICES:-}" | tr ',' ' ')"; do
+for cand in "$(seq -s ' ' 0 $(( NGPU - 1 )))" "$(echo "${CUDA_VISIBLE_DEVICES:-}" | tr ',' ' ')"; do
   u=()
   for g in $cand; do u+=("$(APPTAINERENV_CUDA_VISIBLE_DEVICES=$g probe)"); done
-  if [ "${#u[@]}" -eq 2 ] && [ -n "${u[0]}" ] && [ -n "${u[1]}" ] && [ "${u[0]}" != "${u[1]}" ]; then GPUS="$cand"; break; fi
+  n_found="$(printf '%s\n' "${u[@]}" | grep -c .)"; n_unique="$(printf '%s\n' "${u[@]}" | grep . | sort -u | wc -l)"
+  if [ "$n_found" -eq "$NGPU" ] && [ "$n_unique" -eq "$NGPU" ]; then GPUS="$cand"; break; fi
 done
-[ -n "$GPUS" ] || { echo "FATAL: could not address two distinct GPUs"; exit 1; }
+[ -n "$GPUS" ] || { echo "FATAL: could not address $NGPU distinct GPUs"; exit 1; }
 echo "sessions use CUDA_VISIBLE_DEVICES in [$GPUS], up to $PER_GPU per GPU while >= $MIN_FREE_GB GB free, MPS=$MPS"
 
 # ------------------------------------------------------------------ queue
