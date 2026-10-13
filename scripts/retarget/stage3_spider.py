@@ -60,6 +60,8 @@ ap.add_argument("--squeeze_to", default="centroid", choices=["centroid", "origin
 ap.add_argument("--no_keypoints", action="store_true", help="ablation: track the body root position only")
 ap.add_argument("--success_steps", type=int, default=10, help="consecutive success frames (record_demos default)")
 ap.add_argument("--no_hold_pass", action="store_true")
+ap.add_argument("--hold_max_shift", type=float, default=0.03, help="m; the hold pass is discarded when its mean tip "
+                "shift exceeds this (a hand the kinematic object throws out of the grasp: Allegro 5 cm, LEAP 13 cm)")
 ap.add_argument("--max_frames", type=int, default=0, help="debug: stop the episode early")
 ap.add_argument("--hold_only", action="store_true", help="debug: run the hold pass and exit")
 ap.add_argument("--tag", default="spider")
@@ -165,8 +167,13 @@ def hold_pass(env: SpiderEnv, state0):
           f"{np.round(100 * shift.mean(1).cpu().numpy()[::30], 1).tolist()}; joint error max per joint (wrist "
           f"{np.round(qerr[:, env.wrist_ids].max(0).values.cpu().numpy(), 3).tolist()}, fingers "
           f"{np.round(qerr[:, env.finger_ids].max().item(), 3)})", flush=True)
+    if shift.mean() > args.hold_max_shift:
+        print(f"  hold pass: mean tip shift {100 * shift.mean():.1f} cm > {100 * args.hold_max_shift:.0f} cm -- "
+              f"discarded, the kinematic reference is kept", flush=True)
+        return False
     env.ref_q[: len(q)], env.ref_tips[: len(q)] = q, tips
     env.update_command()
+    return True
 
 
 def main():
@@ -202,8 +209,7 @@ def main():
     env.body_keypoints = torch.as_tensor(np.stack(kps), dtype=torch.float32, device=env.device)   # (B,4,3)
     print("  object keypoints (body frame, cm):", {renv.bodies[i][1]: np.round(100 * k, 1).tolist() for i, k in enumerate(kps)}, flush=True)
     state0 = env.initial_state(src_ep["initial_state"])
-    if not args.no_hold_pass:
-        hold_pass(env, state0)
+    hold_used = False if args.no_hold_pass else hold_pass(env, state0)
     env.extend_hold(args.settle)                      # the last demo frame is held and optimised for `settle` frames
     if args.hold_only:
         return
@@ -302,7 +308,7 @@ def main():
     done = env.success.done_frame()
     er = np.array(traj["err"])
     res = {"task": args.task, "episode": args.episode, "source": demos["robot_type"], "target": args.target,
-           "frames": len(er), "settle_frames": args.settle, "seed": args.seed,
+           "frames": len(er), "settle_frames": args.settle, "seed": args.seed, "hold_pass_used": hold_used,
            "task_success": done is not None, "success_frame": done,
            "instant_success_frames": int(sum(env.success.history)),
            "minutes": round((time.time() - t0) / 60, 1), "optimised_steps": n_opt,

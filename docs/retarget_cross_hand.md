@@ -73,6 +73,11 @@ SPIDER의 확정 실행은 커밋(15프레임)마다 스냅샷을 복원하며 �
   직접 측정한다(driver 하나씩 스윕, 자기충돌로 밀린 샘플 제외; USD의 PhysX mimic은 손가락 offset이 URDF와 다르다). stage 2는 x만 변수로 풀고(유한차분도 x 위에서), 저장되는
   `q`는 mimic까지 채운 전체 벡터다. stage 3는 물리 스텝이라 PhysX mimic 제약이 그대로 잡고, 잔차는 driver에만 걸린다.
 - 물체: 동적 rigid object와 로봇이 아닌 articulation(링크 단위). 테이블·`success_marker`는 접촉 대상에서 뺀다.
+- 손 부피 (2026-10-13): stage 2는 손 링크의 **충돌** 지오메트리(메시 + Cube/Sphere/Cylinder/Capsule 프리미티브,
+  `geometry.collision_samples`) 표면점을 물체 메시 밖(2 mm)에 두는 항을 푼다. stage 1 접촉 판정도 손끝 링크의 충돌 표면
+  기준(빈 프레임이면 가장 가까운 충돌체 링크). stage 3 비용은 물체 키포인트(원점·중심·주축 양끝) 위치 + 태스크 성공 판정
+  보너스, squeeze는 메시 중심 방향, hold pass는 손끝 이동 평균 3 cm 이하일 때만 채택, 데모 마지막 프레임을 settle 길이만큼
+  이어 붙여 계속 최적화한다. 근거와 수치는 `experiments/stage3_settings.md`.
 
 ## 결과
 

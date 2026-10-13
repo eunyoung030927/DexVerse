@@ -72,8 +72,8 @@ def main():
         raise RuntimeError(f"episode {args.episode}: {T} states for {len(ep['actions'])} actions (need T+1)")
     out_dir = paths.run_dir(args.task, args.demos, args.episode)
     out = out_dir / "reference.npz"
-    if out.exists():
-        print(f"skip: {out} exists", flush=True)
+    if out.exists() and paths.output_version(out) >= paths.REFERENCE_VERSION:
+        print(f"skip: {out} exists (version {paths.REFERENCE_VERSION})", flush=True)
         return
     env, _ = renv.build(args.task, src_type, min(args.chunk, T), args.device, gravity=False)
     dev, N = env.device, env.num_envs
@@ -188,7 +188,8 @@ def main():
             start = None
         if start is None and x >= 0:
             start = t
-    meta = {"task": args.task, "demos": os.path.abspath(args.demos), "episode": args.episode, "source": src_type,
+    meta = {"version": paths.REFERENCE_VERSION,
+            "task": args.task, "demos": os.path.abspath(args.demos), "episode": args.episode, "source": src_type,
             "n_frames": T, "fps": fps, "obj_ids": env.obj_ids, "bodies": names,
             "body_obj": [env.obj_ids.index(k) for k, _, _ in env.bodies],
             "art": {k: list(env.objects[k].joint_names) for k in env.art_ids},

@@ -72,8 +72,8 @@ def main():
     rdir = paths.run_dir(args.task, args.demos, args.episode)
     out_dir = rdir / args.target
     out = out_dir / "kinematic.npz"
-    if out.exists():
-        print(f"skip: {out} exists", flush=True)
+    if out.exists() and paths.output_version(out) >= paths.KINEMATIC_VERSION:
+        print(f"skip: {out} exists (version {paths.KINEMATIC_VERSION})", flush=True)
         return
     ref = np.load(rdir / "reference.npz", allow_pickle=True)
     meta = json.loads(str(ref["meta"]))
@@ -254,7 +254,7 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(out, q=q.cpu().numpy(), joint_names=np.array(names), tips=tips5.cpu().numpy(),
                         palm=palm.cpu().numpy(), tip_err=err.cpu().numpy(), report=np.array(json.dumps(rep)),
-                        coupling=np.array(json.dumps(coupling)))
+                        coupling=np.array(json.dumps(coupling)), version=np.array(paths.KINEMATIC_VERSION))
     print(f"RESULT stage2 {args.task} ep{args.episode} -> {args.target}: {rep}", flush=True)
 
 

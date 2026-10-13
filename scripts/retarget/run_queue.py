@@ -42,6 +42,22 @@ ALL_HANDS = ["allegro", "inspire", "leap", "sharpa", "wuji"]
 FINAL = {"recorded", "failed_all_attempts", "stage2_failed"}
 
 
+REFERENCE_VERSION = 2       # keep equal to dexverse.retarget.paths.REFERENCE_VERSION (stage 1 output format)
+
+
+def ref_current(path) -> bool:
+    """A reference.npz written by the current stage-1 definition (older ones are recomputed)."""
+    if not path.exists():
+        return False
+    try:
+        import numpy as np  # noqa: PLC0415
+
+        with np.load(path, allow_pickle=True) as z:
+            return int(json.loads(str(z["meta"])).get("version", 1)) >= REFERENCE_VERSION
+    except Exception:
+        return False
+
+
 def supported_robot_types() -> set[str]:
     """Robot types with a retargeting hand spec; hands.py is pure Python, loaded without the dexverse package."""
     spec = importlib.util.spec_from_file_location("hands", REPO / "source/dexverse/dexverse/retarget/hands.py")
@@ -201,7 +217,7 @@ def main():
             if not todo:
                 continue
             ref = episode_dir(task, str(demos), ep) / "reference.npz"
-            if not ref.exists():
+            if not ref_current(ref):
                 if a.dry_run:
                     log(f"would run stage 1 for {task} ep{ep}")
                 else:

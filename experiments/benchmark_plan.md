@@ -79,7 +79,11 @@ Cluster: `ondemand/` (README there), tasks one job each, strictly in order.
 - Cluster: first `main_job.sbatch` submitted 2026-10-13 08:45 KST with the defaults (9 tasks x 50 episodes, 4 hands at dd78096).
 - Stage 2 singular-matrix failure fixed 2026-10-13 (cluster job 1649: 6 of the first 40 items, Wuji/Sharpa, `stage2_failed`
   within 20 s): a finite-difference probe clamped onto a joint limit divided by ~0. Signed probes + float64 solve.
-- To do: per-pair 1-episode check of Inspire.
+- 2026-10-13 cluster job 1651 (6dd4f86), GraspBleach only after 9 h: Wuji 8/8, Allegro 5/11, Inspire 4/11, Sharpa 2/8,
+  LEAP 0/0 finished (each LEAP item ~9 h of retries). Throughput ~4 items/h -> 60 h for one task: unacceptable.
+- Investigation + fixes (see `stage3_settings.md`, "Added 2026-10-13"): hand-volume IK, surface contacts, keypoint and
+  success-aware cost, optimised hold, hold-pass acceptance rule. Allegro ep0 succeeds locally; Wuji still succeeds.
+- To do: resubmit the cluster with the fixed code; LEAP (hand too large for the Shadow bottle grasp); Inspire/Sharpa check.
 
 ## 6. Compute estimate (rough, from one episode)
 
