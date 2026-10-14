@@ -30,13 +30,13 @@
 #
 # Knobs (sbatch --export=ALL,KNOB=value, or edit the defaults below):
 #   TASKS="Dexverse-GraspBleach-v1 ..." (order = fill order)  HANDS="allegro wuji"  EPISODES=50  MAX_ATTEMPTS=3
-#   PER_GPU=16  MIN_FREE_GB=10  SESSION_GB=6  MPS_ON=1  SPIDER_ARGS="" (v2)  UPLOAD=1  HF_NAMESPACE  MAX_CHAIN=10
+#   PER_GPU=10  MIN_FREE_GB=10  SESSION_GB=6  MPS_ON=1  SPIDER_ARGS="" (v2)  UPLOAD=1  HF_NAMESPACE  MAX_CHAIN=10
 #
 #SBATCH --job-name=dvr-main
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:pro6000:2        # held from the start through download, retargeting and upload
-#SBATCH --cpus-per-task=48          # up to 32 sessions x ~1.4 cores (Bench2Dex measurement)
-#SBATCH --mem=320G                  # up to 32 sessions x ~6.6 GB + headroom
+#SBATCH --cpus-per-task=32          # 21 sessions (PER_GPU x 2 + stage 1) x ~1.4 cores (Bench2Dex measurement)
+#SBATCH --mem=200G                  # 21 sessions x ~6.6 GB + headroom
 # p1 = 4x pro6000 96 GB, 64 threads, 500000M (sysinfo job 1534, Bench2Dex experiments/ENVIRONMENT.md). The whole
 # node: --gres=gpu:pro6000:4 --cpus-per-task=64 --mem=440G with PER_GPU=11 (64 threads / ~1.4 cores per session);
 # the worker addresses however many GPUs the job holds.
@@ -53,7 +53,7 @@ export REPO_BRANCH="${REPO_BRANCH:-retarget/shadow-cross-hand}"
 export TASKS="${TASKS:-Dexverse-GraspBleach-v1 Dexverse-GraspPan-v1 Dexverse-GraspKettle-v1 Dexverse-FunctionalPourMug-v1 Dexverse-FunctionalHammerStrike-v1 Dexverse-BimanualLiftTray-v1 Dexverse-BimanualLiftCarton-v1 Dexverse-SlideUtilityKnife-v1 Dexverse-OpenFlatFolder-v1}"
 export HANDS="${HANDS:-allegro inspire leap sharpa wuji}"   # target hand families; unsupported ones are skipped with a log line
 export EPISODES="${EPISODES:-50}"
-export PER_GPU="${PER_GPU:-16}" MIN_FREE_GB="${MIN_FREE_GB:-10}" SESSION_GB="${SESSION_GB:-6}"
+export PER_GPU="${PER_GPU:-10}" MIN_FREE_GB="${MIN_FREE_GB:-10}" SESSION_GB="${SESSION_GB:-6}"
 CHAIN_N="${CHAIN_N:-1}"; MAX_CHAIN="${MAX_CHAIN:-10}"
 echo "tasks (fill order): $TASKS"
 echo "hands: $HANDS · episodes 0..$(( EPISODES - 1 )) · up to $PER_GPU sessions/GPU while >= ${MIN_FREE_GB} GB VRAM free · job $CHAIN_N/$MAX_CHAIN of the chain"

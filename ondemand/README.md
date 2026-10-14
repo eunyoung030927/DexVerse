@@ -54,7 +54,7 @@ retargeting은 상태를 입력으로 쓰므로 그대로 진행할 수 있다(`
 3. setup (`setup.sh`, 최초 1회) — Isaac Sim 5.1 SIF(**Bench2Dex가 만든 `$HOME/b2d/sif`가 있으면 재사용**), Isaac Lab v2.3.2,
    **DexVerse 패키지와 의존성, 손 6종 에셋 + core_assets + ManiTwin 물체**(렌더링하지 않으므로 HDRI·long-horizon 제외)
 4. fetch (`fetch_data.py`) — **태스크의 v1 데모 pickle**(`dexverse/DexVerse_release`)
-5. retarget (`retarget_worker.sbatch`) — CUDA MPS, GPU당 `PER_GPU`(16) 세션, VRAM `MIN_FREE_GB` 남을 때만 새 세션(2 GPU에서 실측 34개 동시). (에피소드, 목표 손) 큐를
+5. retarget (`retarget_worker.sbatch`) — CUDA MPS, GPU당 `PER_GPU`(10) 세션, VRAM `MIN_FREE_GB` 남을 때만 새 세션(2 GPU에서 실측 34개 동시). (에피소드, 목표 손) 큐를
    **`scripts/retarget/run_queue.py` → `run_target.py`** 로 처리: 에피소드마다 stage 1 한 번, 손마다 stage 2(기구학 IK) → stage 3(SPIDER v2, 60 Hz).
    판정은 **태스크 자신의 `success` 조건 10스텝 유지**(record_demos 규칙). 렌더링 없음
 6. upload (`finalize.sbatch` → **`scripts/retarget/upload_task.py`**) — 손별로 50개 모두 성공했을 때만,
@@ -89,7 +89,7 @@ retargeting은 상태를 입력으로 쓰므로 그대로 진행할 수 있다(`
 | `HANDS` | `allegro inspire leap sharpa wuji` | 목표 손 |
 | `EPISODES` | `50` | 소스 에피소드 0..N-1 |
 | `MAX_ATTEMPTS` | `3` | (에피소드, 손)당 SPIDER 시도 횟수 |
-| `PER_GPU` · `MIN_FREE_GB` · `SESSION_GB` · `MPS_ON` | `16` · `10` · `6` · `1` | GPU당 세션 상한 · 새 세션을 띄울 최소 여유 VRAM · 세션당 VRAM 가정 · MPS |
+| `PER_GPU` · `MIN_FREE_GB` · `SESSION_GB` · `MPS_ON` | `10` · `10` · `6` · `1` | GPU당 세션 상한 · 새 세션을 띄울 최소 여유 VRAM · 세션당 VRAM 가정 · MPS |
 | `SPIDER_ARGS` | 없음 (v2) | stage 3 추가 인자 |
 | `UPLOAD` · `HF_NAMESPACE` | `1` · 토큰 사용자 | 업로드 |
 

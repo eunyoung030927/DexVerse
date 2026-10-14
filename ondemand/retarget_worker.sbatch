@@ -14,8 +14,8 @@
 #SBATCH --job-name=dvr-retarget
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:pro6000:2
-#SBATCH --cpus-per-task=48
-#SBATCH --mem=320G
+#SBATCH --cpus-per-task=32
+#SBATCH --mem=200G
 #SBATCH --time=3-00:00:00
 #SBATCH --output=slurm-dvr-retarget-%j.out
 
@@ -27,7 +27,7 @@ sync_repo
 cd "$REPO_DIR"
 EPISODES="${EPISODES:-50}"
 HANDS="${HANDS:-allegro inspire leap sharpa wuji}"
-PER_GPU="${PER_GPU:-16}"
+PER_GPU="${PER_GPU:-10}"
 MIN_FREE_GB="${MIN_FREE_GB:-10}"
 SESSION_GB="${SESSION_GB:-6}"
 MAX_ATTEMPTS="${MAX_ATTEMPTS:-3}"
