@@ -23,6 +23,7 @@ interpreter is $PY or this one. Status: <runs>/<task>/<demos stem>/epNNN/<target
 import argparse
 import json
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -47,14 +48,32 @@ def episode_dir(task: str, demos: str, episode: int) -> Path:
     return runs_root() / task.split(":")[-1] / Path(demos).stem / f"ep{episode:03d}"
 
 
+def run_group(cmd: list, timeout: float, **kw) -> int:
+    """subprocess.run with a timeout that kills the whole process tree, not just the direct child.
+
+    The child gets its own process group; on timeout (or any exception, e.g. this process being interrupted) the
+    group is SIGKILLed. subprocess.run alone kills only the direct child: when that is a wrapper (python.sh,
+    run_target.py), the Isaac process under it kept the GPU while its queue slot was already handed out again.
+    """
+    p = subprocess.Popen(list(map(str, cmd)), start_new_session=True, **kw)
+    try:
+        return p.wait(timeout=timeout)
+    except BaseException:
+        try:
+            os.killpg(p.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        p.wait()
+        raise
+
+
 def run(log: Path, cmd: list, timeout: int) -> int:
     env = {**os.environ, "PYTHONPATH": f"{REPO / 'source' / 'dexverse'}:{os.environ.get('PYTHONPATH', '')}"}
     with open(log, "a") as f:
         f.write(f"\n--- {time.strftime('%F %T')} {' '.join(map(str, cmd))}\n")
         f.flush()
         try:
-            return subprocess.run(list(map(str, cmd)), stdout=f, stderr=subprocess.STDOUT, timeout=timeout,
-                                  cwd=REPO, env=env).returncode
+            return run_group(cmd, timeout, stdout=f, stderr=subprocess.STDOUT, cwd=REPO, env=env)
         except subprocess.TimeoutExpired:
             f.write(f"--- TIMEOUT after {timeout}s\n")
             return 124

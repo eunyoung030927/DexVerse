@@ -30,6 +30,9 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 PY = os.environ.get("PY", sys.executable)
+sys.path.insert(0, str(HERE))
+from run_target import run_group  # noqa: E402
+
 FAILED = {}                                            # out mp4 -> input mtime whose render failed (not retried)
 
 
@@ -88,7 +91,7 @@ def render(task, robot_type, jobs, gpu, log):
         f.write(f"\n--- {time.strftime('%F %T')} {task} {robot_type}: {len(jobs)} jobs\n")
         f.flush()
         try:
-            subprocess.run(cmd, stdout=f, stderr=subprocess.STDOUT, cwd=REPO, env=env, timeout=3600)
+            run_group(cmd, 3600, stdout=f, stderr=subprocess.STDOUT, cwd=REPO, env=env)
         except subprocess.TimeoutExpired:
             f.write("--- TIMEOUT\n")
     for j in jobs:

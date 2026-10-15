@@ -36,7 +36,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 sys.path.insert(0, str(HERE))
-from run_target import episode_dir, experiments_root, runs_root  # noqa: E402
+from run_target import episode_dir, experiments_root, run_group, runs_root  # noqa: E402
 
 ALL_HANDS = ["allegro", "inspire", "leap", "sharpa", "wuji"]
 FINAL = {"recorded", "failed_all_attempts", "stage2_failed"}
@@ -151,8 +151,8 @@ def main():
     def run(cmd, gpu, logf, timeout):
         with open(logf, "a") as f:
             try:
-                return subprocess.run(list(map(str, cmd)), stdout=f, stderr=subprocess.STDOUT, cwd=REPO, timeout=timeout,
-                                      env={**env_base, "CUDA_VISIBLE_DEVICES": str(gpu)}).returncode
+                return run_group(cmd, timeout, stdout=f, stderr=subprocess.STDOUT, cwd=REPO,   # whole tree on timeout
+                                 env={**env_base, "CUDA_VISIBLE_DEVICES": str(gpu)})
             except subprocess.TimeoutExpired:
                 return 124
 
