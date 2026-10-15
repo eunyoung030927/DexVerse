@@ -59,6 +59,17 @@ class TrainConfig:
     num_workers: int = 4
     seed: int = 0
     save_every_epochs: int = 10
+    """Also write ``epoch_*.pt`` every N epochs; 0 disables."""
+    split_ratio: float = 0.95
+    """Fraction of episodes used for training; the rest are the validation split."""
+    slim_checkpoints: bool = False
+    """Store only the EMA weights (what evaluation loads) in last.pt/best.pt; halves the file size, but cannot resume."""
+    no_val: bool = False
+    """Train on every episode (split ``all``): no validation, so no early stopping or best.pt."""
+    save_last: bool = True
+    """Write ``last.pt`` every epoch."""
+    save_best: bool = True
+    """Write ``best.pt`` (EMA weights at the best validation loss). ``last.pt`` is always written."""
     early_stopping_patience: int = 40
     """Stop after this many epochs without a new best validation loss; 0 disables."""
     obs_embed_dim: int = 256
@@ -92,3 +103,10 @@ class EvalConfig:
     video_length: int | None = None
     json_path: str | None = None
     """Task-specific object/scene JSON, forwarded to ``parse_env_cfg``."""
+    policy_device: str | None = None
+    """Device for policy inference (default: ``device``). Physics stays on ``device``, e.g. ``--device cpu
+    --policy_device cuda:0`` keeps CPU physics like the recordings while denoising on the GPU."""
+    seed: int | None = None
+    """Env seed for reset randomization; give parallel evaluation shards different seeds."""
+    robot_type: str | None = None
+    """Override the task's hand (e.g. ``floating_allegro_right``); must match the demos the policy was trained on."""

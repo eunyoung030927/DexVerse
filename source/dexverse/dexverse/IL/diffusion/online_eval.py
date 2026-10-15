@@ -29,7 +29,8 @@ from .runner import DiffusionPolicyRunner, load_policy
 def evaluate(cfg: EvalConfig) -> dict[str, Any]:
     output_dir = Path(cfg.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    device = torch.device(cfg.device if torch.cuda.is_available() else "cpu")
+    policy_device = cfg.policy_device or cfg.device
+    device = torch.device(policy_device if torch.cuda.is_available() else "cpu")
 
     policy, stats = load_policy(cfg.ckpt, task=cfg.task, device=device)
     env, success_probe = _make_env(cfg)
@@ -105,6 +106,13 @@ def _make_env(cfg: EvalConfig):
     from dexverse.tasks.utils import parse_env_cfg
 
     env_cfg = parse_env_cfg(cfg.task, device=cfg.device, num_envs=1, json_path=cfg.json_path)
+    if cfg.robot_type is not None and cfg.robot_type != getattr(env_cfg, "robot_type", None):
+        # Same rebuild as create_demo_files_sequential.py: robot_type is a constructor input of the task cfg.
+        env_cfg = type(env_cfg)(robot_type=cfg.robot_type)
+        env_cfg.sim.device = cfg.device
+        env_cfg.scene.num_envs = 1
+    if cfg.seed is not None:
+        env_cfg.seed = cfg.seed
     # The recorded demos were replayed under an observation preset; the live env
     # has to publish the same groups or the state vector no longer lines up.
     if cfg.observation_preset is not None:

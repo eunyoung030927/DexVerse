@@ -7,7 +7,8 @@
 """Train the state-based Diffusion Policy baseline on a demonstration dataset.
 
 Takes the HDF5 written by ``build_dataset.py``. Pure PyTorch, so pick a GPU with
-``CUDA_VISIBLE_DEVICES``.
+``CUDA_VISIBLE_DEVICES``. Launch with ``torchrun --nproc_per_node N`` for multi-GPU
+data parallel training (``--batch_size`` stays the global batch).
 
 Usage::
 
@@ -43,12 +44,24 @@ def main() -> None:
     parser.add_argument("--num_workers", type=int, default=defaults.num_workers)
     parser.add_argument("--seed", type=int, default=defaults.seed)
     parser.add_argument("--save_every_epochs", type=int, default=defaults.save_every_epochs)
+    parser.add_argument("--split_ratio", type=float, default=defaults.split_ratio,
+                        help="Fraction of episodes for training (per-episode split); the rest validate.")
+    parser.add_argument("--slim_checkpoints", action="store_true",
+                        help="Save only EMA weights in last.pt/best.pt (half the size; no training resume).")
+    parser.add_argument("--no_val", action="store_true",
+                        help="Use every episode for training (no validation split, early stopping or best.pt).")
+    parser.add_argument("--no_save_last", dest="save_last", action="store_false",
+                        help="Do not write last.pt; with best.pt enabled, only the best-validation checkpoint is kept.")
+    parser.add_argument("--no_save_best", dest="save_best", action="store_false",
+                        help="Do not write best.pt; keep only last.pt (plus epoch_*.pt if enabled).")
     parser.add_argument("--early_stopping_patience", type=int, default=defaults.early_stopping_patience,
                         help="Epochs without a new best validation loss before stopping; 0 disables.")
     args = parser.parse_args()
 
     cfg = TrainConfig(**{**vars(args), "dataset_files": tuple(args.dataset_files)})
-    print(train(cfg))
+    metrics = train(cfg)
+    if metrics is not None:
+        print(metrics)
 
 
 if __name__ == "__main__":

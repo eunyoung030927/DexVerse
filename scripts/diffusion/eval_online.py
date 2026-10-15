@@ -38,6 +38,11 @@ parser.add_argument("--reset_from_dataset", default=None,
 parser.add_argument("--video", action="store_true", help="Record one MP4 per episode under <output_dir>/videos/.")
 parser.add_argument("--video_length", type=int, default=None, help="Frames per recorded episode (default: --max_steps).")
 parser.add_argument("--json_path", default=None, help="Task-specific object/scene JSON.")
+parser.add_argument("--policy_device", default=None,
+                    help="Device for policy inference (default: --device); physics stays on --device.")
+parser.add_argument("--seed", type=int, default=None, help="Env seed (use distinct seeds for parallel shards).")
+parser.add_argument("--robot_type", default=None,
+                    help="Override the task's hand, e.g. floating_allegro_right (match the training demos).")
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
 
@@ -59,5 +64,11 @@ def main() -> None:
 if __name__ == "__main__":
     try:
         main()
+    except BaseException:
+        # simulation_app.close() can end the process before Python prints the traceback.
+        import traceback
+
+        traceback.print_exc()
+        raise
     finally:
         simulation_app.close()
