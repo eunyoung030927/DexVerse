@@ -59,7 +59,9 @@ def runs():
     out = []
     for art in sorted(ROOT.glob("*/*/*/artifacts")):
         eps = sorted(art.glob("*/*/ep[0-9][0-9][0-9]/reference.json"))
-        if not eps:
+        cmd = (read_json(art.parent / "meta.json") or {}).get("command")
+        cmd = cmd if isinstance(cmd, str) and "run_queue.py" in cmd else ""
+        if not eps and not cmd:
             continue
         run = art.parent
         meta = read_json(run / "meta.json") or {}
@@ -76,6 +78,16 @@ def runs():
                                 "attempts": st.get("attempts", []), "running": running})
             episodes.append({"key": rel(ep), "task": ep.parents[1].name, "stem": ep.parent.name, "ep": ep.name,
                              "targets": targets})
+        # planned but not started (no stage 1 yet): rows from the queue command, every hand waiting
+        m_t, m_h, m_e = (re.search(rf"--{k} (.*?)(?: --|$)", cmd) for k in ("tasks", "hands", "episodes"))
+        started = {(e["task"], e["ep"]) for e in episodes}
+        for task in (m_t.group(1).split() if m_t else []):
+            for ep in (m_e.group(1).split() if m_e else ["0"]):
+                if (task, f"ep{int(ep):03d}") not in started:
+                    episodes.append({"key": f"{rel(art)}/{task}/demos/ep{int(ep):03d}", "task": task, "stem": "demos",
+                                     "ep": f"ep{int(ep):03d}", "planned": True,
+                                     "targets": [{"name": f"floating_{h}_right", "state": "pending", "attempts": [],
+                                                  "running": False} for h in (m_h.group(1).split() if m_h else [])]})
         out.append({"id": rel(run), "server": run.parents[1].name, "project": run.parent.name, "run": run.name,
                     "status": meta.get("status"), "episodes": episodes})
     return out
@@ -225,13 +237,13 @@ async function load(){RUNS=await (await fetch('/api/runs')).json();const cur_=sn
 function grid(){const v=$('#run').value;RUN=v==='ALL'?{episodes:RUNS.filter(r=>r.status==='running').flatMap(r=>r.episodes.map(e=>({...e,server:r.server})))}:RUNS.find(r=>r.id===v);if(!RUN){$('#grid').innerHTML='<p class=mut>retarget 결과 없음</p>';return}
  const hands=[...new Set(RUN.episodes.flatMap(e=>e.targets.map(t=>hand(t.name))))];
  let h='<table><tr><th style="text-align:left">task / ep</th>'+hands.map(x=>`<th>${x}</th>`).join('')+'</tr>';
- for(const e of RUN.episodes){h+=`<tr><td class="task" data-k="${e.key}">${short(e.task)} <span class=mut>${e.ep}${e.server?' · '+e.server:''}</span></td>`;
+ for(const e of RUN.episodes){h+=`<tr><td class="task" data-k="${e.key}">${short(e.task)} <span class=mut>${e.ep}${e.server?' · '+e.server:''}${e.planned?' · 대기':''}</span></td>`;
   for(const x of hands){const t=e.targets.find(t=>hand(t.name)===x);if(!t){h+='<td></td>';continue}const[c,l]=cls(t),k=e.key+'/'+t.name;
    h+=`<td><span class="cell ${c} ${SEL===k?'sel':''} ${NEWK.has(k)?'new':''}" data-k="${k}" title="${t.name}: ${t.state}">${l}</span></td>`}h+='</tr>'}
  $('#grid').innerHTML=h+'</table>';
  document.querySelectorAll('[data-k]').forEach(el=>el.onclick=()=>show(el.dataset.k))}
 let DET=null;
-async function show(k){SEL=k;NEWK.delete(k);document.title='Retarget Viewer';history.replaceState(null,'','#'+encodeURIComponent(k));grid();const d=await (await fetch('/api/detail?key='+encodeURIComponent(k))).json();DET=d;
+async function show(k){if(RUN&&RUN.episodes.some(e=>e.planned&&k.startsWith(e.key)))return;SEL=k;NEWK.delete(k);document.title='Retarget Viewer';history.replaceState(null,'','#'+encodeURIComponent(k));grid();const d=await (await fetch('/api/detail?key='+encodeURIComponent(k))).json();DET=d;
  const parts=k.split('/');let h=`<h2 style="margin:0 0 4px;font-size:15px">${parts.slice(4).join(' / ')}</h2>`;
  if(d.status)h+=`<div class=mut>state: <b>${d.status.state||'-'}</b> · attempts: ${(d.status.attempts||[]).map(a=>a.tag+(a.success?' ✓':' ✗')+(a.minutes?` ${a.minutes}m`:'')).join(', ')||'-'}</div>`;
  const rk=Object.keys(d.results||{});if(rk.length){h+='<table class="res"><tr><th>attempt</th><th>success</th><th>frame</th><th>min</th><th>err mean cm</th><th>err final cm</th><th>retries</th></tr>';

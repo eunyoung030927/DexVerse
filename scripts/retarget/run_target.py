@@ -96,7 +96,7 @@ def main():
     isaac = ["--headless", "--device", a.device]
     try:
         # the Isaac scripts can exit 0 after an exception (Kit shutdown), so judge each stage by its output file
-        rc = run(log, [PY, "-u", HERE / "stage2_kinematic.py", *common, *isaac], 3600)
+        rc = run(log, [PY, "-u", HERE / "stage2_kinematic.py", *common, *isaac], 6 * 3600)   # bimanual + busy GPU: ~2.5 h
         if not (d / "kinematic.npz").exists():
             return save(state="stage2_failed", error=f"no kinematic.npz (rc={rc}, see run.log)")
         good = next((x for x in status["attempts"] if x.get("success")), None)
