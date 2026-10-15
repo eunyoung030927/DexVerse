@@ -1,0 +1,72 @@
+<?xml version="1.0"?>
+<robot name="cutaway_door">
+  <!-- SI units; root at the hinge foot. Door opens +Z, from +X toward +Y.
+       Near 90 degrees the lower window lip cams the beveled spring catch up.
+       After passing its vertical retaining face, the spring drops it into
+       the window and the closing spring seats the door against the catch.
+       Keep separate box colliders: a single convex hull would fill the hole.
+       Spring drives are configured in Isaac Lab, not portable URDF dynamics.
+       Required: fixed base, self collision ON, no fixed-joint merging. -->
+  <material name="frame_grey"><color rgba="0.32 0.32 0.34 1"/></material>
+  <material name="panel_grey"><color rgba="0.60 0.60 0.62 1"/></material>
+  <material name="catch_orange"><color rgba="0.90 0.48 0.12 1"/></material>
+  <link name="frame">
+    <inertial><origin xyz="0 0 0.10"/><mass value="3"/><inertia ixx="0.06" iyy="0.06" izz="0.06" ixy="0" ixz="0" iyz="0"/></inertial>
+    <visual><origin xyz="0.12 0.13 0.006"/><geometry><box size="0.46 0.34 0.012"/></geometry><material name="frame_grey"/></visual>
+    <collision><origin xyz="0.12 0.13 0.006"/><geometry><box size="0.46 0.34 0.012"/></geometry></collision>
+    <!-- Full, 10 cm deep surround. Top, sill and free jamb leave 5 mm
+         running gaps: too narrow to hook a finger around the closed panel.
+         The hinge jamb has a rear rebate to block rear finger access while
+         relieving the opening side for the panel's entire 0-96 degree sweep. -->
+    <visual name="frame_header"><origin xyz="0.1635 0 0.4425"/><geometry><box size="0.433 0.100 0.035"/></geometry><material name="frame_grey"/></visual>
+    <collision name="frame_header"><origin xyz="0.1635 0 0.4425"/><geometry><box size="0.433 0.100 0.035"/></geometry></collision>
+    <visual name="frame_sill"><origin xyz="0.1635 0 0.0075"/><geometry><box size="0.433 0.100 0.015"/></geometry><material name="frame_grey"/></visual>
+    <collision name="frame_sill"><origin xyz="0.1635 0 0.0075"/><geometry><box size="0.433 0.100 0.015"/></geometry></collision>
+    <visual name="frame_free_jamb"><origin xyz="0.3625 0 0.22"/><geometry><box size="0.035 0.100 0.410"/></geometry><material name="frame_grey"/></visual>
+    <collision name="frame_free_jamb"><origin xyz="0.3625 0 0.22"/><geometry><box size="0.035 0.100 0.410"/></geometry></collision>
+    <visual name="frame_hinge_jamb"><origin xyz="-0.0365 0 0.22"/><geometry><box size="0.033 0.100 0.410"/></geometry><material name="frame_grey"/></visual>
+    <collision name="frame_hinge_jamb"><origin xyz="-0.0365 0 0.22"/><geometry><box size="0.033 0.100 0.410"/></geometry></collision>
+    <visual name="frame_hinge_rebate"><origin xyz="-0.0105 -0.032 0.22"/><geometry><box size="0.019 0.036 0.410"/></geometry><material name="frame_grey"/></visual>
+    <collision name="frame_hinge_rebate"><origin xyz="-0.0105 -0.032 0.22"/><geometry><box size="0.019 0.036 0.410"/></geometry></collision>
+    <!-- Latch support is outside the door's sweep through 96 degrees. -->
+    <visual><origin xyz="-0.074 0.255 0.088"/><geometry><box size="0.030 0.055 0.150"/></geometry><material name="frame_grey"/></visual>
+    <collision><origin xyz="-0.074 0.255 0.088"/><geometry><box size="0.030 0.055 0.150"/></geometry></collision>
+  </link>
+  <link name="door">
+    <inertial><origin xyz="0.160 0 0.214"/><mass value="0.65"/><inertia ixx="0.010" iyy="0.016" izz="0.006" ixy="0" ixz="0" iyz="0"/></inertial>
+    <!-- Four boxes form a REAL 14 x 8 cm window: x=[.18,.32], z=[.21,.29].
+         Panel spans x=[.004,.34], z=[.020,.42], thickness 18 mm. -->
+    <visual><origin xyz="0.092 0 0.22"/><geometry><box size="0.176 0.018 0.40"/></geometry><material name="panel_grey"/></visual>
+    <collision><origin xyz="0.092 0 0.22"/><geometry><box size="0.176 0.018 0.40"/></geometry></collision>
+    <visual><origin xyz="0.260 0 0.115"/><geometry><box size="0.16 0.018 0.19"/></geometry><material name="panel_grey"/></visual>
+    <collision><origin xyz="0.260 0 0.115"/><geometry><box size="0.16 0.018 0.19"/></geometry></collision>
+    <visual><origin xyz="0.260 0 0.355"/><geometry><box size="0.16 0.018 0.13"/></geometry><material name="panel_grey"/></visual>
+    <collision><origin xyz="0.260 0 0.355"/><geometry><box size="0.16 0.018 0.13"/></geometry></collision>
+    <visual><origin xyz="0.330 0 0.25"/><geometry><box size="0.020 0.018 0.08"/></geometry><material name="panel_grey"/></visual>
+    <collision><origin xyz="0.330 0 0.25"/><geometry><box size="0.020 0.018 0.08"/></geometry></collision>
+  </link>
+  <joint name="door_hinge" type="revolute">
+    <parent link="frame"/><child link="door"/><origin xyz="0 0 0"/><axis xyz="0 0 1"/>
+    <limit lower="0" upper="1.675516082" effort="3" velocity="2"/>
+    <dynamics damping="0.12" friction="0.0"/>
+  </joint>
+  <link name="latch">
+    <inertial><origin xyz="-0.005 0.25 0.215"/><mass value="0.06"/><inertia ixx="0.00009" iyy="0.00010" izz="0.00015" ixy="0" ixz="0" iyz="0"/></inertial>
+    <!-- 12 x 6 cm retaining face, slightly smaller than the 14 x 8 cm hole.
+         The opening-side bevel rises toward +X; the approaching door cams
+         the catch up ~35 mm, then its spring returns it behind the lower lip.
+         The vertical -X face resists closing, without a software joint lock.
+         Mesh is a local, source-authored convex triangular prism (SI units). -->
+    <visual name="latch_bevel"><origin xyz="0.015 0.19 0.18"/><geometry><mesh filename="latch_wedge.obj"/></geometry><material name="catch_orange"/></visual>
+    <collision name="latch_bevel"><origin xyz="0.015 0.19 0.18"/><geometry><mesh filename="latch_wedge.obj"/></geometry></collision>
+    <visual name="latch_bridge"><origin xyz="-0.030 0.25 0.234"/><geometry><box size="0.090 0.120 0.012"/></geometry><material name="catch_orange"/></visual>
+    <collision name="latch_bridge"><origin xyz="-0.030 0.25 0.234"/><geometry><box size="0.090 0.120 0.012"/></geometry></collision>
+    <visual><origin xyz="-0.074 0.25 0.190"/><geometry><box size="0.025 0.055 0.080"/></geometry><material name="catch_orange"/></visual>
+    <collision><origin xyz="-0.074 0.25 0.190"/><geometry><box size="0.025 0.055 0.080"/></geometry></collision>
+  </link>
+  <joint name="latch_slide" type="prismatic">
+    <parent link="frame"/><child link="latch"/><origin xyz="0 0 0"/><axis xyz="0 0 1"/>
+    <limit lower="0" upper="0.055" effort="5" velocity="0.5"/>
+    <dynamics damping="1.0" friction="0.0"/>
+  </joint>
+</robot>

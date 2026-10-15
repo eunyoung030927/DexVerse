@@ -22,7 +22,9 @@
 
 - [x] Initial release: task suite, assets
 - [x] Release teleoperation and data-collection tooling and corresponding documentations
-- [ ] Baseline environment demonstrations and baseline code
+- [x] Upgraded baseline tasks (`-v1`), alongside the original `-v0` tasks
+- [ ] State-based Diffusion Policy (DP) and point-cloud DP3 training and evaluation
+- [ ] Pi0.5 VLA baseline
 - [ ] Full shadowhand demonstration dataset
 - [ ] Cross-embodiment robot assets, instructions, and demonstrations
 
@@ -30,7 +32,11 @@
 
 This repository is the official codebase for **DexVerse**, a benchmark for tabletop dexterous
 manipulation built on [Isaac Lab](https://github.com/isaac-sim/IsaacLab). 
-**Docs:** `source/dexverse/docs/envdocs.md` lists the registered tasks.
+The `develop` branch includes the upgraded baseline tasks, demonstration tools,
+and initial DP/DP3 baseline implementations. Start with the [DP and DP3 walkthrough](docs/baseline_training.md)
+for demo preparation, dataset conversion, training, and a short policy rollout.
+See [demo download and H5 conversion](docs/demo_conversion.md) for more selection options, or run
+`python scripts/list_envs.py` for the registered task catalog.
 
 ## Repository Structure
 
@@ -44,13 +50,14 @@ DexVerse/
 ├── source/dexverse/                 # Installable Python package (the Isaac Lab extension)
 │   ├── dexverse/                        # Core package
 │   │   ├── tasks/                           # Task/environment definitions and configs
+│   │   ├── baseline_v1/                     # Upgraded versions of the 20 baseline tasks
 │   │   ├── assets/                          # Asset configs (objects, scenes, background HDRIs, ...)
 │   │   ├── devices/                         # Teleop input devices (OpenXR, retargeters)
 │   │   ├── robot_agents/                    # Per-robot-hand configs
+│   │   ├── IL/                              # Imitation-learning baselines (DP and DP3)
 │   │   └── utils/                           # Shared utilities
 │   ├── demonstrations/                  # Demonstration data (populated by download_demos.py)
-│   ├── docker_utils/                    # Docker Compose patch for IsaacLab. 
-│   └── docs/                            # Extension docs; envdocs.md lists all registered tasks
+│   └── docker_utils/                    # Docker Compose patch for IsaacLab
 ├── scripts/                         # Entry points and tooling (not installed as a package)
 │   ├── list_envs.py                     # List registered tasks
 │   ├── zero_agent.py / random_agent.py  # Dummy agents for sanity checks
@@ -58,9 +65,11 @@ DexVerse/
 │   ├── record_demos.py                  # Demonstration recording
 │   ├── run_dexverse.py                  # Joint-slider debug UI
 │   ├── asset_tools/                     # Asset download utilities
-│   └── demo_tools/                      # Demo download / conversion / inspection utilities
+│   ├── demo_tools/                      # Demo download / conversion / inspection utilities
+│   ├── diffusion/                       # State-based Diffusion Policy baseline
+│   └── dp3/                             # Point-cloud-based Diffusion Policy baseline
 ├── datastorage/                     # Host-mounted demo output (Docker; gitignored contents)
-└── docs/                            # Repo-level docs (observation space, known hand issues)
+└── docs/                            # Demo conversion guide and project images
 ```
 
 
@@ -117,7 +126,15 @@ sudo apt install cmake build-essential   # Linux system dependencies
 
 ### Install the DexVerse package
 
-Most dependencies will be satisfied after IsaacLab installation. After IsaacLab is fully installed, from this repository root and in the same virtual environment that IsaacLab is installed to, install the extension (optionally in editable mode):
+After installing Isaac Lab, clone `develop` to use the upgraded tasks and both
+baselines. Run this from the parent directory containing `IsaacLab/`:
+
+```bash
+git clone --branch develop https://github.com/ycyao216/DexVerse.git
+cd DexVerse
+```
+
+Most dependencies will be satisfied after IsaacLab installation. From this repository root and in the same virtual environment that IsaacLab is installed to, install the extension (optionally in editable mode):
 
 ```bash
 python -m pip install -e source/dexverse
@@ -141,15 +158,16 @@ python -m pip install matplotlib "opencv-python<4.12" open3d imageio-ffmpeg "num
 
 ## Downloading Assets
 
-The robot hand and object/scene assets are not stored in the git repository. They are hosted on the gated
+The robot hand and object/scene assets are not stored in the git repository. They are hosted on the public
 Hugging Face dataset [`dexverse/DexVerse_release`](https://huggingface.co/datasets/dexverse/DexVerse_release)
-and must be downloaded before any environment can run. Log in once and accept the dataset terms:
+and must be downloaded before any environment can run. No Hugging Face login is required:
 
 ```bash
 pip install huggingface_hub
-hf auth login   # and follow the prompt to login to hugging face
-# alternatively, you can create hugging face tokens and set the environmetn HF_TOKEN=<your-token> 
 ```
+
+Robot, asset, and demo downloaders default to this release. Use `--repo OWNER/DATASET`
+to override it; `hf auth login` is only needed if that dataset requires authentication.
 
 
 
@@ -165,7 +183,34 @@ python scripts/asset_tools/download_robot_agents.py --all
 The bundles extract into `source/dexverse/dexverse/robot_agents/`, directly next to the configs
 that use them. 
 
-> **Note**: we currently release the Shadow hand. The remaining robot combinations are coming soon. 
+The following Python/YAML configurations are available in both v0 and v1 environments:
+
+| Hand | `--robot_type` values |
+| --- | --- |
+| Shadow | `floating_shadow_right`, `floating_shadow_left`, `floating_shadow_bimanual` |
+| Allegro | `floating_allegro_right`, `floating_allegro_left`, `floating_allegro_bimanual` |
+| Inspire | `floating_inspire_right`, `floating_inspire_left`, `floating_inspire_bimanual` |
+| Leap | `floating_leap_right`, `floating_leap_bimanual` (alias: `bimanual_leap`) |
+| Sharpa Wave | `floating_sharpa_right`, `floating_sharpa_left`, `floating_sharpa_bimanual` |
+| Wuji | `floating_wuji_right`, `floating_wuji_left`, `floating_wuji_bimanual` |
+
+Both DexPilot and vector finger retargeting configs are included. For example, add
+`--robot_type floating_allegro_right` to a compatible single-hand task command, or
+`--robot_type floating_allegro_bimanual` to a bimanual task command.
+
+**Asset availability:** the public Hugging Face release provides USD/URDF/mesh bundles
+for all six hand families above. `--all` downloads them into
+`source/dexverse/dexverse/robot_agents/`. FR3+Sharpa is excluded.
+See the [asset release notes](https://huggingface.co/datasets/dexverse/DexVerse_release/blob/main/robot_agents/README.md)
+for bundle details and validation coverage.
+
+Single-hand Allegro and Inspire support task-specific wrist initialization for both
+right and left hands in v0 and v1, including the pan and obstacle-slope tasks.
+
+**Current task limits:** local smoke tests found insufficient commanded wrist/finger
+response for Allegro/Leap bimanual in
+`Dexverse-BimanualLiftTray-v1`; both passed the v0 tray task. Registration and successful
+retargeting therefore do not imply that every task is ready for every hand.
 
 
 
@@ -182,8 +227,8 @@ The bundles extract into `source/dexverse/dexverse/assets/`. Note that `--all` p
 (core assets ~410 MB, ManiTwin object pool ~2.2 GB, HDRIs ~1.8 GB, plus long-horizon task meshes),
 so expect a few GB of downloads.
 
-With both downloads in place, every registered environment is functional. If you only need a
-subset (a single hand, or just the core assets), both scripts support finer-grained flags — run
+Some tasks require additional generated assets; see [baseline task versions](#baseline-task-versions).
+If you only need a subset (a single hand, or just the core assets), both scripts support finer-grained flags — run
 them with `--help`, or `download_robot_agents.py --list` to see the available hand bundles.
 
 ## Quick Start
@@ -205,9 +250,8 @@ python scripts/random_agent.py --task=<TASK_NAME> --enable_cameras --num_envs=1
 ```
 
 If the simulator window opens and the scene steps without errors, the core installation is complete.
-Pick any `<TASK_NAME>` from the `list_envs.py` output (the full catalog is documented in
-`source/dexverse/docs/envdocs.md`), and use `--num_envs=<N>` to control how many parallel
-environments are spawned.
+Pick any `<TASK_NAME>` from the `list_envs.py` output, and use `--num_envs=<N>`
+to control how many parallel environments are spawned.
 
 ## Teleoperation and Data Collection
 
@@ -267,6 +311,35 @@ When finished, stop the containers from the Isaac Lab root:
 
 
 
+### Baseline task versions
+
+The 20 baseline task families have paired `-v0` (original) and `-v1` (upgraded)
+environments. Select the version in the task ID, for example
+`Dexverse-PushT-v0` or `Dexverse-PushT-v1`.
+Original tasks remain in `dexverse/tasks/`; their baseline upgrades live beside
+them in `dexverse/baseline_v1/`. This is task versioning, not a separate benchmark release.
+
+**Control compatibility:** v1 reuses the shared robot definitions but keeps its
+collection/control differences in `baseline_v1/control_profile.py`: floating
+Shadow wrist simulation/command limits are ±2π, and vector retargeting uses
+`low_pass_alpha=0.2` and `scaling_factor=1.125` for both hands (v0: alpha 0.8,
+left scale 1.3, right scale 1.125). The filter/scale affect teleop collection;
+wrist limits also affect policy execution. These explicit overrides preserve
+the v1 setup without duplicating robots or changing v0. Matching action shapes
+do not make a v0-trained policy compatible with v1; validate the task and control
+settings before transferring policies.
+
+```bash
+python scripts/list_envs.py --baseline --version all --names_only
+```
+
+Both versions use the same benchmark prerequisites. Before running the cutaway
+door v1 task, generate its USD from the supplied URDF:
+
+```bash
+python scripts/asset_tools/convert_cutaway_door.py --headless
+```
+
 ### Debug teleoperation (`teleop_agent.py`)
 
 Use `scripts/teleop_agent.py` to test VR teleop, retargeting, and task setup **without** writing demos to disk.  
@@ -285,6 +358,11 @@ Common optional flags:
 - `--teleop_retargeter relative|absolute` — wrist retargeting mode (default: `relative`). `relative` takes the pose of the operator's wrist when the teleoperation process is started. `absolute` directly take the pose of the operator's wrist in the simulator's frame and match the robot's wrist link to that.  
 - `--retargeting_scheme dexpilot|vector` — finger retargeting optimizer (default: `dexpilot`)
 - `--enable_debug_vis` — show zone / reference-point markers in the viewport
+
+The debug switch also controls v1 hand-tracking dots and current-object frames.
+The same controls are available in zero-agent and recording; use
+`--cues_in_rgb` / `--no-cues_in_rgb` to choose camera visibility separately.
+Task-defining goals remain visible.
 
 Use START / STOP / RESET from the XR client to control the session (more details see the official IsaacLab CloudXR guide).
 
@@ -310,15 +388,26 @@ cd /workspace/dexverse
 
 By default, output path on the host: `DexVerse/datastorage/grasping/Dexverse-PickUpStick-v0/<TASK>_<timestamp>.pkl`. File names can also be specified. See output of `--help` for other argument options. 
 
-Each pickle includes per-step scene states (`record_state` is always on). Use START to begin
-recording an episode; a demo is saved after `--num_success_steps` consecutive successful steps. To see other arguments, use `--help`. Smooth teleoperation also depends on CPU, GPU, and network condition. 
+New recordings include the selected `task_version`, `benchmark_revision`, and `action_layout`.
+Use `--device cpu` for consistent collection/replay device selection and
+`--seed N` to seed collection randomness; this does not guarantee identical physics
+across machines. The resolved seed is saved in each session. Teleop and zero-agent
+also accept `--seed`.
+
+Each pickle includes per-step scene states (`record_state` is always on), plus per-episode
+command and task-buffer state used to reconstruct randomized goals and their visual markers.
+Use START to begin recording an episode; a demo is saved after `--num_success_steps`
+consecutive successful steps. To see other arguments, use `--help`. Smooth teleoperation also
+depends on CPU, GPU, and network condition.
 
 ### Basic replaying and converting demos (`--set-state`)
 
 Isaac Sim / PhysX dynamics can differ slightly across GPUs and driver versions, so replaying
 recorded **actions** step-by-step on another machine may drift from the original trajectory.
 
-When converting pickles to HDF5 for training, it is recommended to use `scripts/demo_tools/create_demo_files_sequential.py` with `--set-state` (the default). This flag directly set the recorded scene state at each timestep instead of using environment steps from actions. This keeps observations consistent across machines.
+When converting pickles to HDF5, use `scripts/demo_tools/create_demo_files_sequential.py`
+with `--set-state` (the default) to restore recorded scene states at each timestep.
+This is not a guarantee of identical contact observations or successful action-driven replay.
 
 ```bash
 python scripts/demo_tools/create_demo_files_sequential.py \
@@ -327,6 +416,29 @@ python scripts/demo_tools/create_demo_files_sequential.py \
 ```
 
 Pass `--no-set-state` only if you explicitly want true action replay. See `create_demo_files_sequential.py --help` for the full set of output and selection options.
+
+For curated baseline demos, select the task **including its version**:
+
+```bash
+# Download all available v0 AND v1 baselines (reports missing sets).
+python scripts/demo_tools/download_demos.py --repo dexverse/DexVerse_release --baseline
+
+# Or download one exact task/version.
+python scripts/demo_tools/download_demos.py --repo dexverse/DexVerse_release --task Dexverse-PushT-v1
+
+# Convert that task's curated demos.pkl; change -v1 to -v0 for the original task.
+python scripts/demo_tools/create_demo_files_sequential.py \
+    --task Dexverse-PushT-v1 --obs-groups state --device cpu \
+    --set-state --output-dir outputs/h5
+```
+
+Output is `outputs/h5/v1/non_prehensile/Dexverse-PushT-v1/Dexverse-PushT-v1.state.seq.demo.h5`.
+All 50 trajectories in a complete set are converted by default. Task selection
+never recursively merges collection sessions or substitutes another version.
+Use `--dry-run` to inspect selection without starting the simulator; use
+`--demos-root PATH` for a different download directory or prepared local release.
+Raw-session conversion remains available through `--file PATH` or the explicit
+`--legacy-collections` option. See [versioned H5 conversion](docs/demo_conversion.md).
 
 #### Observation modes (`--obs-groups`)
 
@@ -445,9 +557,46 @@ per backend, and a mismatch fails silently), and the full flag reference.
 
 ## Demonstrations
 
-> 🚧 **Data and Instructions Coming soon.** 
+See [demo download and H5 conversion](docs/demo_conversion.md) for versioned task
+selection. The dataset manifest lists available recordings; the dataset card
+specifies their license. Demonstrations are distributed separately from the code.
 
+```bash
+# Download available curated demonstrations for both baseline task versions.
+python scripts/demo_tools/download_demos.py --baseline
+```
 
+## Imitation-Learning Baselines
+
+DP/DP3 training and evaluation are still in progress. The walkthrough below
+provides commands for initial pipeline checks.
+
+State-based [Diffusion Policy](https://diffusion-policy.cs.columbia.edu/) lives in
+`dexverse.IL.diffusion`, with entry points in `scripts/diffusion/`.
+[DP3](source/dexverse/dexverse/IL/dp3/README.md) uses point clouds and proprioception,
+with entry points in `scripts/dp3/`. Install their optional dependencies with:
+
+```bash
+python -m pip install -e "source/dexverse[dp3]"
+```
+
+Follow the **[DP and DP3 walkthrough](docs/baseline_training.md)** to download
+50 PushT v1 demonstrations, generate observation H5s, build both training
+datasets, train for two epochs, and load each checkpoint for a short simulator
+rollout. It includes commands and the output files to check at each stage.
+
+| Baseline | Replay preset (`--obs-groups`) | Build the training dataset | Train / evaluate |
+| --- | --- | --- | --- |
+| DP | `state` | `scripts/diffusion/build_dataset.py` | `scripts/diffusion/train.py` / `eval_online.py` |
+| DP3 | `pointcloud` | `scripts/dp3/convert_demos_to_dp3.py` | `scripts/dp3/train.py` / `eval_online.py` |
+
+The walkthrough uses CPU physics for conversion and evaluation, and CUDA for
+neural-network training. Two epochs check that the pipeline runs; longer
+training and evaluation are needed to assess task success.
+
+Keep the task version and observation preset consistent through conversion,
+training, and evaluation. The state converter records observation-term order so
+DP can reconstruct the same state layout at training and evaluation time.
 
 ## Contact
 

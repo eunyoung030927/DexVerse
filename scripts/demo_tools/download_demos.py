@@ -1,217 +1,183 @@
 # Copyright (c) 2025-2026, The DexVerse Project Developers.
 # All rights reserved.
-#
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Sync teleoperation demonstrations from the DexVerse Hugging Face
-dataset into the in-repo ``demonstrations/`` directory.
+"""Download versioned demos without overwriting differing local recordings.
 
-The HF repo ``dexverse/DexVerse_Dataset`` keeps demos under
-``demonstrations/<category>/<task>/...``. This script mirrors that tree
-into ``source/dexverse/demonstrations/`` (or a path of your choosing).
+  python scripts/demo_tools/download_demos.py --repo OWNER/DATASET --baseline
+  python scripts/demo_tools/download_demos.py --baseline --version v1 --dry-run
+  python scripts/demo_tools/download_demos.py --category functional --version v0
 
-Examples
---------
-    # Download everything under demonstrations/
-    python scripts/demo_tools/download_demos.py --all
-
-    # Only the rigid category
-    python scripts/demo_tools/download_demos.py --category rigid
-
-    # A specific task
-    python scripts/demo_tools/download_demos.py --task contact_rich/Dexverse-PlugCharger-v0
-
-    # The curated baseline demo set (tasks listed in baseline_manifest.txt,
-    # each fetched from its own real <category>/<task> location -- no
-    # separate "baseline" category, so a later --all won't re-download them)
-    python scripts/demo_tools/download_demos.py --baseline
-
-    # Just list what is available on the remote
-    python scripts/demo_tools/download_demos.py --list
-
-The dataset is gated. Run ``huggingface-cli login`` once (and accept the
-terms on the dataset page in your browser) before using this script.
+--baseline selects BOTH v0 and v1 by default, using the remote release manifest.
+Absent/skipped tasks are reported, never silently substituted with another version.
+For older unversioned datasets, use --legacy explicitly (v0 only). No pickle is
+unpickled during download. The default release is public and needs no login.
+Authenticate with `hf auth login` only when using a gated/private --repo override.
 """
 
 from __future__ import annotations
 
 import argparse
+import fnmatch
 from pathlib import Path
 
-DEFAULT_REPO = "dexverse/DexVerse_Dataset"
+from demo_release import DEMOS, MANIFEST, baseline_entries, baseline_key, contained_path, install_file, read_manifest, safe_relative, sha256
+
+DEFAULT_REPO = "dexverse/DexVerse_release"
 DEFAULT_REPO_TYPE = "dataset"
+DEFAULT_DEST = DEMOS
 REMOTE_ROOT = "demonstrations"
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_DEST = REPO_ROOT / "source" / "dexverse" / "demonstrations"
-# The curated baseline set is a list of <category>/<task> entries (see the
-# file for details), each a real category/task location -- not a separate
-# flat "baseline" category. Keeps the remote free of duplicate copies and
-# lets a later --all skip files --baseline already fetched.
-BASELINE_MANIFEST = DEFAULT_DEST / "baseline_manifest.txt"
+BASELINE_MANIFEST = DEMOS / "baseline_manifest.txt"
 
 
-def _load_baseline_manifest() -> list[str]:
-    if not BASELINE_MANIFEST.is_file():
-        raise SystemExit(f"--baseline manifest not found: {BASELINE_MANIFEST}")
-    entries = []
-    for line in BASELINE_MANIFEST.read_text().splitlines():
-        line = line.strip()
-        if line and not line.startswith("#"):
-            entries.append(line.strip("/"))
-    return entries
+def _load_baseline_manifest(version="all"):
+    return baseline_entries(version)
 
 
-def _load_hf():
-    try:
-        from huggingface_hub import HfApi, snapshot_download
-    except ImportError as exc:
-        raise SystemExit("huggingface_hub not installed. Run `pip install huggingface_hub`.") from exc
-    return HfApi, snapshot_download
-
-
-def _list_remote(repo: str, repo_type: str) -> list[str]:
-    HfApi, _ = _load_hf()
-    api = HfApi()
-    files = api.list_repo_files(repo_id=repo, repo_type=repo_type)
-    return [f for f in files if f.startswith(REMOTE_ROOT + "/")]
-
-
-def _print_listing(files: list[str]) -> None:
-    if not files:
-        print(f"No files found under {REMOTE_ROOT}/ on the remote.")
-        return
-
-    categories: dict[str, dict[str, int]] = {}
-    for f in files:
-        parts = f.split("/")
-        if len(parts) < 3:
-            continue
-        category = parts[1]
-        task = parts[2] if len(parts) >= 4 else "<root>"
-        categories.setdefault(category, {}).setdefault(task, 0)
-        categories[category][task] += 1
-
-    print(f"Available demos under {REMOTE_ROOT}/ in remote repo:")
-    for category in sorted(categories):
-        print(f"  {category}/")
-        for task, count in sorted(categories[category].items()):
-            print(f"    {task}/  ({count} file{'s' if count != 1 else ''})")
-
-
-def _build_patterns(args) -> list[str]:
-    patterns: list[str] = []
+def _build_patterns(args):
+    """Unversioned selectors expand into both directories; explicit ones stay explicit."""
+    version = getattr(args, "version", "all")
+    legacy = getattr(args, "legacy", False)
+    versions = ("v0", "v1") if version == "all" else (version,)
+    patterns = []
+    if legacy and version == "v1":
+        raise ValueError("Legacy layout has no v1 demos")
     if args.all:
-        patterns.append(f"{REMOTE_ROOT}/**")
+        patterns.extend(["demonstrations/**"] if legacy else [f"demonstrations/{v}/**" for v in versions])
     if args.baseline:
-        for entry in _load_baseline_manifest():
-            patterns.append(f"{REMOTE_ROOT}/{entry}/**")
-    for cat in args.category or []:
-        patterns.append(f"{REMOTE_ROOT}/{cat.strip('/')}/**")
-    for task in args.task or []:
-        patterns.append(f"{REMOTE_ROOT}/{task.strip('/')}/**")
-    for pat in args.pattern or []:
-        patterns.append(pat)
-    return patterns
+        for entry in baseline_entries("v0" if legacy else version):
+            patterns.append(f"demonstrations/{entry.split('/', 1)[1] if legacy else entry}/**")
+    for selector in args.task or []:
+        if not legacy:
+            key = baseline_key(selector, version)
+            patterns.append(f"demonstrations/{key}/**")
+        else:
+            safe_relative(selector)
+            if selector.endswith("-v1") or selector.split("/")[0] in {"v0", "v1"}:
+                raise ValueError("Legacy layout only supports unversioned v0 paths")
+            if "/" not in selector:
+                selector = baseline_key(selector, "v0").split("/", 1)[1]
+            patterns.append(f"demonstrations/{selector}/**")
+    for selector in args.category or []:
+        safe_relative(selector)
+        if selector.split("/")[0] in {"v0", "v1"}:
+            if legacy:
+                raise ValueError("Do not use a version prefix with --legacy")
+            if selector.split("/")[0] not in versions:
+                raise ValueError("Explicit task version conflicts with --version")
+            patterns.append(f"demonstrations/{selector}/**")
+        else:
+            selected_versions = versions
+            if selector.endswith(("-v0", "-v1")):
+                selected_versions = tuple(v for v in versions if selector.endswith("-" + v))
+            patterns.extend([f"demonstrations/{selector}/**"] if legacy else
+                            [f"demonstrations/{v}/{selector}/**" for v in selected_versions])
+    for pattern in args.pattern or []:
+        if not pattern.startswith("demonstrations/") or ".." in pattern.split("/") or "\\" in pattern:
+            raise ValueError("Patterns must stay under demonstrations/")
+        patterns.append(pattern)
+    return list(dict.fromkeys(patterns))
 
 
-def main() -> int:
+def select_release(manifest, patterns):
+    files, unavailable = [], []
+    for task in manifest["tasks"]:
+        probe = f"demonstrations/{task['key']}/demos.pkl"
+        if not any(fnmatch.fnmatchcase(probe, pattern) for pattern in patterns):
+            continue
+        files.extend(task["files"])
+        if task["status"] != "complete":
+            unavailable.append(task)
+    return files, unavailable
+
+
+def fetch_selected(entries, dest, fetch):
+    """Checksum validate cached downloads and atomically install without clobbering."""
+    for entry in entries:
+        rel = safe_relative(entry["path"])
+        if rel.parts[0] != REMOTE_ROOT:
+            raise ValueError("Remote entry outside demonstrations/")
+        target = contained_path(dest, str(rel.relative_to(REMOTE_ROOT)))
+        if target.exists() or target.is_symlink():
+            if target.is_symlink() or not target.is_file():
+                raise FileExistsError(f"Refusing to replace {target}")
+            if entry.get("sha256"):
+                if target.stat().st_size != entry["bytes"] or sha256(target) != entry["sha256"]:
+                    raise FileExistsError(f"Different local file exists: {target}; choose another --dest")
+                print(f"Already verified: {target}")
+                continue
+        cached = Path(fetch(entry["path"]))
+        if entry.get("bytes") is not None and cached.stat().st_size != entry["bytes"]:
+            raise ValueError(f"Downloaded size mismatch: {entry['path']}")
+        install_file(cached, target, entry.get("sha256"))
+        print(f"Installed: {target}")
+
+
+def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--repo", default=DEFAULT_REPO, help="HF repo id (default: %(default)s)")
     parser.add_argument("--repo-type", default=DEFAULT_REPO_TYPE, choices=("dataset", "model", "space"))
-    parser.add_argument(
-        "--dest",
-        type=Path,
-        default=DEFAULT_DEST,
-        help="Local destination directory (default: source/dexverse/demonstrations)",
-    )
-    parser.add_argument("--cache-dir", type=Path, default=None, help="HF cache dir override.")
-    parser.add_argument("--all", action="store_true", help=f"Download everything under {REMOTE_ROOT}/.")
-    parser.add_argument(
-        "--baseline",
-        action="store_true",
-        help=(
-            "Download the curated baseline demo set (the tasks "
-            f"listed in {BASELINE_MANIFEST.name}), each from its "
-            "own real <category>/<task> location."
-        ),
-    )
-    parser.add_argument(
-        "--category",
-        action="append",
-        help="Download a category subdir, e.g. `--category rigid` or `--category articulation`. Repeatable.",
-    )
-    parser.add_argument(
-        "--task",
-        action="append",
-        help="Download a specific task, e.g. `--task contact_rich/Dexverse-PlugCharger-v0`. Repeatable.",
-    )
-    parser.add_argument("--pattern", action="append", help="Extra HF allow_patterns glob (advanced). Repeatable.")
-    parser.add_argument(
-        "--list", dest="list_only", action="store_true", help="List what's available on the remote and exit."
-    )
-    parser.add_argument("--dry-run", action="store_true", help="Show what would be downloaded without fetching.")
+    parser.add_argument("--revision", default="main", help="Branch, tag, or pinned commit")
+    parser.add_argument("--dest", type=Path, default=DEFAULT_DEST)
+    parser.add_argument("--cache-dir", type=Path)
+    parser.add_argument("--baseline", action="store_true", help="Both baseline versions by default")
+    parser.add_argument("--version", choices=("all", "v0", "v1"), default="all")
+    parser.add_argument("--all", action="store_true")
+    parser.add_argument("--category", action="append")
+    parser.add_argument("--task", action="append", help="Versioned ID (Dexverse-PushT-v1) or [v0|v1/]<category>/<task>; repeatable")
+    parser.add_argument("--pattern", action="append", help="demonstrations/ glob; restricted to manifest files")
+    parser.add_argument("--list", dest="list_only", action="store_true")
+    parser.add_argument("--dry-run", action="store_true", help="Read remote inventory, no demo downloads")
+    parser.add_argument("--legacy", action="store_true", help="Explicit old unversioned v0 dataset layout")
+    parser.add_argument("--require-complete", action="store_true", help="Fail before fetching if selected tasks are missing/partial/skipped")
     args = parser.parse_args()
-
-    if args.list_only:
-        files = _list_remote(args.repo, args.repo_type)
-        _print_listing(files)
-        return 0
-
-    patterns = _build_patterns(args)
-    if not patterns:
-        parser.error(
-            "Nothing selected. Use --all, --baseline, --category <name>, "
-            "--task <cat/name>, --pattern <glob>, or --list."
-        )
-
-    print(f"Repo:        {args.repo} ({args.repo_type})")
-    print(f"Destination: {args.dest}")
-    print("Patterns:")
-    for p in patterns:
-        print(f"  {p}")
-
+    try:
+        patterns = _build_patterns(args)
+    except ValueError as exc:
+        parser.error(str(exc))
+    if not patterns and not args.list_only:
+        parser.error("Select --baseline, --all, --category, --task, --pattern, or --list")
+    from huggingface_hub import HfApi, hf_hub_download
+    api = HfApi()
+    # Pin inventory and downloads to the same commit even when a branch advances.
+    revision = api.repo_info(repo_id=args.repo, repo_type=args.repo_type, revision=args.revision).sha
+    def fetch(name):
+        return hf_hub_download(repo_id=args.repo, repo_type=args.repo_type, revision=revision,
+                               filename=name, cache_dir=str(args.cache_dir) if args.cache_dir else None)
+    if args.legacy:
+        if args.require_complete:
+            parser.error("--require-complete needs the versioned release manifest")
+        paths = api.list_repo_files(repo_id=args.repo, repo_type=args.repo_type, revision=revision)
+        paths = [p for p in paths if p.startswith("demonstrations/") and p.split("/")[1] not in {"v0", "v1", "_review"}]
+        if args.list_only:
+            print("\n".join(paths))
+            return 0
+        entries = [{"path": p} for p in paths if any(fnmatch.fnmatchcase(p, pat) for pat in patterns)]
+        unavailable = []
+        print("Legacy layout: only unversioned v0; release hashes and v1 coverage unavailable.")
+    else:
+        from huggingface_hub.errors import EntryNotFoundError
+        try:
+            manifest = read_manifest(fetch(MANIFEST))
+        except EntryNotFoundError as exc:
+            raise SystemExit("Remote has no versioned release manifest. Upload a prepared release first, or use --legacy for the old v0-only dataset.") from exc
+        if args.list_only:
+            for task in manifest["tasks"]:
+                print(f"{task['key']}: {task['status']} ({task['episodes']})")
+            return 0
+        entries, unavailable = select_release(manifest, patterns)
+    print(f"Dataset {args.repo}@{revision}: {len(entries)} selected files")
+    for task in unavailable:
+        print(f"Unavailable/incomplete: {task['key']} ({task['status']}, {task['episodes']}/50). {task['reason']}")
+    if unavailable and args.require_complete:
+        raise SystemExit("Selected baseline set is incomplete; nothing downloaded")
+    if not entries:
+        raise SystemExit("No demo files match this selection")
     if args.dry_run:
-        files = _list_remote(args.repo, args.repo_type)
-        import fnmatch
-
-        matched = sorted({f for f in files for p in patterns if fnmatch.fnmatch(f, p)})
-        print(f"\n[dry-run] {len(matched)} file(s) would be downloaded:")
-        for f in matched:
-            print(f"  {f}")
+        print("\n".join(entry["path"] for entry in entries))
         return 0
-
-    _, snapshot_download = _load_hf()
-    args.dest.mkdir(parents=True, exist_ok=True)
-    snapshot_download(
-        repo_id=args.repo,
-        repo_type=args.repo_type,
-        allow_patterns=patterns,
-        local_dir=str(args.dest),
-        cache_dir=str(args.cache_dir) if args.cache_dir else None,
-    )
-
-    # snapshot_download mirrors the repo paths, so files arrive at
-    # `<dest>/demonstrations/...`. Promote them up to `<dest>/...` so the
-    # caller's dest contains the categories directly. Promote per-file so
-    # newly fetched tasks merge into pre-existing category dirs instead of
-    # being silently stranded under `<dest>/demonstrations/`.
-    import shutil
-
-    nested = args.dest / REMOTE_ROOT
-    if nested.is_dir():
-        for src_file in nested.rglob("*"):
-            if not src_file.is_file():
-                continue
-            rel = src_file.relative_to(nested)
-            dst_file = args.dest / rel
-            dst_file.parent.mkdir(parents=True, exist_ok=True)
-            if dst_file.exists() or dst_file.is_symlink():
-                dst_file.unlink()
-            src_file.rename(dst_file)
-        shutil.rmtree(nested, ignore_errors=True)
-
-    print(f"\nDone. Demos at: {args.dest}")
+    fetch_selected(entries, args.dest, fetch)
+    # A remote manifest is not installed as local coverage: selection may be partial.
     return 0
 
 

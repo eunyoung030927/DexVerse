@@ -38,9 +38,12 @@ Example::
 
 import argparse
 import json
+import os
 import pickle
+import sys
 from pathlib import Path
-from typing import NamedTuple
+from demo_selection import discover_groups, normalize_demo_root, validate_selected_identity, worker_arguments, PickleGroup
+from conversion_output import conversion_request, exit_conversion, request_json, validate_existing_output
 
 import torch
 from _active_object_masks import apply_recorded_active_masks
@@ -56,13 +59,13 @@ parser.add_argument(
     "--demos-root",
     type=Path,
     default=Path(__file__).resolve().parents[2] / "source" / "dexverse" / "demonstrations",
-    help="Root that holds task/<env>/<pickle>.pkl trees (default: %(default)s).",
+    help="Versioned download directory or prepared release root (default: %(default)s).",
 )
 parser.add_argument(
     "--task",
     action="append",
     default=[],
-    help="Task subdirectory to convert (relative to --demos-root). Repeatable.",
+    help="Versioned task ID, e.g. Dexverse-PushT-v0 or Dexverse-PushT-v1. Also accepts version/category/task paths. Repeatable.",
 )
 parser.add_argument(
     "--file",
@@ -73,8 +76,16 @@ parser.add_argument(
 parser.add_argument(
     "--all",
     action="store_true",
-    help="Convert every pickle found under --demos-root.",
+    help="Convert available curated baseline demos; report missing tasks. Never scans raw sessions by default.",
 )
+parser.add_argument("--version", choices=("all", "v0", "v1"), default="all",
+                    help="Filter --all or check the version in --task (never substitute versions).")
+parser.add_argument("--legacy-collections", action="store_true",
+                    help="Explicit raw-directory discovery/merging instead of curated demos.pkl selection.")
+parser.add_argument("--dry-run", action="store_true", help="List selected pickles without launching Isaac Sim or loading pickles.")
+parser.add_argument("--worker-group", help=argparse.SUPPRESS)
+parser.add_argument("--task-timeout", type=int, default=3600,
+                    help="Timeout in seconds per isolated task when selecting multiple tasks (default: 3600).")
 parser.add_argument(
     "--output-dir",
     type=Path,
@@ -132,12 +143,23 @@ parser.add_argument(
         "the simulator instead."
     ),
 )
+parser.add_argument(
+    "--strip-cameras",
+    action=argparse.BooleanOptionalAction,
+    default=True,
+    help=(
+        "For camera-free captures (e.g. --obs-groups state without --record-video) "
+        "remove the scene's camera sensors before building the env, so no RTX frame "
+        "is rendered per step. Pass --no-strip-cameras to keep them."
+    ),
+)
 
 # --- Environment-level options -------------------------------------------
 parser.add_argument("--task-override", default=None)
 parser.add_argument("--robot-type-override", default=None)
 parser.add_argument("--json-path", default=None)
 parser.add_argument("--enable-pinocchio", action="store_true")
+parser.add_argument("--seed", type=int, default=None, help="Replay reset/randomization seed; recorded state still takes precedence.")
 
 # --- Video recording ------------------------------------------------------
 parser.add_argument(
@@ -148,9 +170,62 @@ parser.add_argument(
 parser.add_argument("--video-camera", default="third_person_camera")
 parser.add_argument("--video-fps", type=int, default=30)
 parser.add_argument("--video-dir", type=Path, default=None)
+parser.add_argument("--video-only-camera", action="store_true", help="Keep only --video-camera (for low-cost video review with state observations).")
+parser.add_argument("--video-size", type=int, default=None, help="Optional square resolution for the review camera.")
 
 AppLauncher.add_app_launcher_args(parser)
+parser.set_defaults(device="cpu")
 args_cli = parser.parse_args()
+
+args_cli.demos_root = normalize_demo_root(args_cli.demos_root)
+if (args_cli.task or args_cli.all) and args_cli.task_override:
+    parser.error("--task selects the exact replay task; use --file with --task-override for deliberate remapping.")
+if args_cli.seed is not None and not 0 <= args_cli.seed < 2**32:
+    parser.error("--seed must be in [0, 2**32)")
+if any(i < 0 for i in args_cli.select_episodes) or len(set(args_cli.select_episodes)) != len(args_cli.select_episodes):
+    parser.error("--select-episodes must contain distinct nonnegative indices")
+try:
+    if args_cli.worker_group:
+        _worker = json.loads(args_cli.worker_group)
+        _worker["anchor_dir"] = Path(_worker["anchor_dir"])
+        _worker["pickles"] = [Path(p) for p in _worker["pickles"]]
+        _selected_groups, _selection_warnings = [PickleGroup(**_worker)], []
+    else:
+        _selected_groups, _selection_warnings = discover_groups(
+            args_cli.demos_root, tasks=args_cli.task, files=args_cli.file, all_tasks=args_cli.all,
+            version=args_cli.version, legacy_collections=args_cli.legacy_collections,
+        )
+except (ValueError, FileNotFoundError) as exc:
+    parser.error(str(exc))
+for _warning in _selection_warnings:
+    print(f"[coverage] {_warning}", flush=True)
+if args_cli.dry_run:
+    for _group in _selected_groups:
+        print(f"{_group.label}: " + ", ".join(str(p) for p in _group.pickles))
+    raise SystemExit(0)
+
+if args_cli.task_timeout < 1:
+    parser.error("--task-timeout must be positive")
+if len(_selected_groups) > 1:
+    # Isaac scene teardown/reinitialization can hang. Isolate each task process;
+    # this parent never launches Kit, and still reports a nonzero status on failure.
+    import subprocess
+
+    _failures = []
+    for _group in _selected_groups:
+        print(f"[task worker] {_group.label}", flush=True)
+        _command = [sys.executable, "-u", str(Path(__file__).resolve()),
+                    *worker_arguments(_group, sys.argv[1:]), "--demos-root", str(args_cli.demos_root)]
+        try:
+            _completed = subprocess.run(_command, timeout=args_cli.task_timeout, check=False)
+            if _completed.returncode:
+                _failures.append(_group.label)
+        except subprocess.TimeoutExpired:
+            print(f"[error] {_group.label} exceeded --task-timeout", flush=True)
+            _failures.append(_group.label)
+    if _failures:
+        print(f"Failed task groups: {_failures}", flush=True)
+    raise SystemExit(1 if _failures else 0)
 
 args_cli.headless = True
 
@@ -184,8 +259,12 @@ _preset_has_camera = _obs_preset_arg in {
     "3view_rgb_depth",
     "3view_pointcloud",
 }
-if args_cli.record_video or _capture_all_groups or _preset_has_camera or (_obs_groups_lower & _CAMERA_OBS_GROUPS):
+_NEEDS_CAMERAS = bool(
+    args_cli.record_video or _capture_all_groups or _preset_has_camera or (_obs_groups_lower & _CAMERA_OBS_GROUPS)
+)
+if _NEEDS_CAMERAS or not args_cli.strip_cameras:
     args_cli.enable_cameras = True
+# Camera-free replay strips sensor configs before scene construction below.
 
 if args_cli.enable_pinocchio:
     import pinocchio  # noqa: F401
@@ -203,7 +282,9 @@ import gymnasium as gym  # noqa: E402
 import h5py  # noqa: E402
 import isaaclab_tasks  # noqa: F401, E402
 import numpy as np  # noqa: E402
-from dexverse.tasks.utils import parse_env_cfg  # noqa: E402
+from dexverse.tasks.utils import parse_env_cfg, prune_stale_obs_refs, strip_camera_cfgs  # noqa: E402
+from dexverse.teleop_utils.episode_task_state import restore_episode_task_state  # noqa: E402
+from dexverse.benchmark import task_identity, validate_replay_identity  # noqa: E402
 from isaaclab.managers import TerminationTermCfg as DoneTerm  # noqa: E402
 from isaaclab.managers.manager_base import ManagerTermBase  # noqa: E402
 
@@ -347,24 +428,6 @@ def _evaluate_termination_term(term_cfg, env, instance_cache: dict):
     return func(env, **params)
 
 
-def _force_clear_sim_context() -> None:
-    try:
-        from isaaclab.sim import SimulationContext
-    except Exception:
-        return
-    try:
-        instance = SimulationContext.instance()
-    except Exception:
-        instance = None
-    if instance is None:
-        return
-    for method_name in ("clear_instance", "clear_all_callbacks", "stop", "close"):
-        method = getattr(instance, method_name, None)
-        if callable(method):
-            with contextlib.suppress(Exception):
-                method()
-
-
 def _get_runtime_obs(env, *, update_history: bool = False):
     # update_history must be True on the per-step set-state path: history-enabled
     # obs terms (e.g. proprio/policy with history_length>0) only advance their
@@ -398,6 +461,28 @@ def _refresh_after_set_state(env):
     else:
         env.sim.render()
     env.scene.update(dt=env.physics_dt)
+
+
+def _set_last_action(env, action: torch.Tensor) -> None:
+    """Write a recorded action into the action manager's buffers.
+
+    The ``--set-state`` path never calls ``env.step``, so the action manager's
+    ``_action`` / ``_prev_action`` buffers stay at their zero reset value, and any
+    observation term reading them -- notably ``mdp.last_action``, which is the
+    whole ``policy`` group -- gets recorded as all-zeros for the entire episode.
+    Policies trained on such a recording see zeros there but their own previous
+    action at evaluation time, and fail. (DP3 ignores the ``policy`` group, which
+    is why the point-cloud replays never surfaced this; the state-based diffusion
+    policy consumes it.)
+
+    The buffers are set directly rather than through ``process_action`` so no
+    action term applies side effects to the scene we just restored.
+    """
+    manager = getattr(env, "action_manager", None)
+    if manager is None:
+        return
+    manager._prev_action[:] = manager._action
+    manager._action[:] = action.to(manager.device)
 
 
 def _has_multi_asset_or_usd(scene_cfg) -> bool:
@@ -444,6 +529,16 @@ class ObsGroupCapture:
     @property
     def group_names(self) -> list[str]:
         return list(self._group_names)
+
+    @property
+    def term_names_by_group(self) -> dict[str, list[str]]:
+        """Per-group term order as declared on the ObservationManager.
+
+        This is the order a ``concatenate_terms=True`` group uses internally, so
+        writers persist it and readers that re-concatenate the per-term datasets
+        can reproduce the env's own layout instead of guessing.
+        """
+        return {g: list(self._term_names[g]) for g in self._group_names}
 
     def capture(self, env_id: int = 0) -> dict[str, np.ndarray]:
         flat: dict[str, np.ndarray] = {}
@@ -502,6 +597,11 @@ class PerPickleH5Writer:
         compression: str,
         compression_opts: int,
         observation_preset: str | None = None,
+        term_order_by_group: dict[str, list[str]] | None = None,
+        source_benchmark_revision: str | None = None,
+        source_action_layout: dict | None = None,
+        source_task: str | None = None,
+        source_sim_device: str | None = None,
     ):
         output_file.parent.mkdir(parents=True, exist_ok=True)
         self._output_file = output_file
@@ -519,6 +619,13 @@ class PerPickleH5Writer:
         self._h5 = h5py.File(self._output_file, "w")
         self._data = self._h5.create_group("data")
         self._h5.attrs["task"] = str(task_name)
+        self._h5.attrs["source_task"] = source_task or str(task_name)
+        self._h5.attrs["source_sim_device"] = source_sim_device or "unspecified"
+        self._h5.attrs["source_benchmark_revision"] = source_benchmark_revision or "unspecified"
+        self._h5.attrs["replay_benchmark_revision"] = task_identity(task_name)["benchmark_revision"]
+        self._h5.attrs["replay_task_version"] = task_identity(task_name)["task_version"]
+        if source_action_layout is not None:
+            self._h5.attrs["source_action_layout"] = json.dumps(source_action_layout)
         self._h5.attrs["source_pickles"] = json.dumps([str(p.resolve()) for p in source_pickles])
         self._h5.attrs["schema_version"] = self.SCHEMA_VERSION
         self._h5.attrs["obs_groups"] = json.dumps(list(obs_groups))
@@ -527,6 +634,12 @@ class PerPickleH5Writer:
         self._h5.attrs["observation_preset"] = observation_preset or ""
         # Marker so readers can tell sequential outputs from parallel ones.
         self._h5.attrs["replay_mode"] = "sequential"
+        # ObservationManager term order per group. Readers that rebuild a flat
+        # observation vector from the per-term datasets (e.g.
+        # scripts/diffusion/build_dataset.py) need this; alphabetical key order
+        # silently produces a different layout than the live environment.
+        if term_order_by_group:
+            self._h5.attrs["term_order"] = json.dumps({g: list(terms) for g, terms in term_order_by_group.items()})
         self._counter = 0
 
     def write_episode(
@@ -705,60 +818,8 @@ class VideoRecorder:
 # ============================================================================
 
 
-class PickleGroup(NamedTuple):
-    label: str
-    output_stem: str
-    anchor_dir: Path
-    pickles: list[Path]
-
-
 def _discover_source_pickle_groups() -> list[PickleGroup]:
-    groups: list[PickleGroup] = []
-    demos_root = args_cli.demos_root.expanduser().resolve()
-
-    for f in args_cli.file:
-        p = Path(f).expanduser().resolve()
-        if not p.is_file():
-            raise FileNotFoundError(f"--file path does not exist: {p}")
-        groups.append(
-            PickleGroup(
-                label=p.name,
-                output_stem=p.stem,
-                anchor_dir=p.parent,
-                pickles=[p],
-            )
-        )
-
-    task_dirs: set[Path] = set()
-    for task in args_cli.task:
-        sub = (demos_root / task).resolve()
-        if not sub.is_dir():
-            raise FileNotFoundError(f"--task dir not found under {demos_root}: {task}")
-        for pkl in sub.rglob("*.pkl"):
-            task_dirs.add(pkl.parent.resolve())
-
-    if args_cli.all:
-        if not demos_root.is_dir():
-            raise FileNotFoundError(f"--demos-root not found: {demos_root}")
-        for pkl in demos_root.rglob("*.pkl"):
-            task_dirs.add(pkl.parent.resolve())
-
-    for task_dir in sorted(task_dirs):
-        pkls = sorted(p.resolve() for p in task_dir.glob("*.pkl"))
-        if not pkls:
-            continue
-        groups.append(
-            PickleGroup(
-                label=task_dir.name,
-                output_stem=task_dir.name,
-                anchor_dir=task_dir,
-                pickles=pkls,
-            )
-        )
-
-    if not groups:
-        raise SystemExit("Nothing selected. Pass --all, --task <name>, or --file <path>.")
-    return groups
+    return _selected_groups
 
 
 def _merge_trajectory_payloads(pickles: list[Path]) -> dict:
@@ -769,6 +830,9 @@ def _merge_trajectory_payloads(pickles: list[Path]) -> dict:
     merged_episodes = list(base.get("episodes") or [])
     for extra in pickles[1:]:
         payload = _load_trajectory_pickle(str(extra))
+        for key in ("robot_type", "benchmark_revision", "action_layout", "sim_device"):
+            if payload.get(key) != base.get(key):
+                raise ValueError(f"{key} mismatch when merging {extra.name} with {pickles[0].name}")
         env = payload.get("env_name") or payload.get("task")
         if env != base_env:
             raise ValueError(
@@ -780,6 +844,7 @@ def _merge_trajectory_payloads(pickles: list[Path]) -> dict:
         ep["episode_index"] = i
     merged = dict(base)
     merged["episodes"] = merged_episodes
+    merged["num_episodes"] = len(merged_episodes)
     return merged
 
 
@@ -834,6 +899,7 @@ def _build_env_for_pickle(payload: dict):
     if env_name is None:
         raise ValueError("Task/env name was not found in the pickle and was not overridden.")
     task_name = args_cli.task_override if args_cli.task_override is not None else env_name
+    validate_replay_identity(payload, env_name, explicit_override=args_cli.task_override is not None)
 
     json_path = args_cli.json_path if args_cli.json_path is not None else payload.get("json_path")
     env_cfg = parse_env_cfg(env_name, device=args_cli.device, num_envs=1, json_path=json_path)
@@ -854,6 +920,8 @@ def _build_env_for_pickle(payload: dict):
         env_cfg.sim.device = args_cli.device if args_cli.device is not None else env_cfg.sim.device
         env_cfg.scene.num_envs = 1
     env_cfg.env_name = env_name
+    if args_cli.seed is not None:
+        env_cfg.seed = args_cli.seed
 
     if _has_multi_asset_or_usd(env_cfg.scene):
         print(
@@ -883,12 +951,42 @@ def _build_env_for_pickle(payload: dict):
         env_cfg.observation_preset = _obs_preset_arg
         env_cfg._apply_observation_preset(_obs_preset_arg)
 
-    # IsaacLab default is 0 — without it, the RTX camera buffer is stale after
-    # reset, so per-episode lighting/texture randomizers won't appear in the
-    # first captured frame. In sequential mode every episode is a fresh reset,
-    # so we always want a few extra renders to let RTX settle.
-    env_cfg.num_rerenders_on_reset = 4
+    if args_cli.record_video and (args_cli.video_only_camera or args_cli.video_size is not None):
+        from isaaclab.sensors import CameraCfg
 
+        selected_camera = getattr(env_cfg.scene, args_cli.video_camera, None)
+        if not isinstance(selected_camera, CameraCfg):
+            raise ValueError(f"Video camera {args_cli.video_camera!r} is not configured")
+        if args_cli.video_size is not None:
+            if args_cli.video_size < 16 or args_cli.video_size % 2:
+                raise ValueError("--video-size must be an even integer >= 16")
+            selected_camera.width = selected_camera.height = args_cli.video_size
+        if args_cli.video_only_camera:
+            for name in dir(env_cfg.scene):
+                if name != args_cli.video_camera and isinstance(getattr(env_cfg.scene, name, None), CameraCfg):
+                    setattr(env_cfg.scene, name, None)
+            prune_stale_obs_refs(env_cfg)
+
+    if _NEEDS_CAMERAS or not args_cli.strip_cameras:
+        # IsaacLab default is 0 — without it, the RTX camera buffer is stale after
+        # reset, so per-episode lighting/texture randomizers won't appear in the
+        # first captured frame. In sequential mode every episode is a fresh reset,
+        # so we always want a few extra renders to let RTX settle.
+        env_cfg.num_rerenders_on_reset = 4
+    else:
+        # Camera-free capture (e.g. the ``state`` preset): drop the scene's camera
+        # sensors and any obs term that referenced them. Nothing reads the frames,
+        # and without RTX sensors the per-step refresh no longer renders (nor
+        # re-renders 4x per set-state step). Physics, joint and object state are
+        # unaffected. ``--no-strip-cameras`` keeps the sensors.
+        strip_camera_cfgs(env_cfg)
+        prune_stale_obs_refs(env_cfg)
+        env_cfg.num_rerenders_on_reset = 0
+        print("  [info] camera-free capture: scene camera sensors stripped (--no-strip-cameras keeps them).")
+
+    from dexverse.replay_rigid_object import configure_replay_rigid_objects
+
+    configure_replay_rigid_objects(env_cfg.scene)
     env = gym.make(task_name, cfg=env_cfg).unwrapped
     return env, env_cfg, env_name, task_name, termination_cfgs
 
@@ -951,6 +1049,14 @@ def _replay_one_episode(
         )
         env.reset_to(initial_state, env_ids_one, is_relative=True)
         apply_recorded_active_masks(env, episode, env_ids_one)
+        skipped_task_state = restore_episode_task_state(
+            env,
+            episode.get("task_state"),
+            env_index=0,
+            legacy_goal_pose=episode.get("goal_pose"),
+        )
+        if skipped_task_state:
+            print(f"  [warn] could not restore task state: {', '.join(skipped_task_state)}")
         if args_cli.set_state:
             _refresh_after_set_state(env)
         _get_runtime_obs(env)
@@ -964,6 +1070,15 @@ def _replay_one_episode(
         last_flat = initial_flat
         terminations_buf: dict[str, list[bool]] = {n: [] for n in termination_cfgs}
         termination_instance_cache: dict = {}
+        # Reset pass: evaluate every termination term once while
+        # ``episode_length_buf == 0`` (just after ``reset_to``) so env-resident,
+        # step-keyed state -- stage-machine / cut-sweep *persistent* success
+        # latches, hold counters -- is cleared before the episode is scored.
+        # Without this, a success latched in the previous episode is reported
+        # at step 0 of the next one (seen on CutStripScissors, Aug 2026).
+        for _term_cfg in termination_cfgs.values():
+            with contextlib.suppress(Exception):
+                _evaluate_termination_term(_term_cfg, env, termination_instance_cache)
 
         if video is not None:
             video.start_episode(ep_index)
@@ -997,6 +1112,15 @@ def _replay_one_episode(
                 )
                 env.scene.reset_to(step_state, env_ids_one, is_relative=True)
                 _refresh_after_set_state(env)
+                # Mirror ManagerBasedRLEnv.step: advance the per-env step counter.
+                # Step-keyed runtime logic (stage-machine / cut-sweep reset detection
+                # via ``episode_length_buf == 0``, per-step memoization, hold
+                # counters) otherwise sees step 0 forever and never accumulates
+                # progress -- e.g. the cut tasks' success term fired in 0/50
+                # replayed demos before this (Aug 2026).
+                if isinstance(getattr(env, "episode_length_buf", None), torch.Tensor):
+                    env.episode_length_buf[env_ids_one] += 1
+                _set_last_action(env, action_batched)
                 _get_runtime_obs(env, update_history=True)
             else:
                 env.step(action_batched)
@@ -1014,6 +1138,29 @@ def _replay_one_episode(
             if video is not None:
                 video.capture()
 
+            # Debug trace of the cut-sweep internals (DEXVERSE_CUTSWEEP_TRACE=<csv path>).
+            _trace_path = os.environ.get("DEXVERSE_CUTSWEEP_TRACE")
+            if _trace_path and "success" in termination_cfgs:
+                _tk = (termination_cfgs["success"].params or {}).get("task_key")
+                if _tk:
+                    from dexverse.baseline_v1.mdp.cut_sweep import evaluate_cut_sweep as _ecs
+
+                    _o = _ecs(env, _tk)
+                    _buf = getattr(env, "episode_length_buf", None)
+                    from dexverse.baseline_v1.mdp.stage_machine import evaluate_stage_graph as _esg, get_stage_graph as _gsg
+
+                    _fl = _esg(env, task_key=_tk, persistent=True, ordering_mode="strict")
+                    _st = getattr(env, "_stage_graph_runtime_cache", {}).get(_tk)
+                    _latched = getattr(_st, "latched_flags", None) or {}
+                    _names = [st.name for st in _gsg(_tk).stages]
+                    with open(_trace_path, "a") as _fp:
+                        _fp.write(
+                            f"{ep_index},{step_idx},{int(_buf[0]) if _buf is not None else -1},"
+                            f"{float(_o['frontier_frac'][0]):.4f},{int(_o['ext_ok'][0])},{int(_o['gates_ok'][0])},"
+                            + ",".join(f"{int(_fl[n][0])}" for n in _names) + ","
+                            + ",".join(f"{int(_latched[n][0]) if n in _latched else -1}" for n in _names)
+                            + f",{int(getattr(_st, 'latched_step_buf', torch.tensor([-1]))[0])}\n"
+                        )
             if termination_cfgs:
                 for term_name, term_cfg in termination_cfgs.items():
                     try:
@@ -1032,6 +1179,8 @@ def _replay_one_episode(
                     else:
                         terminations_buf[term_name].append(bool(term_value[0].item()))
 
+        if len(actions_buf) != T:
+            raise RuntimeError(f"Episode {ep_index} interrupted: captured {len(actions_buf)}/{T} steps")
         writer.write_episode(
             episode_index=ep_index,
             episode_name=str(ep_name),
@@ -1052,9 +1201,6 @@ def _replay_one_episode(
 
 def _convert_one_group(group: PickleGroup) -> tuple[int, int, int]:
     output_path = _output_path_for_group(group)
-    if output_path.is_file() and not args_cli.overwrite:
-        print(f"[skip] {output_path} exists (pass --overwrite to replace).")
-        return (0, 0, 0)
 
     if len(group.pickles) == 1:
         print(f"[load] {group.pickles[0]}")
@@ -1064,24 +1210,48 @@ def _convert_one_group(group: PickleGroup) -> tuple[int, int, int]:
             print(f"  + {p.name}")
 
     payload = _merge_trajectory_payloads(group.pickles)
+    validate_selected_identity(payload, group.expected_task)
     episodes = payload["episodes"]
     if not episodes:
-        print(f"  (no episodes in {group.label}; skipping)")
-        return (0, 0, 0)
+        raise ValueError(f"No episodes in {group.label}")
     if args_cli.select_episodes:
         wanted = set(args_cli.select_episodes)
         selected = [ep for ep in episodes if int(ep.get("episode_index", -1)) in wanted]
-        if not selected:
-            selected = [episodes[i] for i in args_cli.select_episodes if 0 <= i < len(episodes)]
+        if {int(ep.get("episode_index", -1)) for ep in selected} != wanted:
+            raise ValueError(f"Some --select-episodes indices are absent from {group.label}: {sorted(wanted)}")
         episodes = selected
-        if not episodes:
-            print("  (no episodes matched --select-episodes; skipping)")
-            return (0, 0, 0)
+
+    task = (args_cli.task_override or payload.get("env_name") or payload.get("task") or "").split(":")[-1]
+    validate_replay_identity(payload, task, explicit_override=args_cli.task_override is not None)
+    option_names = (
+        "task_override", "robot_type_override", "device", "seed", "set_state", "strip_cameras",
+        "obs_groups", "rgb_dtype", "depth_dtype", "compression", "compression_opts",
+        "record_video", "video_camera", "video_fps", "video_only_camera", "video_size", "rendering_mode",
+    )
+    options = {name: getattr(args_cli, name, None) for name in option_names}
+    options["observation_preset"] = _obs_preset_arg
+    json_path = args_cli.json_path if args_cli.json_path is not None else payload.get("json_path")
+    if json_path is not None:
+        from demo_release import sha256
+
+        options["json_sha256"] = sha256(json_path)
+    request = conversion_request(
+        task=task, identity=task_identity(task), pickles=group.pickles, episodes=episodes, options=options,
+    )
+    if output_path.exists() and not args_cli.overwrite:
+        validate_existing_output(output_path, request)
+        # An H5 completion marker does not establish that external MP4s still
+        # exist or finalized correctly. Require a deliberate rebuild for videos.
+        if args_cli.record_video:
+            raise ValueError(f"Video output reuse is not verified: {output_path}; use a new directory or --overwrite")
+        print(f"[skip] {output_path}: matching sources, episodes and conversion settings.")
+        return (0, 0, 0)
 
     succeeded = 0
     failed = 0
     env = None
     video = None
+    writer = None
     try:
         env, env_cfg, env_name, task_name, termination_cfgs = _build_env_for_pickle(payload)
         print(f"  [info] sequential replay of {len(episodes)} episode(s) in {env.num_envs} env")
@@ -1102,7 +1272,19 @@ def _convert_one_group(group: PickleGroup) -> tuple[int, int, int]:
             compression=args_cli.compression,
             compression_opts=args_cli.compression_opts,
             observation_preset=_obs_preset_arg,
+            term_order_by_group=capture.term_names_by_group,
+            source_benchmark_revision=payload.get("benchmark_revision"),
+            source_action_layout=payload.get("action_layout"),
+            source_task=payload.get("env_name") or payload.get("task"),
+            source_sim_device=payload.get("sim_device"),
         )
+        writer._h5.attrs["set_state"] = bool(args_cli.set_state)
+        writer._h5.attrs["replay_sim_device"] = str(env.device)
+        writer._h5.attrs["replay_seed"] = int(env.cfg.seed)
+        writer._h5.attrs["step_dt"] = float(env.step_dt)
+        writer._h5.attrs["conversion_complete"] = False
+        writer._h5.attrs["requested_episodes"] = len(episodes)
+        writer._h5.attrs["conversion_request"] = request_json(request)
         if args_cli.record_video:
             video = VideoRecorder(
                 env,
@@ -1140,16 +1322,17 @@ def _convert_one_group(group: PickleGroup) -> tuple[int, int, int]:
             elif ep_success is False:
                 failed += 1
 
+        if writer._counter != len(episodes):
+            raise RuntimeError(f"Conversion interrupted: wrote {writer._counter}/{len(episodes)} episodes")
+        writer._h5.attrs["conversion_complete"] = True
         writer.flush()
     finally:
-        if env is not None:
-            try:
-                env.close()
-            except Exception as exc:  # noqa: BLE001
-                print(f"  [warn] env.close() failed: {exc}")
-                _force_clear_sim_context()
-        else:
-            _force_clear_sim_context()
+        if video is not None:
+            video.finalize_episode()
+        if writer is not None and writer._h5.id.valid:
+            writer._h5.close()
+        # This worker owns one scene. Release it at process exit after closing
+        # files: env/Kit teardown can hang or terminate with an incorrect code.
 
     total = len(episodes)
     unknown = total - succeeded - failed
@@ -1176,8 +1359,7 @@ def main() -> int:
     grand_succ = grand_fail = grand_total = 0
     for group in groups:
         if not simulation_app.is_running() or simulation_app.is_exiting():
-            print("  [info] simulation app exiting; stopping early.")
-            break
+            raise RuntimeError("Simulation app exited before conversion completed")
         s, f, t = _convert_one_group(group)
         grand_succ += s
         grand_fail += f
@@ -1191,8 +1373,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    try:
-        rc = main()
-    finally:
-        simulation_app.close()
-    raise SystemExit(rc)
+    exit_conversion(main)

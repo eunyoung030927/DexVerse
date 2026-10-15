@@ -49,6 +49,9 @@ DEFAULT_DEMOS_ROOT = REPO_ROOT / "source" / "dexverse" / "demonstrations"
 # These keys describe the env / asset / robot identity of the recording; if
 # they disagree, the demos are logically different datasets.
 _REQUIRED_MATCH_KEYS: tuple[str, ...] = (
+    "sim_device",
+    "benchmark_revision",
+    "action_layout",
     "format",
     "env_name",
     "task",
@@ -61,6 +64,11 @@ _REQUIRED_MATCH_KEYS: tuple[str, ...] = (
 # ``record_demos.py``. We intentionally keep only these keys in merged output
 # so ad-hoc metadata (e.g. ``augmented*`` markers) does not leak through.
 _CANONICAL_TOP_LEVEL_KEYS: tuple[str, ...] = (
+    "sim_device",
+    "task_version",
+    "benchmark_revision",
+    "task_source_revision",
+    "action_layout",
     "format",
     "schema_version",
     "task",
@@ -69,8 +77,11 @@ _CANONICAL_TOP_LEVEL_KEYS: tuple[str, ...] = (
     "usd_path",
     "robot_type",
     "json_path",
+    "arm_joint_names",
     "num_episodes",
     "episodes",
+    "num_reset_attempts",
+    "reset_attempts",
 )
 
 
@@ -194,13 +205,17 @@ def _merge_one_task(
 
     base_payload: dict | None = None
     base_path: Path | None = None
+    binding_payload: dict | None = None
+    binding_path: Path | None = None
     merged_episodes: list = []
+    merged_reset_attempts: list = []
 
     for src in sources:
         payload = _load_pickle(src)
         _validate_intra_pickle_bindings(payload, src)
         eps = payload.get("episodes") or []
-        if not eps:
+        attempts = payload.get("reset_attempts") or []
+        if not eps and not attempts:
             continue
         if base_payload is None:
             base_payload = payload
@@ -211,15 +226,48 @@ def _merge_one_task(
                     f"{task_dir.name}: incompatible top-level metadata between {base_path.name} and {src.name}:\n"
                     + _format_mismatch(base_payload, payload, base_path, src)
                 )
-            if _first_episode_bindings(payload) != _first_episode_bindings(base_payload):
-                raise ValueError(
-                    f"{task_dir.name}: per-episode multi_assets/multi_usds bindings "
-                    f"differ between {base_path.name} and {src.name}. These sessions "
-                    "used different object pools and cannot be merged into one pickle."
-                )
-        merged_episodes.extend(eps)
+        if eps and binding_payload is None:
+            binding_payload = payload
+            binding_path = src
+        elif eps and _first_episode_bindings(payload) != _first_episode_bindings(binding_payload):
+            assert binding_path is not None
+            raise ValueError(
+                f"{task_dir.name}: per-episode multi_assets/multi_usds bindings "
+                f"differ between {binding_path.name} and {src.name}. These sessions "
+                "used different object pools and cannot be merged into one pickle."
+            )
+        episode_index_offset = len(merged_episodes)
+        source_episode_indices = {
+            int(ep.get("episode_index", local_idx)): episode_index_offset + local_idx
+            for local_idx, ep in enumerate(eps)
+        }
+        reset_id_map: dict[int, int] = {}
+        for attempt in attempts:
+            attempt_copy = dict(attempt)
+            old_reset_id = int(attempt_copy.get("reset_id", len(reset_id_map)))
+            new_reset_id = len(merged_reset_attempts)
+            reset_id_map[old_reset_id] = new_reset_id
+            attempt_copy["reset_id"] = new_reset_id
+            attempt_copy["source_session"] = src.name
+            attempt_copy["source_reset_id"] = old_reset_id
+            attempt_copy["source_seed"] = payload.get("seed")
+            if attempt_copy.get("successful_episode_index") is not None:
+                old_episode_idx = int(attempt_copy["successful_episode_index"])
+                if old_episode_idx in source_episode_indices:
+                    attempt_copy["successful_episode_index"] = source_episode_indices[old_episode_idx]
+            merged_reset_attempts.append(attempt_copy)
+        for ep in eps:
+            ep_copy = dict(ep)
+            if ep_copy.get("reset_id") is not None:
+                old_reset_id = int(ep_copy["reset_id"])
+                if old_reset_id in reset_id_map:
+                    ep_copy["source_reset_id"] = old_reset_id
+                    ep_copy["reset_id"] = reset_id_map[old_reset_id]
+                    ep_copy["reset_source_session"] = src.name
+                    ep_copy["reset_source_seed"] = payload.get("seed")
+            merged_episodes.append(ep_copy)
 
-    if base_payload is None or not merged_episodes:
+    if base_payload is None:
         return (None, 0, "no_episodes")
 
     merged_payload = {k: copy.copy(base_payload.get(k)) for k in _CANONICAL_TOP_LEVEL_KEYS if k in base_payload}
@@ -232,6 +280,10 @@ def _merge_one_task(
         new_episodes.append(ep_copy)
     merged_payload["episodes"] = new_episodes
     merged_payload["num_episodes"] = len(new_episodes)
+    if merged_reset_attempts:
+        merged_payload["reset_attempts"] = merged_reset_attempts
+        merged_payload["num_reset_attempts"] = len(merged_reset_attempts)
+        merged_payload["schema_version"] = max(int(merged_payload.get("schema_version", 0)), 5)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, "wb") as fp:

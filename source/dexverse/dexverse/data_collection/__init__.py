@@ -1,0 +1,6 @@
+# Copyright (c) 2025-2026, The DexVerse Project Developers.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
+"""Data-collection helpers (live LeRobot recording)."""

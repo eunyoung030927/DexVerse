@@ -40,6 +40,7 @@ DEFAULT_TABLE_INIT_ROT = (1.0, 0.0, 0.0, 0.0)
 DEFAULT_TABLE_LEG_THICKNESS = 0.08
 DEFAULT_TABLE_LEG_INSET = 0.12
 DEFAULT_TABLE_LEG_MATERIAL_PATH = f"{NVIDIA_NUCLEUS_DIR}/Materials/Base/Wood/Oak.mdl"
+DEFAULT_TABLE_TOP_MATERIAL_PATH = f"{NVIDIA_NUCLEUS_DIR}/Materials/Base/Wood/Oak.mdl"
 DEFAULT_CAMERA_POINT_CLOUD_TABLE_XY_INSET = 0.0
 DEFAULT_CAMERA_POINT_CLOUD_TABLE_Z_MIN_OFFSET = 0.01
 DEFAULT_CAMERA_POINT_CLOUD_TABLE_Z_MAX_OFFSET = 0.60
@@ -535,9 +536,12 @@ class SceneCfg(InteractiveSceneCfg):
             size=DEFAULT_TABLE_SIZE,
             rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
             collision_props=sim_utils.CollisionPropertiesCfg(),
-            visual_material=sim_utils.PreviewSurfaceCfg(
-                diffuse_color=(0.5, 0.5, 0.5),  # Dark grey color
-                roughness=0.5,
+            # Wood tabletop (the legs' Oak MDL); was a flat 0.5-grey preview surface. Visual only: collision and
+            # physics are unchanged, and replays of demos recorded before the change still reproduce.
+            visual_material=sim_utils.MdlFileCfg(
+                mdl_path=DEFAULT_TABLE_TOP_MATERIAL_PATH,
+                project_uvw=True,
+                texture_scale=(0.4, 0.4),
             ),
             visible=True,
         ),
@@ -629,21 +633,58 @@ class RobotConfig:
 def _get_tabletop_robot_setup_builders():
     """Build the robot_type -> setup builder registry for tabletop envs.
 
-    Shadow-only release: floating right / left / bimanual variants. The other
-    hand families (allegro, inspire, leap, sharpa, wuji) are staged under
-    source_unreleased/robot_agents/ pending further testing; restoring one
-    means moving its package back and re-adding its import + entries here.
+    Each hand family exposes floating right / left / bimanual variants
+    (Leap exposes right + bimanual). Matching binary assets are required.
     """
+    from dexverse.robot_agents.allegro.floating import (
+        build_tabletop_floating_allegro_bimanual_setup,
+        build_tabletop_floating_allegro_left_setup,
+        build_tabletop_floating_allegro_right_setup,
+    )
+    from dexverse.robot_agents.inspire.floating import (
+        build_tabletop_floating_inspire_bimanual_setup,
+        build_tabletop_floating_inspire_left_setup,
+        build_tabletop_floating_inspire_right_setup,
+    )
+    from dexverse.robot_agents.leap.floating import (
+        build_tabletop_floating_leap_bimanual_setup,
+        build_tabletop_floating_leap_right_setup,
+    )
     from dexverse.robot_agents.shadow.floating import (
         build_tabletop_floating_shadow_bimanual_setup,
         build_tabletop_floating_shadow_left_setup,
         build_tabletop_floating_shadow_right_setup,
+    )
+    from dexverse.robot_agents.sharpa.floating import (
+        build_tabletop_floating_sharpa_bimanual_setup,
+        build_tabletop_floating_sharpa_left_setup,
+        build_tabletop_floating_sharpa_right_setup,
+    )
+    from dexverse.robot_agents.wuji.floating import (
+        build_tabletop_floating_wuji_bimanual_setup,
+        build_tabletop_floating_wuji_left_setup,
+        build_tabletop_floating_wuji_right_setup,
     )
 
     return {
         "floating_shadow_right": build_tabletop_floating_shadow_right_setup,
         "floating_shadow_left": build_tabletop_floating_shadow_left_setup,
         "floating_shadow_bimanual": build_tabletop_floating_shadow_bimanual_setup,
+        "floating_allegro_right": build_tabletop_floating_allegro_right_setup,
+        "floating_allegro_left": build_tabletop_floating_allegro_left_setup,
+        "floating_allegro_bimanual": build_tabletop_floating_allegro_bimanual_setup,
+        "floating_inspire_right": build_tabletop_floating_inspire_right_setup,
+        "floating_inspire_left": build_tabletop_floating_inspire_left_setup,
+        "floating_inspire_bimanual": build_tabletop_floating_inspire_bimanual_setup,
+        "floating_sharpa_right": build_tabletop_floating_sharpa_right_setup,
+        "floating_sharpa_left": build_tabletop_floating_sharpa_left_setup,
+        "floating_sharpa_bimanual": build_tabletop_floating_sharpa_bimanual_setup,
+        "floating_wuji_right": build_tabletop_floating_wuji_right_setup,
+        "floating_wuji_left": build_tabletop_floating_wuji_left_setup,
+        "floating_wuji_bimanual": build_tabletop_floating_wuji_bimanual_setup,
+        "floating_leap_right": build_tabletop_floating_leap_right_setup,
+        "floating_leap_bimanual": build_tabletop_floating_leap_bimanual_setup,
+        "bimanual_leap": build_tabletop_floating_leap_bimanual_setup,
     }
 
 

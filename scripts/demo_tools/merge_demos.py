@@ -24,6 +24,7 @@ The resulting pickle stores:
     - ``usd_paths``        : list[str]               length num_envs
     - ``initial_states``   : list[dict]              length num_envs
     - ``goal_poses``       : list[np.ndarray|None]   length num_envs
+    - ``task_states``      : list[dict|None]         length num_envs
     - ``multi_assets``     : list[list[dict]]        length num_envs
     - ``multi_usds``       : list[list[dict]]        length num_envs
     - ``actions``          : np.ndarray (T, N, D)    zero-padded per env
@@ -61,14 +62,20 @@ import numpy as np
 
 TRAJECTORY_FORMAT = "dexverse_trajectory"
 BATCH_FORMAT = "dexverse_trajectory_batch"
-BATCH_SCHEMA_VERSION = 3
+BATCH_SCHEMA_VERSION = 5
 
 # Per-episode active-object-subset field recorded by randomized-pool tasks
 # (e.g. TrashDrawerSort, GraspTwoItems). Preserved through the merge so batch
 # replay can restore each episode's recorded object subset. Mirrors
 # _active_object_masks.ACTIVE_EPISODE_FIELDS (kept local: this tool must not
 # import torch).
-_ACTIVE_EPISODE_FIELDS: tuple[str, ...] = ("active_object_metadata",)
+_ACTIVE_EPISODE_FIELDS: tuple[str, ...] = (
+    "active_object_metadata",
+    "reset_id",
+    "source_reset_id",
+    "reset_source_session",
+    "reset_source_seed",
+)
 
 
 def load_trajectory_pickle(path: str) -> dict:
@@ -191,7 +198,16 @@ def merge_trajectory_pickles(
     env_name = payloads[0].get("env_name")
     robot_type = payloads[0].get("robot_type")
     json_path = payloads[0].get("json_path")
+    benchmark_revision = payloads[0].get("benchmark_revision")
+    action_layout = payloads[0].get("action_layout")
+    sim_device = payloads[0].get("sim_device")
     for path, payload in zip(input_paths[1:], payloads[1:]):
+        if payload.get("sim_device") != sim_device:
+            raise ValueError(f"Simulation device mismatch in {path!r}; do not mix CPU, GPU, or unknown collection devices")
+        if payload.get("benchmark_revision") != benchmark_revision:
+            raise ValueError(f"Benchmark revision mismatch in {path!r}")
+        if not allow_mixed_robot and payload.get("action_layout") != action_layout:
+            raise ValueError(f"Action layout mismatch in {path!r}")
         if not allow_mixed_task and payload.get("task") != task:
             raise ValueError(
                 f"Task mismatch in {path!r}: {payload.get('task')!r} != {task!r} (pass --allow_mixed_task to override)."
@@ -244,6 +260,7 @@ def merge_trajectory_pickles(
                 "usd_path": usd_path,
                 "initial_state": copy.deepcopy(ep.get("initial_state")),
                 "goal_pose": copy.deepcopy(ep.get("goal_pose")),
+                "task_state": copy.deepcopy(ep.get("task_state")),
                 "multi_assets": _normalize_episode_binding_list(ep.get("multi_assets")),
                 "multi_usds": _normalize_episode_binding_list(ep.get("multi_usds")),
                 "actions": actions.astype(np.float32, copy=False),
@@ -269,6 +286,11 @@ def merge_trajectory_pickles(
     batch_payload = {
         "format": BATCH_FORMAT,
         "schema_version": BATCH_SCHEMA_VERSION,
+        "benchmark_revision": benchmark_revision,
+        "sim_device": sim_device,
+        "task_version": payloads[0].get("task_version"),
+        "task_source_revision": payloads[0].get("task_source_revision"),
+        "action_layout": action_layout if not allow_mixed_robot else None,
         "task": task,
         "env_name": env_name,
         "robot_type": robot_type,
@@ -279,6 +301,7 @@ def merge_trajectory_pickles(
         "usd_paths": [entry["usd_path"] for entry in entries],
         "initial_states": [entry["initial_state"] for entry in entries],
         "goal_poses": [entry["goal_pose"] for entry in entries],
+        "task_states": [entry["task_state"] for entry in entries],
         "multi_assets": [entry["multi_assets"] for entry in entries],
         "multi_usds": [entry["multi_usds"] for entry in entries],
         "actions": action_tensor,

@@ -77,14 +77,19 @@ tests/
 
 # Asset binaries are hosted on Hugging Face (dexverse/DexVerse_Dataset) and
 # fetched via scripts/asset_tools/download_assets.py. Keep only the package's
-# path-constants module (assets/__init__.py) in git.
+# path-constants module and procedural asset generators in git.
 /source/dexverse/dexverse/assets/*
 !/source/dexverse/dexverse/assets/__init__.py
+!/source/dexverse/dexverse/assets/rack_builder.py
+!/source/dexverse/dexverse/assets/shelf_builder.py
+!/source/dexverse/dexverse/assets/small_table_builder.py
+!/source/dexverse/dexverse/assets/cut_props_builder.py
+!/source/dexverse/dexverse/assets/desk_props_builder.py
 
 # robot_agents binary assets (USD/URDF/meshes) are hosted on Hugging Face and
 # fetched via scripts/asset_tools/download_robot_agents.py. Small text sources
-# (Python + yaml configs) stay tracked in git. Same split for the staged
-# non-shadow hands under source_unreleased/.
+# (Python + YAML configs) for all floating hands stay tracked in git.
+# Unpublished hand bundles can also be supplied locally.
 /source/dexverse/dexverse/robot_agents/**
 !/source/dexverse/dexverse/robot_agents/**/
 !/source/dexverse/dexverse/robot_agents/**/*.py
@@ -99,11 +104,18 @@ tests/
 
 # Demonstration recordings are hosted on Hugging Face (demonstrations/ prefix)
 # and fetched via scripts/demo_tools/download_demos.py. Keep only docs (*.md)
-# and the baseline manifest (read by download_demos.py / upload_demos.py).
+# and the baseline manifests (read by the offline release tools and downloader).
 /source/dexverse/demonstrations/**
 !/source/dexverse/demonstrations/**/
 !/source/dexverse/demonstrations/**/*.md
 !/source/dexverse/demonstrations/baseline_manifest.txt
+!/source/dexverse/demonstrations/baseline_manifest_v1.txt
+# Imported private data and provenance must never enter the public source diff.
+/source/dexverse/demonstrations/v0/**
+/source/dexverse/demonstrations/v1/**
+/source/dexverse/demonstrations/_review/**
+# User-created backup of the private collection tree (including provenance docs).
+/source/dexverse/demonstrations copy/
 
 # Legacy/orphaned demo data (superseded by demonstrations/, hosted on HF).
 /demos/
@@ -113,3 +125,4 @@ tests/
 
 AGENTS.md
 env.sh
+/.worktrees/

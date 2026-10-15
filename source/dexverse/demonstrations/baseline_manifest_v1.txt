@@ -1,0 +1,21 @@
+# Upgraded v1 baseline task listing; not a public dataset inventory.
+functional/Dexverse-GraspBleach-v1
+functional/Dexverse-GraspPan-v1
+functional/Dexverse-GraspKettle-v1
+functional/Dexverse-GraspCup-v1
+functional/Dexverse-RemoveCupFromRack-v1
+functional/Dexverse-FunctionalPourCan-v1
+functional/Dexverse-FunctionalPourMug-v1
+functional/Dexverse-FunctionalHammerStrike-v1
+articulation/Dexverse-OpenFaucet-v1
+articulation/Dexverse-OpenDoor-v1
+articulation/Dexverse-OpenLaptop-v1
+articulation/Dexverse-SqueezeScissors-v1
+articulation/Dexverse-SlideUtilityKnife-v1
+articulation/Dexverse-OpenStapler-v1
+articulation/Dexverse-OpenFlatFolder-v1
+bimanual/Dexverse-BimanualLiftTray-v1
+bimanual/Dexverse-BimanualLiftCarton-v1
+contact_rich/Dexverse-InsertPen-v1
+non_prehensile/Dexverse-PushSmallSphereObstacleSlope-v1
+non_prehensile/Dexverse-PushT-v1

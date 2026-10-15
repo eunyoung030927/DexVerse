@@ -16,6 +16,7 @@ import argparse
 
 from isaaclab.app import AppLauncher
 from omegaconf import OmegaConf
+from dexverse.teleop_utils.debug_visualization import add_debug_visualization_args, configure_v1_debug_visualization
 
 # add argparse arguments
 parser = argparse.ArgumentParser(description="Zero agent for Isaac Lab environments.")
@@ -25,12 +26,18 @@ parser.add_argument(
 parser.add_argument("--num_envs", type=int, default=None, help="Number of environments to simulate.")
 parser.add_argument("--task", type=str, default=None, help="Name of the task.")
 parser.add_argument(
+    "--seed", type=int, default=None,
+    help="Environment randomization seed; omitted keeps the task default, -1 draws a random seed.",
+)
+parser.add_argument(
     "--robot_type",
     type=str,
     default=None,
     help=(
-        "Optional robot variant override for environments that expose 'robot_type' "
-        "(floating_shadow_right, floating_shadow_left, floating_shadow_bimanual)."
+        "Optional robot variant override for environments that expose 'robot_type'. "
+        "Use floating_{hand}_{side}: shadow, allegro, inspire, sharpa, or wuji "
+        "with right, left, or bimanual; leap with right or bimanual. "
+        "Requires the matching local robot assets."
     ),
 )
 parser.add_argument(
@@ -121,9 +128,24 @@ parser.add_argument(
     ),
 )
 # append AppLauncher cli args
+add_debug_visualization_args(parser)
+parser.add_argument("--show_ranges", action="store_true", help="Opt-in spawn/goal range wireframes (independent of debug cues).")
 AppLauncher.add_app_launcher_args(parser)
 # parse known args so we can accept Hydra-style env overrides
 args_cli, hydra_args = parser.parse_known_args()
+# This flag affects terms created in __post_init__, not just a scalar field.
+# Remove it from the late Hydra patch and include it in the config rebuild.
+remaining_hydra_args = []
+for raw_arg in hydra_args:
+    key, separator, value = raw_arg.partition("=")
+    if separator and key.lstrip("+") == "env.enable_debug_vis":
+        if value.lower() not in ("true", "false", "1", "0", "yes", "no"):
+            parser.error("env.enable_debug_vis must be a boolean")
+        if args_cli.enable_debug_vis is None:
+            args_cli.enable_debug_vis = value.lower() in ("true", "1", "yes")
+    else:
+        remaining_hydra_args.append(raw_arg)
+hydra_args = remaining_hydra_args
 
 # launch omniverse app
 app_launcher = AppLauncher(args_cli)
@@ -216,6 +238,8 @@ def main():
     # These are fields that __post_init__ derives other values from, so they
     # must be set before __post_init__ runs rather than patched in afterwards.
     reinit_kwargs = {}
+    if args_cli.enable_debug_vis is not None:
+        reinit_kwargs["enable_debug_vis"] = args_cli.enable_debug_vis
     if args_cli.robot_type is not None:
         if not hasattr(env_cfg, "robot_type"):
             raise ValueError(
@@ -284,7 +308,17 @@ def main():
         set_robot_wrist_init_world_pos(env_cfg, **kwargs)
 
     # create environment
+    configure_v1_debug_visualization(env_cfg, cues_in_rgb=args_cli.cues_in_rgb)
+    if args_cli.show_ranges:
+        from dexverse.teleop_utils.range_vis import attach_range_vis
+
+        attach_range_vis(env_cfg)
+    # Apply last so config rebuilds cannot replace the requested seed with 42.
+    # An explicit CLI seed wins over env.seed; omission leaves it unchanged.
+    if args_cli.seed is not None:
+        env_cfg.seed = args_cli.seed
     env = gym.make(args_cli.task, cfg=env_cfg)
+    print(f"[zero_agent] Environment seed: {env.unwrapped.cfg.seed}")
 
     # print info (this is vectorized environment)
     print(f"[INFO]: Gym observation space: {env.observation_space}")

@@ -21,3 +21,7 @@ from isaaclab_tasks.utils import import_packages
 _BLACKLIST_PKGS = ["utils", ".mdp", "_archive"]
 # Import all configs in this package
 import_packages(__name__, _BLACKLIST_PKGS)
+
+# Keep the established task-discovery entry point registering both versions.
+# Only baseline upgrades live in this sibling package; original tasks stay here.
+from dexverse import baseline_v1  # noqa: E402, F401
