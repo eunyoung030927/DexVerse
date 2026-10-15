@@ -39,6 +39,12 @@ from dexverse.IL.diffusion.obs_images import IMAGE_GROUP, resize_images
 from dexverse.IL.diffusion.obs_state import OPTIONAL_GROUPS, REQUIRED_GROUPS
 
 
+PRESET_HISTORY = {"rgb": 3, "rgb_depth": 3, "pointcloud": 3, "3view_rgb": 3, "3view_rgb_depth": 3, "3view_pointcloud": 3, "state": 0}
+"""``history_length`` of each observation preset (``baseline_v1/dexverse_base_env_cfg._OBSERVATION_PRESETS``)."""
+HISTORY_GROUPS = ("policy", "proprio")
+"""Groups the preset's ``history_length`` applies to."""
+
+
 def build_dataset(
     in_file: Path, out_file: Path, *, task: str | None, pkl_file: Path | None, image_size: int = 128
 ) -> dict[str, Any]:
@@ -48,6 +54,8 @@ def build_dataset(
             raise ValueError(f"'{in_file}' has no top-level 'data' group; not a replay HDF5.")
         task_name = task or str(src.attrs.get("task", ""))
         term_order = _read_term_order(src, in_file)
+        # Groups the observation preset stacks over time (oldest step first), e.g. rgb: policy/proprio x 3.
+        history = PRESET_HISTORY.get(str(src.attrs.get("observation_preset", "")), 0)
         initial_states = _read_initial_states(pkl_file or _source_pickle(src))
 
         data = dst.create_group("data")
@@ -59,6 +67,9 @@ def build_dataset(
             if "obs" not in episode or "actions" not in episode:
                 continue
             state, layout = _flatten_state(episode["obs"], term_order)
+            for entry in layout:
+                if history > 1 and entry["group"] in HISTORY_GROUPS:
+                    entry["history"] = history
             actions = np.asarray(episode["actions"][...], dtype=np.float32)
             length = min(state.shape[0], actions.shape[0])
             if length == 0:

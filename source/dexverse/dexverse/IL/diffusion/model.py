@@ -22,13 +22,34 @@ import torch
 from torch import nn
 
 from .config import PolicyConfig
+from .unet_chi import ConditionalUnet1D
 
 
 class DiffusionPolicy(nn.Module):
     def __init__(self, cfg: PolicyConfig):
         super().__init__()
-        UNet1DModel = _import_unet()
         self.cfg = cfg
+        # One encoder per camera, addressed by the camera's term name (never by position).
+        self.image_encoders = nn.ModuleDict(
+            {key: ImageEncoder(cfg.image_crop, cfg.num_keypoints, cfg.image_feature_dim) for key in cfg.image_keys}
+        )
+        step_dim = cfg.state_dim + len(cfg.image_keys) * cfg.image_feature_dim
+        if cfg.unet_type == "chi":
+            # Official Diffusion Policy: the flattened observation features are the global FiLM condition.
+            self.unet = ConditionalUnet1D(
+                input_dim=cfg.action_dim,
+                global_cond_dim=step_dim * cfg.obs_horizon,
+                diffusion_step_embed_dim=cfg.diffusion_step_embed_dim,
+                down_dims=tuple(cfg.unet_block_out_channels),
+                kernel_size=cfg.kernel_size,
+                n_groups=cfg.n_groups,
+                cond_predict_scale=cfg.cond_predict_scale,
+            )
+            self.obs_encoder = None
+            return
+        if cfg.unet_type != "diffusers":
+            raise ValueError(f"unet_type must be 'diffusers' or 'chi', got '{cfg.unet_type}'.")
+        UNet1DModel = _import_unet()
         self.unet = UNet1DModel(
             in_channels=cfg.action_dim,
             out_channels=cfg.action_dim,
@@ -43,11 +64,6 @@ class DiffusionPolicy(nn.Module):
             act_fn="mish",
         )
         temb_channels = int(cfg.unet_block_out_channels[0])
-        # One encoder per camera, addressed by the camera's term name (never by position).
-        self.image_encoders = nn.ModuleDict(
-            {key: ImageEncoder(cfg.image_crop, cfg.num_keypoints, cfg.image_feature_dim) for key in cfg.image_keys}
-        )
-        step_dim = cfg.state_dim + len(cfg.image_keys) * cfg.image_feature_dim
         self.obs_encoder = nn.Sequential(
             nn.Linear(step_dim * cfg.obs_horizon, cfg.obs_embed_dim),
             nn.Mish(),
@@ -75,8 +91,8 @@ class DiffusionPolicy(nn.Module):
                 batch, horizon = frames.shape[:2]
                 feat = self.image_encoders[key](frames.reshape(batch * horizon, *frames.shape[2:]))
                 features.append(feat.reshape(batch, horizon, -1))
-        step = torch.cat(features, dim=-1)
-        return self.obs_encoder(step.reshape(step.shape[0], -1))
+        step = torch.cat(features, dim=-1).reshape(features[0].shape[0], -1)
+        return step if self.obs_encoder is None else self.obs_encoder(step)
 
     def forward(
         self,
@@ -94,6 +110,8 @@ class DiffusionPolicy(nn.Module):
         """
         if obs_embed is None:
             obs_embed = self.encode_obs(obs_history, images)
+        if self.cfg.unet_type == "chi":
+            return self.unet(noisy_action, timesteps, obs_embed.to(noisy_action.dtype))
         self.unet.time_mlp.cond = obs_embed.to(noisy_action.dtype)
         try:
             # diffusers' 1-D UNet is channels-first; our chunks are time-first.
@@ -153,10 +171,10 @@ class ImageEncoder(nn.Module):
         self.out = nn.Linear(num_keypoints * 2, feature_dim)
 
     def forward(self, images: torch.Tensor) -> torch.Tensor:
-        x = images.float() / 255.0
+        x = images.float() / 255.0  # [0, 1], as robomimic feeds the official image DP
         if self.crop and self.crop < x.shape[-1]:
             x = _random_crop(x, self.crop) if self.training else _center_crop(x, self.crop)
-        x = self.keypoints(self.backbone((x - 0.5) / 0.5))
+        x = self.keypoints(self.backbone(x))
         n, k, h, w = x.shape
         attention = torch.softmax(x.reshape(n, k, h * w), dim=-1)
         ys = torch.linspace(-1.0, 1.0, h, device=x.device, dtype=x.dtype)

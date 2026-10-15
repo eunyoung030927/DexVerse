@@ -55,6 +55,13 @@ class DiffusionPolicyRunner:
     def act(self, obs: dict[str, Any]) -> torch.Tensor:
         """Return the next action for the current observation."""
         state = build_state(obs, self.num_envs)
+        if self.policy.cfg.state_index:
+            if state.numel() != self.policy.cfg.full_state_dim:
+                raise RuntimeError(
+                    f"Full state dim mismatch: env produced {state.numel()}, training data had "
+                    f"{self.policy.cfg.full_state_dim} -- check --observation_preset."
+                )
+            state = state[torch.as_tensor(self.policy.cfg.state_index, dtype=torch.long)]
         if state.numel() != self.policy.cfg.state_dim:
             raise RuntimeError(
                 f"State dim mismatch: env produced {state.numel()}, checkpoint expects "
@@ -95,7 +102,9 @@ def load_policy(ckpt_path: str, *, task: str, device: torch.device) -> tuple[Dif
         raise ValueError(f"Checkpoint was trained on '{checkpoint.get('task')}', not '{task}'.")
 
     policy_cfg = dict(checkpoint["policy_cfg"])
-    policy_cfg["image_keys"] = tuple(policy_cfg.get("image_keys", ()))
+    for key in ("image_keys", "state_index", "unet_block_out_channels"):
+        if key in policy_cfg:
+            policy_cfg[key] = tuple(policy_cfg[key])
     policy = DiffusionPolicy(PolicyConfig(**policy_cfg))
     policy.load_state_dict(checkpoint.get("ema_model", checkpoint["model"]))
     policy.to(device).eval()

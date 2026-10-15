@@ -48,6 +48,10 @@ class DiffusionDataset(Dataset):
 
         self.cfg = cfg
         episodes = _load_episodes(cfg.dataset_files)
+        if cfg.state_index:
+            index = torch.tensor(cfg.state_index, dtype=torch.long)
+            for ep in episodes:
+                ep.state = ep.state[:, index]
         self.episodes = [episodes[i] for i in _split_indices(len(episodes), cfg)]
         self.windows = [(idx, t0) for idx, ep in enumerate(self.episodes) for t0 in range(ep.action.shape[0])]
         if not self.windows:

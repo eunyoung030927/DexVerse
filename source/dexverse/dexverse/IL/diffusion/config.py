@@ -24,6 +24,8 @@ class DatasetConfig:
     """``train``, ``val`` or ``all``; splits are per-episode, not per-window."""
     split_ratio: float = 0.95
     seed: int = 0
+    state_index: tuple[int, ...] = ()
+    """Columns of ``obs/state`` to keep (``obs_state.select_state_index``); empty = all."""
 
 
 @dataclass
@@ -49,6 +51,17 @@ class PolicyConfig:
     image_feature_dim: int = 64
     num_keypoints: int = 32
     """Spatial-softmax keypoints per camera (ResNet18 + GroupNorm + spatial softmax, as in Chi et al.)."""
+    unet_type: str = "diffusers"
+    """``diffusers``: DexVerse baseline (diffusers UNet1DModel, obs MLP added to the timestep embedding).
+    ``chi``: official Diffusion Policy ConditionalUnet1D, observation features as the global FiLM condition."""
+    diffusion_step_embed_dim: int = 128
+    kernel_size: int = 5
+    n_groups: int = 8
+    cond_predict_scale: bool = True
+    state_index: tuple[int, ...] = ()
+    """Indices into the full ``obs_state.build_state`` vector that form the policy state; empty = all of it."""
+    full_state_dim: int = 0
+    """Length of the full ``build_state`` vector ``state_index`` selects from (0 = no selection)."""
 
 
 @dataclass
@@ -68,7 +81,9 @@ class TrainConfig:
     num_workers: int = 4
     seed: int = 0
     save_every_epochs: int = 10
-    """Also write ``epoch_*.pt`` every N epochs; 0 disables."""
+    """Also write ``epoch_*.pt`` every N epochs (and at the final / early-stop epoch); 0 disables."""
+    epoch_dir: str = ""
+    """Where ``epoch_*.pt`` go (default ``output_dir``), e.g. a checkpoints folder for rollout-based selection."""
     split_ratio: float = 0.95
     """Fraction of episodes used for training; the rest are the validation split."""
     slim_checkpoints: bool = False
@@ -90,6 +105,23 @@ class TrainConfig:
     """Image crop for the camera encoders; 0 = 7/8 of the stored image size (used only when the dataset has images)."""
     image_feature_dim: int = 64
     num_keypoints: int = 32
+    unet_type: str = "diffusers"
+    diffusion_step_embed_dim: int = 128
+    kernel_size: int = 5
+    n_groups: int = 8
+    cond_predict_scale: bool = True
+    state_groups: tuple[str, ...] = ()
+    """Observation groups that form the policy state (e.g. ``proprio goal``); empty = every group in the dataset.
+    Groups the env stacks with history (``history`` in the dataset layout) keep only their latest step."""
+    adam_betas: tuple[float, float] = (0.9, 0.999)
+    lr_scheduler: str = "constant"
+    """``constant`` or ``cosine`` (cosine decay over all training steps after ``lr_warmup_steps``)."""
+    lr_warmup_steps: int = 0
+    ema_power: float = 0.0
+    """0: fixed ``ema_decay``. > 0: decay = 1 - (1 + step / ema_inv_gamma) ** -ema_power, capped at ``ema_max_decay``
+    (the official Diffusion Policy EMA schedule)."""
+    ema_inv_gamma: float = 1.0
+    ema_max_decay: float = 0.9999
 
 
 @dataclass

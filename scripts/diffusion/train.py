@@ -56,13 +56,33 @@ def main() -> None:
                         help="Do not write best.pt; keep only last.pt (plus epoch_*.pt if enabled).")
     parser.add_argument("--early_stopping_patience", type=int, default=defaults.early_stopping_patience,
                         help="Epochs without a new best validation loss before stopping; 0 disables.")
+    parser.add_argument("--epoch_dir", default=defaults.epoch_dir, help="Folder for epoch_*.pt (default: --output_dir).")
+    parser.add_argument("--grad_clip_norm", type=float, default=defaults.grad_clip_norm, help="0 disables clipping.")
+    parser.add_argument("--unet_type", choices=("diffusers", "chi"), default=defaults.unet_type,
+                        help="chi = official Diffusion Policy ConditionalUnet1D with FiLM global conditioning.")
+    parser.add_argument("--unet_block_out_channels", type=int, nargs="+", default=list(defaults.unet_block_out_channels))
+    parser.add_argument("--diffusion_step_embed_dim", type=int, default=defaults.diffusion_step_embed_dim)
+    parser.add_argument("--kernel_size", type=int, default=defaults.kernel_size)
+    parser.add_argument("--n_groups", type=int, default=defaults.n_groups)
+    parser.add_argument("--no_cond_predict_scale", dest="cond_predict_scale", action="store_false")
+    parser.add_argument("--state_groups", nargs="+", default=list(defaults.state_groups),
+                        help="Observation groups forming the policy state (latest step of history-stacked groups).")
+    parser.add_argument("--adam_betas", type=float, nargs=2, default=list(defaults.adam_betas))
+    parser.add_argument("--lr_scheduler", choices=("constant", "cosine"), default=defaults.lr_scheduler)
+    parser.add_argument("--lr_warmup_steps", type=int, default=defaults.lr_warmup_steps)
+    parser.add_argument("--ema_power", type=float, default=defaults.ema_power,
+                        help="> 0: official DP EMA warmup schedule (decay capped at --ema_max_decay); 0: fixed --ema_decay.")
+    parser.add_argument("--ema_inv_gamma", type=float, default=defaults.ema_inv_gamma)
+    parser.add_argument("--ema_max_decay", type=float, default=defaults.ema_max_decay)
     parser.add_argument("--image_crop", type=int, default=defaults.image_crop,
                         help="Camera encoder crop (random at train, center at eval); 0 = 7/8 of the stored image size.")
     parser.add_argument("--image_feature_dim", type=int, default=defaults.image_feature_dim)
     parser.add_argument("--num_keypoints", type=int, default=defaults.num_keypoints)
     args = parser.parse_args()
 
-    cfg = TrainConfig(**{**vars(args), "dataset_files": tuple(args.dataset_files)})
+    cfg = TrainConfig(**{**vars(args), "dataset_files": tuple(args.dataset_files),
+                         "unet_block_out_channels": tuple(args.unet_block_out_channels),
+                         "state_groups": tuple(args.state_groups), "adam_betas": tuple(args.adam_betas)})
     metrics = train(cfg)
     if metrics is not None:
         print(metrics)
