@@ -56,6 +56,10 @@ def main() -> None:
                         help="Do not write best.pt; keep only last.pt (plus epoch_*.pt if enabled).")
     parser.add_argument("--early_stopping_patience", type=int, default=defaults.early_stopping_patience,
                         help="Epochs without a new best validation loss before stopping; 0 disables.")
+    parser.add_argument("--image_crop", type=int, default=defaults.image_crop,
+                        help="Camera encoder crop (random at train, center at eval); 0 = 7/8 of the stored image size.")
+    parser.add_argument("--image_feature_dim", type=int, default=defaults.image_feature_dim)
+    parser.add_argument("--num_keypoints", type=int, default=defaults.num_keypoints)
     args = parser.parse_args()
 
     cfg = TrainConfig(**{**vars(args), "dataset_files": tuple(args.dataset_files)})

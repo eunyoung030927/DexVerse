@@ -20,6 +20,7 @@ import torch
 from .config import PolicyConfig
 from .model import DiffusionPolicy
 from .normalization import Stats, denormalize, normalize, stats_to
+from .obs_images import build_images
 from .obs_state import build_state
 
 
@@ -41,11 +42,13 @@ class DiffusionPolicyRunner:
         self.sample_steps = sample_steps
         self.replan_interval = replan_interval
         self.state_history: deque[torch.Tensor] = deque(maxlen=policy.cfg.obs_horizon)
+        self.image_history: deque[dict[str, torch.Tensor]] = deque(maxlen=policy.cfg.obs_horizon)
         self.pending_actions: deque[torch.Tensor] = deque()
         self.steps_since_replan = 0
 
     def reset(self) -> None:
         self.state_history.clear()
+        self.image_history.clear()
         self.pending_actions.clear()
         self.steps_since_replan = 0
 
@@ -59,13 +62,25 @@ class DiffusionPolicyRunner:
                 f"ones recorded in the training data -- check --observation_preset."
             )
         self.state_history.append(state)
-        # At episode start there is no history yet; repeat the first state.
-        while len(self.state_history) < self.policy.cfg.obs_horizon:
+        cfg = self.policy.cfg
+        if cfg.image_keys:
+            # Looked up by camera name, so each encoder gets its own camera.
+            self.image_history.append(build_images(obs, tuple(cfg.image_keys), cfg.image_size, self.num_envs))
+        # At episode start there is no history yet; repeat the first observation.
+        while len(self.state_history) < cfg.obs_horizon:
             self.state_history.appendleft(self.state_history[0])
+        while cfg.image_keys and len(self.image_history) < cfg.obs_horizon:
+            self.image_history.appendleft(self.image_history[0])
 
         if not self.pending_actions or self.steps_since_replan >= self.replan_interval:
             obs_history = torch.stack(list(self.state_history)).unsqueeze(0).to(self.device)
-            chunk = self.policy.sample_chunk(normalize(obs_history, self.stats["state"]), steps=self.sample_steps)
+            images = None
+            if cfg.image_keys:
+                images = {
+                    key: torch.stack([frame[key] for frame in self.image_history]).unsqueeze(0).to(self.device)
+                    for key in cfg.image_keys
+                }
+            chunk = self.policy.sample_chunk(normalize(obs_history, self.stats["state"]), steps=self.sample_steps, images=images)
             self.pending_actions = deque(denormalize(chunk[0], self.stats["action"]).unbind(dim=0))
             self.steps_since_replan = 0
 
@@ -79,7 +94,9 @@ def load_policy(ckpt_path: str, *, task: str, device: torch.device) -> tuple[Dif
     if checkpoint.get("task") != task:
         raise ValueError(f"Checkpoint was trained on '{checkpoint.get('task')}', not '{task}'.")
 
-    policy = DiffusionPolicy(PolicyConfig(**checkpoint["policy_cfg"]))
+    policy_cfg = dict(checkpoint["policy_cfg"])
+    policy_cfg["image_keys"] = tuple(policy_cfg.get("image_keys", ()))
+    policy = DiffusionPolicy(PolicyConfig(**policy_cfg))
     policy.load_state_dict(checkpoint.get("ema_model", checkpoint["model"]))
     policy.to(device).eval()
     return policy, stats_to(checkpoint["stats"], device)

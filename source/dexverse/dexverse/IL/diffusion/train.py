@@ -79,6 +79,11 @@ def train(cfg: TrainConfig) -> dict[str, Any] | None:
         layers_per_block=cfg.layers_per_block,
         num_train_timesteps=cfg.num_train_timesteps,
         beta_schedule=cfg.beta_schedule,
+        image_keys=train_set.image_keys,
+        image_size=train_set.image_size,
+        image_crop=(cfg.image_crop or round(train_set.image_size * 7 / 8)) if train_set.image_keys else 0,
+        image_feature_dim=cfg.image_feature_dim,
+        num_keypoints=cfg.num_keypoints,
     )
     model = DiffusionPolicy(policy_cfg).to(device)
     ema_model = copy.deepcopy(model).requires_grad_(False).eval()
@@ -95,6 +100,8 @@ def train(cfg: TrainConfig) -> dict[str, Any] | None:
         sampler=train_sampler,
         num_workers=cfg.num_workers,
         drop_last=len(train_set) >= cfg.batch_size,
+        pin_memory=bool(train_set.image_keys),
+        persistent_workers=cfg.num_workers > 0,
     )
     val_loader = None if val_set is None else DataLoader(val_set, batch_size=cfg.batch_size, num_workers=cfg.num_workers)
 
@@ -104,7 +111,8 @@ def train(cfg: TrainConfig) -> dict[str, Any] | None:
             f"[diffusion] task={cfg.task} state_dim={policy_cfg.state_dim} action_dim={policy_cfg.action_dim} "
             f"episodes={len(train_set.episodes)}/{len(val_set.episodes) if val_set else 0} "
             f"windows={len(train_set)}/{len(val_set) if val_set else 0} "
-            f"world_size={world_size} batch={per_rank_batch}x{world_size}",
+            f"world_size={world_size} batch={per_rank_batch}x{world_size} "
+            f"cameras={list(policy_cfg.image_keys)} image={policy_cfg.image_size} crop={policy_cfg.image_crop}",
             flush=True,
         )
 
@@ -211,10 +219,11 @@ def _denoising_loss(model, batch, scheduler, stats, device) -> torch.Tensor:
     obs = normalize(batch["obs"].to(device), stats["state"])
     action = normalize(batch["action"].to(device), stats["action"])
     mask = batch["action_mask"].to(device).unsqueeze(-1)
+    images = {key: frames.to(device, non_blocking=True) for key, frames in batch["images"].items()} if "images" in batch else None
 
     noise = torch.randn_like(action)
     timesteps = torch.randint(0, getattr(model, "module", model).cfg.num_train_timesteps, (action.shape[0],), device=device)
-    predicted = model(scheduler.add_noise(action, noise, timesteps), timesteps, obs)
+    predicted = model(scheduler.add_noise(action, noise, timesteps), timesteps, obs, images)
 
     error = F.mse_loss(predicted, noise, reduction="none") * mask
     return error.sum() / mask.expand_as(error).sum().clamp_min(1.0)

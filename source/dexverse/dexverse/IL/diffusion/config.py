@@ -40,6 +40,15 @@ class PolicyConfig:
     num_train_timesteps: int = 100
     beta_schedule: str = "squaredcos_cap_v2"
     prediction_type: str = "epsilon"
+    image_keys: tuple[str, ...] = ()
+    """Camera term names (``rgb`` group); one image encoder per camera. Empty = state-only policy."""
+    image_size: int = 0
+    """Square resolution the stored / live images are resized to (``obs_images.resize_images``)."""
+    image_crop: int = 0
+    """Crop fed to the encoders: random during training, centered at inference."""
+    image_feature_dim: int = 64
+    num_keypoints: int = 32
+    """Spatial-softmax keypoints per camera (ResNet18 + GroupNorm + spatial softmax, as in Chi et al.)."""
 
 
 @dataclass
@@ -77,6 +86,10 @@ class TrainConfig:
     layers_per_block: int = 2
     num_train_timesteps: int = 100
     beta_schedule: str = "squaredcos_cap_v2"
+    image_crop: int = 0
+    """Image crop for the camera encoders; 0 = 7/8 of the stored image size (used only when the dataset has images)."""
+    image_feature_dim: int = 64
+    num_keypoints: int = 32
 
 
 @dataclass

@@ -9,6 +9,11 @@ The model predicts the noise added to a normalized action chunk of shape
 ``(action_horizon, action_dim)``, conditioned on the flattened observation
 history. Conditioning is FiLM-style: the observation embedding is added to the
 timestep embedding, which every residual block in the UNet already consumes.
+
+Image policies (``PolicyConfig.image_keys`` non-empty) give every camera its own
+encoder -- ResNet18 trained from scratch with GroupNorm and a spatial-softmax head,
+the image variant of Chi et al. -- keyed by the camera's term name. Per step the
+camera features are concatenated with the low-dim state before the obs MLP.
 """
 
 from __future__ import annotations
@@ -38,8 +43,13 @@ class DiffusionPolicy(nn.Module):
             act_fn="mish",
         )
         temb_channels = int(cfg.unet_block_out_channels[0])
+        # One encoder per camera, addressed by the camera's term name (never by position).
+        self.image_encoders = nn.ModuleDict(
+            {key: ImageEncoder(cfg.image_crop, cfg.num_keypoints, cfg.image_feature_dim) for key in cfg.image_keys}
+        )
+        step_dim = cfg.state_dim + len(cfg.image_keys) * cfg.image_feature_dim
         self.obs_encoder = nn.Sequential(
-            nn.Linear(cfg.state_dim * cfg.obs_horizon, cfg.obs_embed_dim),
+            nn.Linear(step_dim * cfg.obs_horizon, cfg.obs_embed_dim),
             nn.Mish(),
             nn.Linear(cfg.obs_embed_dim, temb_channels),
         )
@@ -48,16 +58,43 @@ class DiffusionPolicy(nn.Module):
         # once here and set the addend per forward pass.
         self.unet.time_mlp = _ConditionedTimeEmbedding(self.unet.time_mlp)
 
-    def forward(self, noisy_action: torch.Tensor, timesteps: torch.Tensor, obs_history: torch.Tensor) -> torch.Tensor:
-        """Predict the noise in ``(B, action_horizon, action_dim)`` action chunks.
+    def encode_obs(self, obs_history: torch.Tensor, images: dict[str, torch.Tensor] | None = None) -> torch.Tensor:
+        """Observation embedding ``(B, temb)`` from the state history and, for image policies, the camera history.
 
-        ``obs_history`` is ``(B, obs_horizon, state_dim)``, already normalized.
+        ``obs_history`` is ``(B, obs_horizon, state_dim)``, already normalized; ``images`` maps every
+        ``cfg.image_keys`` camera to ``(B, obs_horizon, 3, H, W)`` uint8.
         """
         if obs_history.ndim != 3:
             raise ValueError(f"obs_history must be rank-3, got shape {tuple(obs_history.shape)}.")
+        features = [obs_history.float()]
+        if self.cfg.image_keys:
+            if images is None or set(images) != set(self.cfg.image_keys):
+                raise KeyError(f"Policy expects cameras {list(self.cfg.image_keys)}, got {sorted(images or {})}.")
+            for key in self.cfg.image_keys:
+                frames = images[key]
+                batch, horizon = frames.shape[:2]
+                feat = self.image_encoders[key](frames.reshape(batch * horizon, *frames.shape[2:]))
+                features.append(feat.reshape(batch, horizon, -1))
+        step = torch.cat(features, dim=-1)
+        return self.obs_encoder(step.reshape(step.shape[0], -1))
 
-        obs_embed = self.obs_encoder(obs_history.reshape(obs_history.shape[0], -1).to(noisy_action.dtype))
-        self.unet.time_mlp.cond = obs_embed
+    def forward(
+        self,
+        noisy_action: torch.Tensor,
+        timesteps: torch.Tensor,
+        obs_history: torch.Tensor | None = None,
+        images: dict[str, torch.Tensor] | None = None,
+        *,
+        obs_embed: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        """Predict the noise in ``(B, action_horizon, action_dim)`` action chunks.
+
+        Conditioned on ``obs_embed`` when given (sampling encodes once per chunk), else on
+        ``encode_obs(obs_history, images)``.
+        """
+        if obs_embed is None:
+            obs_embed = self.encode_obs(obs_history, images)
+        self.unet.time_mlp.cond = obs_embed.to(noisy_action.dtype)
         try:
             # diffusers' 1-D UNet is channels-first; our chunks are time-first.
             predicted = self.unet(noisy_action.transpose(1, 2), timesteps).sample
@@ -75,9 +112,12 @@ class DiffusionPolicy(nn.Module):
         )
 
     @torch.no_grad()
-    def sample_chunk(self, obs_history: torch.Tensor, *, steps: int) -> torch.Tensor:
-        """Denoise a fresh action chunk from noise, conditioned on ``obs_history``."""
+    def sample_chunk(
+        self, obs_history: torch.Tensor, *, steps: int, images: dict[str, torch.Tensor] | None = None
+    ) -> torch.Tensor:
+        """Denoise a fresh action chunk from noise, conditioned on ``obs_history`` (and ``images``)."""
         device = obs_history.device
+        obs_embed = self.encode_obs(obs_history, images)
         scheduler = self.make_noise_scheduler()
         scheduler.set_timesteps(steps, device=device)
         action = torch.randn(
@@ -86,9 +126,72 @@ class DiffusionPolicy(nn.Module):
         )
         for timestep in scheduler.timesteps:
             batched_timestep = torch.full((action.shape[0],), int(timestep), device=device, dtype=torch.long)
-            noise = self.forward(action, batched_timestep, obs_history)
+            noise = self.forward(action, batched_timestep, obs_embed=obs_embed)
             action = scheduler.step(noise, timestep, action).prev_sample
         return action
+
+
+class ImageEncoder(nn.Module):
+    """One camera: uint8 ``(N, 3, H, W)`` -> ``(N, feature_dim)``.
+
+    ResNet18 from scratch with every BatchNorm swapped for GroupNorm (16 channels per
+    group; BatchNorm statistics break under EMA and small eval batches), then a
+    spatial softmax over ``num_keypoints`` learned keypoint maps and a linear layer.
+    The input is cropped to ``crop``: a random crop per image while training, the
+    center crop at inference.
+    """
+
+    def __init__(self, crop: int, num_keypoints: int, feature_dim: int):
+        super().__init__()
+        from torchvision.models import resnet18
+
+        backbone = resnet18(weights=None)
+        _batchnorm_to_groupnorm(backbone)
+        self.backbone = nn.Sequential(*list(backbone.children())[:-2])  # drop avgpool + fc
+        self.crop = crop
+        self.keypoints = nn.Conv2d(512, num_keypoints, kernel_size=1)
+        self.out = nn.Linear(num_keypoints * 2, feature_dim)
+
+    def forward(self, images: torch.Tensor) -> torch.Tensor:
+        x = images.float() / 255.0
+        if self.crop and self.crop < x.shape[-1]:
+            x = _random_crop(x, self.crop) if self.training else _center_crop(x, self.crop)
+        x = self.keypoints(self.backbone((x - 0.5) / 0.5))
+        n, k, h, w = x.shape
+        attention = torch.softmax(x.reshape(n, k, h * w), dim=-1)
+        ys = torch.linspace(-1.0, 1.0, h, device=x.device, dtype=x.dtype)
+        xs = torch.linspace(-1.0, 1.0, w, device=x.device, dtype=x.dtype)
+        grid_y, grid_x = torch.meshgrid(ys, xs, indexing="ij")
+        expected = torch.stack(
+            [(attention * grid_x.reshape(1, 1, -1)).sum(-1), (attention * grid_y.reshape(1, 1, -1)).sum(-1)], dim=-1
+        )
+        return self.out(expected.reshape(n, k * 2))
+
+
+def _batchnorm_to_groupnorm(module: nn.Module) -> None:
+    for name, child in module.named_children():
+        if isinstance(child, nn.BatchNorm2d):
+            setattr(module, name, nn.GroupNorm(child.num_features // 16, child.num_features))
+        else:
+            _batchnorm_to_groupnorm(child)
+
+
+def _center_crop(x: torch.Tensor, size: int) -> torch.Tensor:
+    top = (x.shape[-2] - size) // 2
+    left = (x.shape[-1] - size) // 2
+    return x[..., top : top + size, left : left + size]
+
+
+def _random_crop(x: torch.Tensor, size: int) -> torch.Tensor:
+    """Independent random crop per image of ``(N, C, H, W)``."""
+    n = x.shape[0]
+    tops = torch.randint(0, x.shape[-2] - size + 1, (n,), device=x.device)
+    lefts = torch.randint(0, x.shape[-1] - size + 1, (n,), device=x.device)
+    rows = (tops[:, None] + torch.arange(size, device=x.device)[None]).reshape(n, 1, size, 1)
+    cols = (lefts[:, None] + torch.arange(size, device=x.device)[None]).reshape(n, 1, 1, size)
+    batch = torch.arange(n, device=x.device).reshape(n, 1, 1, 1)
+    channels = torch.arange(x.shape[1], device=x.device).reshape(1, -1, 1, 1)
+    return x[batch, channels, rows, cols]
 
 
 class _ConditionedTimeEmbedding(nn.Module):

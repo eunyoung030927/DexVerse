@@ -13,6 +13,10 @@ Sim launch -- using the same group order the eval runner uses at runtime
 (``dexverse.IL.diffusion.obs_state``), and copies each episode's recorded
 ``initial_state`` across so evaluation can pin episode starts.
 
+When the replay captured cameras (``--obs-groups rgb``), every ``rgb`` term is
+stored as ``obs/images/<term>`` resized to ``--image_size`` with the same
+function the eval runner uses (``dexverse.IL.diffusion.obs_images``).
+
 Usage::
 
     python scripts/diffusion/build_dataset.py \
@@ -31,10 +35,13 @@ from typing import Any
 import h5py
 import numpy as np
 
+from dexverse.IL.diffusion.obs_images import IMAGE_GROUP, resize_images
 from dexverse.IL.diffusion.obs_state import OPTIONAL_GROUPS, REQUIRED_GROUPS
 
 
-def build_dataset(in_file: Path, out_file: Path, *, task: str | None, pkl_file: Path | None) -> dict[str, Any]:
+def build_dataset(
+    in_file: Path, out_file: Path, *, task: str | None, pkl_file: Path | None, image_size: int = 128
+) -> dict[str, Any]:
     out_file.parent.mkdir(parents=True, exist_ok=True)
     with h5py.File(in_file, "r") as src, h5py.File(out_file, "w") as dst:
         if "data" not in src:
@@ -46,6 +53,7 @@ def build_dataset(in_file: Path, out_file: Path, *, task: str | None, pkl_file: 
         data = dst.create_group("data")
         layout: list[dict[str, Any]] = []
         dims: set[tuple[int, int]] = set()
+        cameras: list[str] = []
         for name in sorted(src["data"]):
             episode = src["data"][name]
             if "obs" not in episode or "actions" not in episode:
@@ -63,6 +71,16 @@ def build_dataset(in_file: Path, out_file: Path, *, task: str | None, pkl_file: 
             demo = data.create_group(name)
             demo.create_dataset("actions", data=actions[:length], compression="gzip")
             demo.create_dataset("obs/state", data=state[:length], compression="gzip")
+            if IMAGE_GROUP in episode["obs"]:
+                cameras = term_order.get(IMAGE_GROUP) or sorted(episode["obs"][IMAGE_GROUP])
+                for camera in cameras:
+                    frames = episode["obs"][IMAGE_GROUP][camera]
+                    images = np.concatenate(
+                        [resize_images(frames[i : i + 256], image_size).numpy() for i in range(0, length, 256)]
+                    )[:length]
+                    demo.create_dataset(
+                        f"obs/images/{camera}", data=images, chunks=(1, *images.shape[1:]), compression="lzf"
+                    )
             if name in initial_states:
                 _write_tree(demo.create_group("initial_state"), initial_states[name])
 
@@ -77,6 +95,8 @@ def build_dataset(in_file: Path, out_file: Path, *, task: str | None, pkl_file: 
             "state_dim": state_dim,
             "action_dim": action_dim,
             "state_layout": layout,
+            "image_keys": cameras,
+            "image_size": image_size if cameras else 0,
         }
         dst.attrs["meta"] = json.dumps(summary)
     return {**summary, "out_file": str(out_file)}
@@ -168,8 +188,10 @@ def main() -> None:
         default=None,
         help="Demonstration pickle to copy initial_state from (default: the input's 'source_pickles' attribute).",
     )
+    parser.add_argument("--image_size", type=int, default=128, help="Square size the rgb cameras are resized to.")
     args = parser.parse_args()
-    print(json.dumps(build_dataset(args.in_file, args.out_file, task=args.task, pkl_file=args.pkl_file), indent=2))
+    summary = build_dataset(args.in_file, args.out_file, task=args.task, pkl_file=args.pkl_file, image_size=args.image_size)
+    print(json.dumps(summary, indent=2))
 
 
 if __name__ == "__main__":
