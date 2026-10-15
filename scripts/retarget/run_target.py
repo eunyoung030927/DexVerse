@@ -6,6 +6,8 @@
 """Everything for one (task, source episode, target hand): stage 2 once, then SPIDER until the task succeeds.
 
   stage 2   kinematic retarget (skipped if kinematic.npz exists)
+  kinonly   the kinematic joints PD-tracked under physics with no optimisation (stage3 --iters 0, a few minutes),
+            judged by the same success term. If it succeeds it is the result and SPIDER is skipped.
   stage 3   SPIDER; the verdict is the task's own success term held for 10 frames. On failure retry with a new
             seed and more search -- attempt a: --seed a, --num_samples 1024 * (1 + a // 2), --iters 5 + a --
             up to --max_attempts (the Bench2Dex cluster schedule). The successful attempt is linked as
@@ -77,6 +79,7 @@ def main():
     ap.add_argument("--seed_offset", type=int, default=0, help="attempt K uses seed K + offset")
     ap.add_argument("--spider_args", default="", help="extra stage-3 arguments for every attempt")
     ap.add_argument("--device", default="cuda:0")
+    ap.add_argument("--no_kinonly", action="store_true", help="skip the kinematic-only physics check")
     a = ap.parse_args()
 
     d = episode_dir(a.task, a.demos, a.episode) / a.target
@@ -97,6 +100,20 @@ def main():
         if not (d / "kinematic.npz").exists():
             return save(state="stage2_failed", error=f"no kinematic.npz (rc={rc}, see run.log)")
         good = next((x for x in status["attempts"] if x.get("success")), None)
+        if not good and not a.no_kinonly:
+            kin_path = d / "kinonly.json"
+            if not kin_path.exists():
+                run(log, [PY, "-u", HERE / "stage3_spider.py", *common, "--tag", "kinonly", "--iters", "0",
+                          "--num_samples", "8", "--max_retries", "0", "--no_hold_pass", "--ckpt_every", "0",
+                          *isaac], 3600)
+            if kin_path.exists():
+                res = json.load(open(kin_path))
+                entry = {"tag": "kinonly", "success": bool(res["task_success"]), "minutes": res.get("minutes"),
+                         "success_frame": res.get("success_frame")}
+                status["attempts"] = [x for x in status["attempts"] if x["tag"] != "kinonly"] + [entry]
+                save(state="retrying")
+                if entry["success"]:
+                    good = entry
         for att in range(a.max_attempts):
             if good:
                 break

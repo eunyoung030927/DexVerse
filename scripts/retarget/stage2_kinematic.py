@@ -116,8 +116,14 @@ def main():
         pen_pts, pen_owner = torch.cat(pts), torch.tensor(owner, device=dev)
         pen_links = sorted(set(owner))
         obj_meshes = np.load(rdir / "meshes.npz")
-        obj_mesh = {i: (t(obj_meshes[f"{i}/v"]), torch.as_tensor(obj_meshes[f"{i}/f"], device=dev))
-                    for i in range(len(meta["bodies"])) if f"{i}/v" in obj_meshes}
+        obj_mesh = {}
+        for i in range(len(meta["bodies"])):
+            if f"{i}/v" in obj_meshes:
+                v, fc = geometry.simplify(obj_meshes[f"{i}/v"], obj_meshes[f"{i}/f"])
+                if len(fc) < len(obj_meshes[f"{i}/f"]):
+                    print(f"  mesh {meta['bodies'][i]}: {len(obj_meshes[f'{i}/f'])} -> {len(fc)} faces (penetration term)",
+                          flush=True)
+                obj_mesh[i] = (t(v), torch.as_tensor(fc, device=dev))
         body_pose = t(ref["body_pose"])                                                 # (T,B,7)
         print(f"penetration term: {len(pen_pts)} surface points on {len(pen_links)} links vs "
               f"{len(obj_mesh)} object meshes", flush=True)

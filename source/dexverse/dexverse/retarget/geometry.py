@@ -121,6 +121,32 @@ def closest_on_triangles(p: torch.Tensor, tri: torch.Tensor, chunk: int = 2_000_
     return best_d, best_c, best_f
 
 
+def simplify(verts: np.ndarray, faces: np.ndarray, max_faces: int = 20000):
+    """Vertex-clustering decimation to at most ``max_faces`` triangles (the grid cell grows until it fits).
+
+    ``signed_distance`` is brute force over every triangle; a 660k-face prop (BimanualLiftTray's food) made one
+    stage-2 run take over an hour. Cell size = the approximation error (a few mm for the meshes that need it).
+    """
+    if len(faces) <= max_faces:
+        return verts, faces
+    ext = float(np.ptp(verts, axis=0).max())
+    cell = ext / 256.0
+    while True:
+        key = np.floor((verts - verts.min(0)) / cell).astype(np.int64)
+        _, inv = np.unique(key, axis=0, return_inverse=True)
+        inv = inv.reshape(-1)
+        f = inv[faces]
+        f = f[(f[:, 0] != f[:, 1]) & (f[:, 1] != f[:, 2]) & (f[:, 0] != f[:, 2])]
+        f = np.unique(f, axis=0)
+        if len(f) <= max_faces:
+            n = inv.max() + 1
+            v = np.zeros((n, 3))
+            np.add.at(v, inv, verts)
+            v /= np.bincount(inv, minlength=n)[:, None]
+            return v.astype(verts.dtype), f.astype(faces.dtype)
+        cell *= 1.5
+
+
 def signed_distance(p, verts, faces):
     """Signed distance (negative inside) of p (M,3) to a mesh given in the same frame."""
     tri = verts[faces]                                              # (F,3,3)

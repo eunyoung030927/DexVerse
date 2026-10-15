@@ -55,7 +55,8 @@ pretty_name: "DexVerse {task}: {target} (SPIDER retargeting)"
 
 The released DexVerse demonstrations of **{task}** ([dexverse/DexVerse_release]
 (https://huggingface.co/datasets/dexverse/DexVerse_release) `{src_path}`, source hand `{source}`) retargeted to
-**`{target}`** with SPIDER (sampling-based physics retargeting, arXiv 2511.09484) in the unmodified task.
+**`{target}`** with SPIDER (sampling-based physics retargeting, arXiv 2511.09484) in the unmodified task. An episode whose kinematic
+retarget already succeeds when replayed under physics is kept as is (`retarget_source.method`: `kinematic` or `spider`).
 
 - **Episodes:** {n_up} of {n_src} source episodes ({missing_note})
 - **Success:** every episode is a success of the task's own `success` term held for 10 consecutive steps
@@ -131,6 +132,15 @@ def build_pickle(task, demos, target, local_eps, hub_pkl, out):
     """Stage 4 on the local successful runs, merged with the Hub pickle's episodes; sorted by source episode."""
     py = os.environ.get("PY", sys.executable)
     tmp = f"{out}.local"
+    # stage 4 needs the arm joints for record_demos' arm_joint_actions; results older than stage 3 storing them get
+    # arm_joint_meta.json from the env (one short Isaac launch for all of this target's episodes)
+    dirs = [episode_dir(task, str(demos), e) / target for e in local_eps]
+    need = [d for d in dirs if not (d / "arm_joint_meta.json").exists()]
+    if need:
+        cmd = [py, str(HERE / "arm_joint_meta.py"), "--task", task, "--target", target, "--headless"]
+        for d in need:
+            cmd += ["--out", str(d)]
+        subprocess.run(cmd, check=True, cwd=REPO)
     subprocess.run([py, str(HERE / "stage4_record.py"), "--task", task, "--demos", str(demos), "--target", target,
                     "--episodes", *map(str, local_eps), "--out", tmp], check=True, cwd=REPO)
     with open(tmp, "rb") as f:

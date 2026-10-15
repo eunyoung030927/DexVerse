@@ -9,7 +9,7 @@ DexVerse로 옮긴 것이다.
 ## 실행
 
 ```bash
-source /workspace/dexverse/dexverse_env.sh          # Isaac Sim + DexVerse 환경
+source /workspace/codes/_setup/dexverse_env.sh          # Isaac Sim + DexVerse 환경
 cd <repo>
 scripts/retarget/run_episodes.sh Dexverse-GraspCup-v0 \
     /workspace/dexverse/demos/demonstrations/v0/functional/Dexverse-GraspCup-v0/demos.pkl \

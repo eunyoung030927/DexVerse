@@ -16,12 +16,17 @@ the kinematic reference so the target hand reproduces the demo object motion und
     0; committed frames always run without it.
   * Only frames near manipulation are optimised (gate), and only when manipulation is within ``gate_look``.
   * Backtracking: when a manipulated object jumps away from its reference, go back ``backtrack`` commits and
-    re-plan with more effort, up to ``max_retries`` times per restart frame, then carry on (never stops early).
+    re-plan with more effort, up to ``max_retries`` times per restart frame, then carry on. Early stop: once a
+    restart frame has used all its retries, the run fails as soon as an object's error reaches ``abort_err``.
   * After the demo the last command is held for ``settle`` frames; success keeps being checked.
   * The committed execution (env 0) is kept as a DexVerse trajectory: the scene state before every action and
     the env action that commands the executed joint targets. Every commit starts from a restored snapshot, so
     re-executing the actions open-loop is not guaranteed to reproduce the run: the states are the record.
   * Success = the task's success term held ``success_steps`` consecutive frames (record_demos' rule).
+  * The whole execution, rollbacks included, is also kept as ``<tag>_process.pkl.gz`` (rewritten as it runs):
+    every committed state in execution order plus the drop/backtrack events, for render_watch.py / webui.py.
+  * Checkpoint ``<tag>_ckpt.pt`` every ``--ckpt_every`` seconds (optimiser state, backtrack history, RNG): a killed
+    run started again with the same arguments resumes where the checkpoint left it. Removed when the run ends.
 
   python scripts/retarget/stage3_spider.py --task Dexverse-GraspCup-v0 --demos <demos.pkl> --episode 0 \
       --target floating_allegro_right --headless
@@ -64,6 +69,10 @@ ap.add_argument("--hold_max_shift", type=float, default=0.03, help="m; the hold 
                 "shift exceeds this (a hand the kinematic object throws out of the grasp: Allegro 5 cm, LEAP 13 cm)")
 ap.add_argument("--max_frames", type=int, default=0, help="debug: stop the episode early")
 ap.add_argument("--hold_only", action="store_true", help="debug: run the hold pass and exit")
+ap.add_argument("--abort_err", type=float, default=0.15,
+                help="m; once some restart frame has used all --max_retries, stop and fail when an object's error "
+                     "reaches this (0: never stop early)")
+ap.add_argument("--ckpt_every", type=float, default=300.0, help="s between checkpoints (0: none)")
 ap.add_argument("--tag", default="spider")
 ap.add_argument("--seed", type=int, default=0)
 AppLauncher.add_app_launcher_args(ap)
@@ -87,7 +96,7 @@ def keypoints_w(pose, kp):
     """Body-frame keypoints (B,K,3) placed on poses (...,B,7) -> (...,B,K,3)."""
     B, K, _ = kp.shape
     q = pose[..., 3:7].unsqueeze(-2).expand(*pose.shape[:-1], K, 4).reshape(-1, 4)
-    p = quat_apply(q, kp.expand(*pose.shape[:-1], B, K, 3).reshape(-1, 3)).reshape(*pose.shape[:-1], K, 3)
+    p = quat_apply(q, kp.expand(*pose.shape[:-2], B, K, 3).reshape(-1, 3)).reshape(*pose.shape[:-1], K, 3)
     return p + pose[..., None, :3]
 
 
@@ -176,6 +185,20 @@ def hold_pass(env: SpiderEnv, state0):
     return True
 
 
+def dump_process(path, proc):
+    """Write the execution log atomically (the renderer may read it while the run goes on)."""
+    tmp = path.with_suffix(".tmp")
+    with gzip.open(tmp, "wb") as fh:
+        pickle.dump(proc, fh)
+    os.replace(tmp, path)
+
+
+def save_ckpt(path, ck):
+    tmp = path.with_suffix(".tmp")
+    torch.save(ck, tmp)
+    os.replace(tmp, path)
+
+
 def main():
     rdir = paths.run_dir(args.task, args.demos, args.episode)
     out_dir = rdir / args.target
@@ -206,10 +229,24 @@ def main():
             kps.append(np.stack([np.zeros(3), cen, v[t.argmin()], v[t.argmax()]]))
         else:
             kps.append(np.zeros((4, 3)))
-    env.body_keypoints = torch.as_tensor(np.stack(kps), dtype=torch.float32, device=env.device)   # (B,4,3)
+    # step_cost compares object root poses (one per object), so each object takes its root body's keypoints (an
+    # articulated object has several bodies; a multi-object task several objects -- (...,B) vs (...,n_obj) broke)
+    root_body = [next(i for i, b in enumerate(renv.bodies) if b[0] == k) for k in renv.obj_ids]
+    env.body_keypoints = torch.as_tensor(np.stack(kps)[root_body], dtype=torch.float32, device=env.device)  # (n_obj,4,3)
     print("  object keypoints (body frame, cm):", {renv.bodies[i][1]: np.round(100 * k, 1).tolist() for i, k in enumerate(kps)}, flush=True)
     state0 = env.initial_state(src_ep["initial_state"])
-    hold_used = False if args.no_hold_pass else hold_pass(env, state0)
+    ckpt_path = out_dir / f"{args.tag}_ckpt.pt"
+    ck = torch.load(ckpt_path, map_location=env.device, weights_only=False) if ckpt_path.exists() else None
+    if ck is not None:                               # resume: the hold pass result comes from the checkpoint
+        hold_used = ck["hold_used"]
+        if hold_used:
+            env.ref_q, env.ref_tips = ck["hold_ref"]
+            env.update_command()
+        print(f"  resume from {ckpt_path.name}: frame {ck['snap']['frame']}, {len(ck['traj']['actions'])} committed "
+              f"frames, {ck['elapsed']:.0f}s done", flush=True)
+    else:
+        hold_used = False if args.no_hold_pass else hold_pass(env, state0)
+    hold_ref = (env.ref_q.clone(), env.ref_tips.clone())
     env.extend_hold(args.settle)                      # the last demo frame is held and optimised for `settle` frames
     if args.hold_only:
         return
@@ -227,8 +264,36 @@ def main():
 
     # the committed run (env 0): DexVerse trajectory layout -- states[t] before actions[t]
     traj = {"states": [to_numpy_state(renv.get_state())], "actions": [], "err": []}
+    # the execution as it happened (never truncated by a backtrack): frame, object error and success per state
+    proc = {"task": args.task, "episode": args.episode, "robot_type": args.target, "tag": args.tag,
+            "obj_ids": list(env.e.obj_ids), "fps": round(1.0 / renv.step_dt), "status": "running",
+            "states": [traj["states"][0]], "frame": [int(env.frame[0])], "err": [None], "success": [False],
+            "events": []}
+    proc_path = out_dir / f"{args.tag}_process.pkl.gz"
+    out_dir.mkdir(parents=True, exist_ok=True)
     t0, n_opt = time.time(), 0
     history, retries, level, level_until = [], {}, 0, 0
+    if ck is not None:
+        traj, proc, history, retries = ck["traj"], ck["proc"], ck["history"], ck["retries"]
+        nominal, level, level_until, n_opt = ck["nominal"], ck["level"], ck["level_until"], ck["n_opt"]
+        t0 = time.time() - ck["elapsed"]
+        env.restore(ck["snap"])
+        env.success.history = list(ck["success"])
+        torch.set_rng_state(ck["rng"]["torch"].cpu())
+        torch.cuda.set_rng_state(ck["rng"]["cuda"].cpu())
+        np.random.set_state(ck["rng"]["np"])
+        proc["events"].append({"i": len(proc["states"]) - 1, "type": "resume", "frame": ck["snap"]["frame"],
+                               "back_to": ck["snap"]["frame"], "retry": 0, "objects": []})
+    t_ckpt = time.time()
+    aborted = None
+
+    def checkpoint():
+        save_ckpt(ckpt_path, {"snap": env.snapshot(), "traj": traj, "proc": proc, "history": history,
+                              "retries": retries, "nominal": nominal, "level": level, "level_until": level_until,
+                              "n_opt": n_opt, "elapsed": time.time() - t0, "success": list(env.success.history),
+                              "hold_used": hold_used, "hold_ref": hold_ref,
+                              "rng": {"torch": torch.get_rng_state(), "cuda": torch.cuda.get_rng_state(),
+                                      "np": np.random.get_state()}})
 
     def commit_step(a):
         env.guide_gain = 0.0
@@ -237,6 +302,10 @@ def main():
         traj["states"].append(to_numpy_state(renv.get_state()))
         traj["err"].append(obj_err(env).cpu().numpy())
         env.success.update()
+        proc["states"].append(traj["states"][-1])
+        proc["frame"].append(int(env.frame[0]))
+        proc["err"].append(traj["err"][-1])
+        proc["success"].append(bool(env.success.history[-1]))
 
     while int(env.frame[0]) < T - 3:
         f = int(env.frame[0])
@@ -291,6 +360,9 @@ def main():
                     env.success.load(sstate)
                     env.restore(snap)
                     level_until = key + (args.backtrack + 1) * S + H
+                    proc["events"].append({"i": len(proc["states"]) - 1, "type": "drop", "frame": fa, "back_to": key,
+                                           "retry": level, "objects": [env.e.obj_ids[x] for x in dropped]})
+                    dump_process(proc_path, proc)
                     print(f"  drop of {[env.e.obj_ids[x] for x in dropped]} at frame {fa}: back to {key}, "
                           f"retry {level}/{args.max_retries} with {args.iters * (1 + level)} iterations", flush=True)
                     continue
@@ -298,11 +370,23 @@ def main():
             level = 0
         shift = max(commit.shape[0] // knot, 1)
         nominal = torch.cat([nominal[shift:], torch.zeros(shift, A, device=dev)], 0)
+        e_obj = float(np.max(traj["err"][-1])) if traj["err"] else 0.0
+        if args.abort_err > 0 and e_obj >= args.abort_err and any(v >= args.max_retries for v in retries.values()):
+            aborted = int(env.frame[0])
+            proc["events"].append({"i": len(proc["states"]) - 1, "type": "abort", "frame": aborted,
+                                   "back_to": aborted, "retry": 0, "objects": []})
+            print(f"  abort at frame {aborted}: object error {100 * e_obj:.1f} cm >= {100 * args.abort_err:.0f} cm "
+                  f"after all retries of a restart frame were used", flush=True)
+            break
+        if args.ckpt_every > 0 and time.time() - t_ckpt >= args.ckpt_every:
+            checkpoint()
+            t_ckpt = time.time()
         if f // 60 != int(env.frame[0]) // 60:
             print(f"  frame {int(env.frame[0])}/{T} obj err cm {np.round(100 * traj['err'][-1], 1).tolist()} "
                   f"success now {env.success.history[-1]} ({time.time() - t0:.0f}s, {n_opt} optimised)", flush=True)
+            dump_process(proc_path, proc)
 
-    for _ in range(10):                               # a short plain hold after the optimised one
+    for _ in range(0 if aborted is not None else 10):  # a short plain hold after the optimised one
         commit_step(None)
 
     done = env.success.done_frame()
@@ -312,14 +396,18 @@ def main():
            "task_success": done is not None, "success_frame": done,
            "instant_success_frames": int(sum(env.success.history)),
            "minutes": round((time.time() - t0) / 60, 1), "optimised_steps": n_opt,
-           "retries": {str(k): v for k, v in retries.items()}, "args": vars(args),
+           "retries": {str(k): v for k, v in retries.items()}, "aborted_frame": aborted, "args": vars(args),
            "obj_err_mean_cm": dict(zip(env.e.obj_ids, (100 * er.mean(0)).round(2).tolist())),
            "obj_err_final_cm": dict(zip(env.e.obj_ids, (100 * er[-1]).round(2).tolist()))}
-    out_dir.mkdir(parents=True, exist_ok=True)
+    ckpt_path.unlink(missing_ok=True)
+    proc["status"] = "success" if res["task_success"] else "fail"
+    proc["result"] = res
+    dump_process(proc_path, proc)
     traj["success"] = list(env.success.history)
     traj["initial_state"] = state0
     traj["joint_names"] = renv.joint_names
     traj["action_layout"] = action_layout(renv.env)        # the target hand's env action (stage 4 metadata)
+    traj["arm_joint_meta"] = renv_mod.arm_joint_meta(renv)  # stage 4 rebuilds record_demos' arm_joint_actions
     with gzip.open(out_dir / f"{args.tag}_traj.pkl.gz", "wb") as fh:
         pickle.dump(traj, fh)
     json.dump(res, open(res_path, "w"), indent=1)

@@ -274,6 +274,17 @@ class RetargetEnv:
         return np.array([(q[j] - o) / s for j, s, o, _ in self._action_map], dtype=np.float32)
 
 
+def arm_joint_meta(renv: "RetargetEnv") -> dict:
+    """What record_demos needs for ``arm_joint_actions``: the arm joints (``robot_config.arm_joint_names_expr``,
+    resolved as record_demos' ``_resolve_arm_joint_ids``) and the action map (column -> joint, scale, offset), so
+    the commanded arm targets are ``action[col] * scale + offset`` (exact: actions come from ``targets_to_action``)."""
+    rc = getattr(renv.env.cfg, "robot_config", None)
+    expr = getattr(rc, "arm_joint_names_expr", None) if rc else None
+    ids, names = (renv.robot.find_joints(expr, preserve_order=True) if expr else ([], []))
+    return {"arm_joint_names": list(names) or None, "arm_joint_ids": [int(i) for i in ids] or None,
+            "action_map": [[int(j), float(s), float(o)] for j, s, o, _ in renv._action_map]}
+
+
 def _broadcast(state, n, device):
     if isinstance(state, dict):
         return {k: _broadcast(v, n, device) for k, v in state.items()}
