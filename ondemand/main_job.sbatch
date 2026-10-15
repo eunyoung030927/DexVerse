@@ -15,9 +15,9 @@
 #                 GPU) and that GPU has MIN_FREE_GB of VRAM left; CUDA MPS. Each item: SPIDER (v2 settings, 60 Hz)
 #                 until the task's own success term holds 10 steps, up to MAX_ATTEMPTS
 #                 (ondemand/retarget_worker.sbatch -> scripts/retarget/run_queue.py -> run_target.py; no rendering)
-#   6. upload     IN THIS JOB (ondemand/finalize.sbatch): per (task, target hand), the successful runs become one
-#                 trajectory pickle (record_demos format) pushed to <ns>/dexverse-<task>-<hand>-retargeting ONLY if all
-#                 EPISODES source episodes succeeded
+#   6. upload     DURING the queue every DV_UPLOAD_S s (ondemand/dv_upload.sh) and once more at the end
+#                 (ondemand/finalize.sbatch): each successful episode as v1/retargeting/<category>/<task>/<robot_type>/
+#                 epNNN.pkl + index.json to the HF dataset Dexverse-CSI/dv-demos, merged per episode with the repo
 #
 # Walltime: at its start the job queues a continuation of itself (--dependency=afterany on this job). If this job
 # finishes every item, it cancels the continuation; if it hits the walltime, the continuation resumes the queue
@@ -50,7 +50,9 @@ echo "=== dvr-main start: $(date) on $(hostname) ==="
 
 REPO_URL="${REPO_URL:-https://github.com/eunyoung030927/DexVerse.git}"
 export REPO_BRANCH="${REPO_BRANCH:-retarget/shadow-cross-hand}"
-export TASKS="${TASKS:-Dexverse-GraspBleach-v1 Dexverse-GraspPan-v1 Dexverse-GraspKettle-v1 Dexverse-FunctionalPourMug-v1 Dexverse-FunctionalHammerStrike-v1 Dexverse-BimanualLiftTray-v1 Dexverse-BimanualLiftCarton-v1 Dexverse-SlideUtilityKnife-v1 Dexverse-OpenFlatFolder-v1}"
+# Single-hand tasks first (2026-10-16); the bimanual ones come later in their own job:
+#   TASKS="Dexverse-BimanualLiftTray-v1 Dexverse-BimanualLiftCarton-v1 Dexverse-SlideUtilityKnife-v1 Dexverse-OpenFlatFolder-v1"
+export TASKS="${TASKS:-Dexverse-GraspBleach-v1 Dexverse-GraspPan-v1 Dexverse-GraspKettle-v1 Dexverse-FunctionalPourMug-v1 Dexverse-FunctionalHammerStrike-v1}"
 export HANDS="${HANDS:-allegro inspire leap sharpa wuji}"   # target hand families; unsupported ones are skipped with a log line
 export EPISODES="${EPISODES:-50}"
 export PER_GPU="${PER_GPU:-10}" MIN_FREE_GB="${MIN_FREE_GB:-10}" SESSION_GB="${SESSION_GB:-6}"
@@ -109,7 +111,7 @@ export APPTAINERENV_TASKS="$TASKS"
 echo "=== [5/6] retarget (this job, 2 GPUs, one queue over all tasks) ==="
 bash "$CODE_DIR/retarget_worker.sbatch" || echo "[warn] retargeting ended with an error (see above); deciding the upload anyway"
 
-echo "=== [6/6] upload (all-or-nothing per task and target hand) ==="
+echo "=== [6/6] upload (last dv-demos round) ==="
 if [ "${UPLOAD:-1}" = "1" ]; then
   bash "$CODE_DIR/finalize.sbatch" || echo "[warn] upload step failed"
 fi

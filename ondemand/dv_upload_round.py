@@ -11,6 +11,10 @@
   3. scripts/retarget/upload_dv_demos.py --src that export -> Dexverse-CSI/dv-demos, merged per episode with the repo
      (the central PC uploads the servers' results to the same repo; neither removes the other's)
 
+Step 1 is the only one that uses a GPU, outside the queue's slots, so the worker runs it alone before the queue
+starts (--backfill_only) and the rounds during the queue skip it (--no_backfill): results of the current stage 3 carry
+the arm joints in their trajectory and need no backfill.
+
 Env: TASKS, HANDS, DEMOS_ROOT, PY, HF_TOKEN, DEXVERSE_RETARGET_RUNS, SLURM_JOB_ID.
 """
 
@@ -36,7 +40,7 @@ def run(cmd):
     return subprocess.run(list(map(str, cmd)), cwd=REPO).returncode
 
 
-def main():
+def backfill():
     need = {}
     for st in sorted(RUNS.glob("*/demos/ep*/*/status.json")):
         d = st.parent
@@ -53,6 +57,13 @@ def main():
     for (task, tgt), dirs in sorted(need.items()):
         run([PY, "-u", S / "arm_joint_meta.py", "--task", task, "--target", tgt, "--headless",
              *[x for d in dirs for x in ("--out", d)]])
+
+
+def main():
+    if "--no_backfill" not in sys.argv:
+        backfill()
+    if "--backfill_only" in sys.argv:
+        return
     rc = run([PY, S / "export_dv_demos.py", "--runs", RUNS, "--demos_root", os.environ["DEMOS_ROOT"],
               "--tasks", *TASKS, "--hands", *HANDS, "--out", OUT, "--server", "slurm",
               "--run_id", f"slurm-{os.environ.get('SLURM_JOB_ID', '')}"])

@@ -71,6 +71,9 @@ MYLOG="$(scontrol show job "${SLURM_JOB_ID:-0}" 2>/dev/null | grep -o 'StdOut=[^
 bash "$CODE_DIR/monitor.sh" "${MYLOG:-/dev/null}" "${MONITOR_S:-300}" &
 MON=$!
 if [ "${UPLOAD:-1}" = "1" ]; then           # successes -> HF Dexverse-CSI/dv-demos every DV_UPLOAD_S s
+  # arm_joint_meta for older results now, while the GPUs are free; the periodic rounds then use no GPU
+  APPTAINERENV_TASKS="$TASKS" APPTAINERENV_HANDS="$HANDS" APPTAINERENV_DEMOS_ROOT="$DEMOS_ROOT" APPTAINERENV_PY="$PY" \
+    "${ISAAC[@]}" "$PY" ondemand/dv_upload_round.py --backfill_only 2>&1 | grep -E 'RESULT|Error|Traceback' || true
   bash "$CODE_DIR/dv_upload.sh" "${DV_UPLOAD_S:-1800}" &
   DVU=$!
 fi
