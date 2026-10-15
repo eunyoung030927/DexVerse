@@ -47,7 +47,7 @@ else
   echo "WARNING: MPS not started (MPS_ON=${MPS_ON:-1}, nvidia-cuda-mps-control $(command -v nvidia-cuda-mps-control || echo missing)); running without MPS"
 fi
 # stop the monitor and MPS whatever way this script ends
-trap 'kill ${MON:-} 2>/dev/null; [ "$MPS" = 1 ] && echo quit | nvidia-cuda-mps-control; rm -rf "$MPS_DIR"' EXIT
+trap 'kill ${MON:-} ${DVU:-} 2>/dev/null; [ "$MPS" = 1 ] && echo quit | nvidia-cuda-mps-control; rm -rf "$MPS_DIR"' EXIT
 
 # ------------------------------------------------------------------ GPU ids as the sessions see them
 # A session pins its GPU with CUDA_VISIBLE_DEVICES=<id>. Depending on cgroups / MPS that id is the job-relative
@@ -70,15 +70,15 @@ bash "$CODE_DIR/outputs_note.sh" || true     # OUTPUTS.md in the job folder: whe
 MYLOG="$(scontrol show job "${SLURM_JOB_ID:-0}" 2>/dev/null | grep -o 'StdOut=[^ ]*' | cut -d= -f2)"
 bash "$CODE_DIR/monitor.sh" "${MYLOG:-/dev/null}" "${MONITOR_S:-300}" &
 MON=$!
+if [ "${UPLOAD:-1}" = "1" ]; then           # successes -> HF Dexverse-CSI/dv-demos every DV_UPLOAD_S s
+  bash "$CODE_DIR/dv_upload.sh" "${DV_UPLOAD_S:-1800}" &
+  DVU=$!
+fi
 echo "live status: $HOME/dexverse/dvr_status.md (every ${MONITOR_S:-300} s)"
 "${ISAAC[@]}" env PY="$PY" "$PY" scripts/retarget/run_queue.py --tasks $TASKS --demos_root "$DEMOS_ROOT" \
   --episodes $(seq 0 $(( EPISODES - 1 ))) --hands $HANDS \
   --gpus $GPUS --per_gpu "$PER_GPU" --min_free_gb "$MIN_FREE_GB" --session_gb "$SESSION_GB" --max_attempts "$MAX_ATTEMPTS" --spider_args "${SPIDER_ARGS:-}" --retry_failed
 
-kill "$MON" 2>/dev/null || true
+kill "$MON" ${DVU:-} 2>/dev/null || true
 timeout 20 bash "$CODE_DIR/monitor.sh" "${MYLOG:-/dev/null}" 99999 || true     # final snapshot
-echo "=== summary $(date) ==="
-for t in $TASKS; do
-  "${ISAAC[@]}" "$PY" scripts/retarget/upload_task.py --task "$t" --demos_root "$DEMOS_ROOT" --episodes "$EPISODES" \
-    --hands "$HANDS" --dry_run || true
-done
+echo "=== retarget done $(date): the final dv-demos upload runs in finalize.sbatch ==="

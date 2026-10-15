@@ -57,8 +57,11 @@ retargeting은 상태를 입력으로 쓰므로 그대로 진행할 수 있다(`
 5. retarget (`retarget_worker.sbatch`) — CUDA MPS, GPU당 `PER_GPU`(10) 세션, VRAM `MIN_FREE_GB` 남을 때만 새 세션(2 GPU에서 실측 34개 동시). (에피소드, 목표 손) 큐를
    **`scripts/retarget/run_queue.py` → `run_target.py`** 로 처리: 에피소드마다 stage 1 한 번, 손마다 stage 2(기구학 IK) → stage 3(SPIDER v2, 60 Hz).
    판정은 **태스크 자신의 `success` 조건 10스텝 유지**(record_demos 규칙). 렌더링 없음
-6. upload (`finalize.sbatch` → **`scripts/retarget/upload_task.py`**) — 손별로 50개 모두 성공했을 때만,
-   **stage 4로 성공한 실행을 pickle 하나로 모아** 데이터셋 카드와 함께 올림
+6. upload — **HF `Dexverse-CSI/dv-demos`에 dv-demos 형식으로 성공한 에피소드를 바로 올림** (2026-10-16):
+   `v1/retargeting/<category>/<task>/<robot_type>/epNNN.pkl`(에피소드 1개, record_demos 형식) + `index.json`(에피소드별 상태).
+   워커가 `dv_upload.sh`를 `DV_UPLOAD_S`(1800)초마다 돌리고, 끝에 `finalize.sbatch`가 한 번 더. 한 회차 = `dv_upload_round.py`:
+   arm_joint_meta 보충 → `export_dv_demos.py` → `upload_dv_demos.py --src`(저장소와 에피소드 단위 병합, 삭제 없음 —
+   중앙 PC의 서버 업로드와 같은 저장소를 같이 씀). 예전 태스크별 저장소(`upload_task.py`)는 쓰지 않음
 
 - 시도: (에피소드, 손)당 최대 `MAX_ATTEMPTS`(3)회. 시도 K: 시드 K, 샘플 1024·(1+K//2), iters 5+K (Bench2Dex와 같음).
   성공한 시도는 `spider.json` / `spider_traj.pkl.gz` 심볼릭 링크로 표시
@@ -117,7 +120,8 @@ OOD Files 앱에서 `~/dexverse/dvr_status_<task>.md`(5분마다 갱신): (태�
 | `fetch_data.py` | 태스크의 v1 데모 pickle 다운로드 (HF 429는 기다렸다 이어 받음) |
 | `retarget_worker.sbatch` | 2 GPU 워커: MPS, GPU id 확인, `run_queue.py`, 끝에 손별 업로드 가능 여부(dry run) 출력 |
 | `monitor.sh` · `outputs_note.sh` | 상태 파일 · 잡 폴더의 `OUTPUTS.md` |
-| `finalize.sbatch` | 손별 업로드 판정 (50/50일 때만 pickle + 카드) |
+| `finalize.sbatch` | 마지막 dv-demos 업로드 1회 (`dv_upload.sh 0`) |
+| `dv_upload.sh` · `dv_upload_round.py` | 주기적 dv-demos 업로드 (arm_joint_meta 보충 → export → 병합 업로드) |
 | `upload_job.sbatch` | (붙여넣기용) 부분 업로드 |
 
 **실측 (잡 1651, 2026-10-13):** p1의 pro6000 2장, 세션 34개 동시(GPU 사용률 100%, VRAM 66/98 GB), GraspBleach 한 손 항목당
