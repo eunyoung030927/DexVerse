@@ -95,6 +95,7 @@ def build_dataset(
             "state_dim": state_dim,
             "action_dim": action_dim,
             "state_layout": layout,
+            "term_order": term_order,
             "image_keys": cameras,
             "image_size": image_size if cameras else 0,
         }
