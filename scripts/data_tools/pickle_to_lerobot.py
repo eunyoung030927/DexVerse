@@ -9,7 +9,9 @@ VR sessions record only the trajectory pickle (``record_demos --no_lerobot``): r
 inside an XR session is what stalls it. This tool replays every episode of each pickle in the simulator (initial
 scene state + recorded actions, ``record_demos --replay_demos``), renders the cameras and writes the same LeRobot
 dataset a live recording would have produced (``<datasets_dir>/<task>-<robot_type>``; episodes are appended).
-An episode whose replay does not reach the task's success condition is dropped and reported.
+An episode whose replay does not reach the task's success condition is dropped and reported. Pickles from the
+cross-hand retargeting (metadata ``retarget``) are replayed by their recorded states (``--replay_states``): their
+actions do not reproduce open-loop.
 
     scripts/teleop_tools/pickle_to_lerobot.sh <pickle or folder> [...]          # e.g. /workspace/local/datasets/trajectories
     scripts/teleop_tools/pickle_to_lerobot.sh <...> --dry_run                   # list what would be converted
@@ -73,6 +75,7 @@ def read_header(path: str) -> dict:
         "robot_type": d.get("robot_type"),
         "sim_device": d.get("sim_device"),
         "num_episodes": sum(1 for e in eps if len(e.get("actions", [])) > 0),
+        "replay_states": bool(d.get("retarget")),
     }
 
 
@@ -172,7 +175,7 @@ def main(argv=None) -> int:
         os.makedirs(os.path.dirname(replay_pkl), exist_ok=True)
         cmd = [python, record_demos, "--task", h["task"], "--robot_type", h["robot_type"], "--replay_demos", p,
                "--dataset_file", replay_pkl, "--num_demos", "0", "--headless", "--datasets_dir", datasets_dir,
-               "--lerobot_root", root, *extra]
+               "--lerobot_root", root, *(["--replay_states"] if h.get("replay_states") else []), *extra]
         print(f"\n[convert] ({i}/{len(jobs)}) replaying {os.path.basename(p)} ... log {replay_log}", flush=True)
         env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
         t0 = time.time()

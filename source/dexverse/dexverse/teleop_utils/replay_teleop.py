@@ -10,7 +10,9 @@ headset: for every episode in the pickle it restores the recorded initial scene 
 feeds the recorded actions one per step (then holds the last one). Uses:
 
 * validating the recording pipeline (pickle + ``--lerobot_root``) end to end without a headset;
-* re-exporting existing pickles (e.g. the released DexVerse demos) through the live LeRobot recorder.
+* re-exporting existing pickles (e.g. the released DexVerse demos) through the live LeRobot recorder;
+* with ``replay_states``: following the recorded states instead of re-simulating the actions (trajectories that
+  do not reproduce open-loop, e.g. cross-hand retargeting -- every recorded state is written after its step).
 
 The recorder still decides success with the task's own success term, exactly as for a human demo. Actions are
 replayed open-loop from the recorded initial state, so a demo is reproduced only as far as the physics is.
@@ -85,7 +87,8 @@ def _to_torch(data, device):
 class ReplayDemoDevice:
     """Feeds the actions of a trajectory pickle into ``record_demos.py``'s loop."""
 
-    def __init__(self, env, pickle_path: str, *, hold_steps: int = 120, max_episodes: int | None = None):
+    def __init__(self, env, pickle_path: str, *, hold_steps: int = 120, max_episodes: int | None = None,
+                 replay_states: bool = False):
         with open(pickle_path, "rb") as f:
             payload = pickle.load(f)
         self.env = env
@@ -97,6 +100,9 @@ class ReplayDemoDevice:
             raise ValueError(f"{pickle_path} has no episodes with actions")
         self.source = {k: payload.get(k) for k in ("task", "robot_type", "seed", "sim_device")}
         self.hold_steps = int(hold_steps)
+        self.replay_states = bool(replay_states)
+        if self.replay_states and any(len(ep.get("states") or []) != len(ep["actions"]) + 1 for ep in self.episodes):
+            raise ValueError(f"{pickle_path}: --replay_states needs T+1 recorded states per episode")
         self._callbacks: dict[str, Callable] = {}
         self._ep_idx = -1
         self._t = 0
@@ -132,6 +138,18 @@ class ReplayDemoDevice:
         reset_managers_after_state_restore(self.env)
         print(f"[replay] episode {self._ep_idx + 1}/{len(self.episodes)} "
               f"(source episode {ep.get('episode_index')}, {len(ep['actions'])} actions)")
+
+    def restore_recorded_state(self) -> None:
+        """After the env stepped action ``t - 1``: write the recorded state that action led to (``states[t]``).
+        During the hold steps after the last action the last recorded state is kept."""
+        ep = self.current_episode
+        if ep is None:
+            return
+        states = ep["states"]
+        state = _to_torch(states[min(self._t, len(states) - 1)], self.env.device)
+        self.env.scene.reset_to(state, env_ids=None, is_relative=True)
+        self.env.sim.forward()
+        self.env.scene.update(dt=0.0)
 
     def advance(self) -> torch.Tensor:
         ep = self.current_episode
