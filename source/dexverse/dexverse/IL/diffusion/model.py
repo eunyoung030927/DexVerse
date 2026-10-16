@@ -131,12 +131,22 @@ class DiffusionPolicy(nn.Module):
 
     @torch.no_grad()
     def sample_chunk(
-        self, obs_history: torch.Tensor, *, steps: int, images: dict[str, torch.Tensor] | None = None
+        self, obs_history: torch.Tensor, *, steps: int, images: dict[str, torch.Tensor] | None = None,
+        sampler: str = "ddpm",
     ) -> torch.Tensor:
-        """Denoise a fresh action chunk from noise, conditioned on ``obs_history`` (and ``images``)."""
+        """Denoise a fresh action chunk from noise, conditioned on ``obs_history`` (and ``images``).
+
+        ``sampler`` = ``ddpm`` (ancestral, the training scheduler) or ``ddim`` (deterministic DDIM, eta 0, on the
+        same noise schedule; the official Diffusion Policy fast-inference option)."""
         device = obs_history.device
         obs_embed = self.encode_obs(obs_history, images)
         scheduler = self.make_noise_scheduler()
+        if sampler == "ddim":
+            from diffusers import DDIMScheduler
+
+            scheduler = DDIMScheduler.from_config(scheduler.config, clip_sample=True, set_alpha_to_one=True, steps_offset=0)
+        elif sampler != "ddpm":
+            raise ValueError(f"sampler must be 'ddpm' or 'ddim', got '{sampler}'.")
         scheduler.set_timesteps(steps, device=device)
         action = torch.randn(
             (obs_history.shape[0], self.cfg.action_horizon, self.cfg.action_dim),

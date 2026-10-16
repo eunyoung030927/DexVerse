@@ -34,12 +34,14 @@ class DiffusionPolicyRunner:
         num_envs: int = 1,
         sample_steps: int = 20,
         replan_interval: int = 4,
+        sampler: str = "ddpm",
     ):
         self.policy = policy
         self.stats = stats
         self.device = device
         self.num_envs = num_envs
         self.sample_steps = sample_steps
+        self.sampler = sampler
         self.replan_interval = replan_interval
         self.state_history: deque[torch.Tensor] = deque(maxlen=policy.cfg.obs_horizon)
         self.image_history: deque[dict[str, torch.Tensor]] = deque(maxlen=policy.cfg.obs_horizon)
@@ -87,7 +89,7 @@ class DiffusionPolicyRunner:
                     key: torch.stack([frame[key] for frame in self.image_history]).unsqueeze(0).to(self.device)
                     for key in cfg.image_keys
                 }
-            chunk = self.policy.sample_chunk(normalize(obs_history, self.stats["state"]), steps=self.sample_steps, images=images)
+            chunk = self.policy.sample_chunk(normalize(obs_history, self.stats["state"]), steps=self.sample_steps, images=images, sampler=self.sampler)
             self.pending_actions = deque(denormalize(chunk[0], self.stats["action"]).unbind(dim=0))
             self.steps_since_replan = 0
 

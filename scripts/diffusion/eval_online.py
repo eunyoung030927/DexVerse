@@ -27,7 +27,8 @@ parser.add_argument("--ckpt", required=True, help="Checkpoint from scripts/diffu
 parser.add_argument("--output_dir", default="runs/diffusion_eval")
 parser.add_argument("--num_episodes", type=int, default=50)
 parser.add_argument("--max_steps", type=int, default=1000)
-parser.add_argument("--sample_steps", type=int, default=20, help="DDPM denoising steps per replan.")
+parser.add_argument("--sample_steps", type=int, default=20, help="Denoising steps per replan.")
+parser.add_argument("--sampler", choices=("ddpm", "ddim"), default="ddpm", help="Inference denoising scheduler.")
 parser.add_argument("--replan_interval", type=int, default=4, help="Env steps between replans.")
 parser.add_argument("--observation_preset", default=None,
                     help="Observation preset to narrow the live env to. Must match the --obs-groups "

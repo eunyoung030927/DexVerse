@@ -138,6 +138,8 @@ class EvalConfig:
     device: str = "cuda:0"
     sample_steps: int = 20
     """DDPM denoising steps per replan. Fewer than ``num_train_timesteps`` is fine."""
+    sampler: str = "ddpm"
+    """``ddpm`` or ``ddim`` (deterministic, eta 0) denoising at inference; ``sample_steps`` is its step count."""
     replan_interval: int = 4
     """Env steps between replans; the rest of the sampled chunk is played open-loop."""
     observation_preset: str | None = None

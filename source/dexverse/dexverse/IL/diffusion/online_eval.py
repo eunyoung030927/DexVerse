@@ -41,6 +41,7 @@ def evaluate(cfg: EvalConfig) -> dict[str, Any]:
         num_envs=env.unwrapped.num_envs,
         sample_steps=cfg.sample_steps,
         replan_interval=cfg.replan_interval,
+        sampler=cfg.sampler,
     )
 
     initial_states = _load_initial_states(cfg.reset_from_dataset) if cfg.reset_from_dataset else None
