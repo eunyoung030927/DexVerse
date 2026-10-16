@@ -145,6 +145,8 @@ def main(argv=None) -> int:
         return 1
     ledger = load_ledger(datasets_dir)
     python = os.path.join(os.environ.get("ISAACLAB_PATH", "/workspace/isaaclab"), "_isaac_sim", "python.sh")
+    if not os.path.exists(python):  # pip-installed Isaac Sim (conda env, no _isaac_sim/python.sh): this interpreter
+        python = sys.executable
     record_demos = os.path.join(_REPO, "scripts", "record_demos.py")
 
     jobs = []
