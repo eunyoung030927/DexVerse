@@ -26,6 +26,52 @@ import numpy as np
 import torch
 
 
+WRIST_CAMERA_BODY_COLLISION_KEY = "wrist_camera_body_collision"
+"""Trajectory pickle metadata key: whether the wrist camera body box collided while the pickle was recorded."""
+
+_WRIST_CAMERA_BODY_ATTRS = ("wrist_camera_body", "right_wrist_camera_body", "left_wrist_camera_body")
+
+
+def recorded_wrist_camera_body_collision(metadata: dict, robot_type: str | None = None) -> bool:
+    """The wrist camera body collision a trajectory pickle has to be replayed with.
+
+    Pickles written since 10/2026 store it under ``wrist_camera_body_collision``. Older pickles were all recorded
+    with the box colliding; the Shadow ones (the released DexVerse demos and Shadow VR sessions) are replayed with
+    it so they reproduce, while older pickles of the other hands replay without it, like new recordings.
+
+    Args:
+        metadata: Top-level pickle payload (the ``episodes`` entry is not needed).
+        robot_type: Robot variant used when the pickle does not name one (the env's ``robot_type``).
+    """
+    if WRIST_CAMERA_BODY_COLLISION_KEY in metadata:
+        return bool(metadata[WRIST_CAMERA_BODY_COLLISION_KEY])
+    return str(metadata.get("robot_type") or robot_type or "").startswith("floating_shadow")
+
+
+def _wrist_camera_body_collision_props(env_cfg) -> list:
+    props = []
+    for name in _WRIST_CAMERA_BODY_ATTRS:
+        body = getattr(env_cfg.scene, name, None)
+        prop = getattr(getattr(body, "spawn", None), "collision_props", None)
+        if prop is not None:
+            props.append(prop)
+    return props
+
+
+def set_wrist_camera_body_collision(env_cfg, enabled: bool) -> int:
+    """Turn the wrist camera body box collision on / off (single-hand and bimanual); returns the boxes changed."""
+    props = _wrist_camera_body_collision_props(env_cfg)
+    for prop in props:
+        prop.collision_enabled = bool(enabled)
+    return len(props)
+
+
+def wrist_camera_body_collision(env_cfg) -> bool | None:
+    """Whether the env cfg's wrist camera body box collides (None when the scene has no box)."""
+    props = _wrist_camera_body_collision_props(env_cfg)
+    return any(bool(prop.collision_enabled) for prop in props) if props else None
+
+
 def _to_torch(data, device):
     if isinstance(data, dict):
         return {k: _to_torch(v, device) for k, v in data.items()}

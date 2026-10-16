@@ -7,6 +7,7 @@
 
 import isaaclab.sim as sim_utils
 from dexverse.assets import SYNTHESIS_DIR
+from dexverse.robot_agents.floating_wrist import is_wrist_joint_expr
 from isaaclab.actuators import ImplicitActuatorCfg
 from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.managers import SceneEntityCfg
@@ -231,10 +232,10 @@ class SlideUtilityKnifeEnvFloatingDexHandRightCfg(FixateArticulationEnvFloatingD
         """Override the floating-hand wrist drive for this task only.
 
         Writes ``wrist_effort_limit`` / ``wrist_stiffness`` / ``wrist_damping``
-        onto every wrist DOF (the ``*_translation_joint`` / ``*_rotation_joint``
-        prismatic+revolute chain) of ``self.scene.robot``. Works for both the
-        single-hand (``(x|y|z)_..._joint``) and bimanual
-        (``(lh|rh)_(x|y|z)_..._joint``) key forms; finger joints are left alone.
+        onto every wrist DOF (the six virtual translation + rotation joints) of
+        ``self.scene.robot``, whichever hand is mounted: the wrist keys are the ones
+        the robot config registered through ``wrist_drive_terms`` (their names differ
+        per hand, e.g. Sharpa's ``right_(x|y|z)_joint``); finger joints are left alone.
 
         Only per-joint dict fields are edited, so a scalar field that would also
         cover the fingers is skipped. ``self.scene.robot`` is a deep copy from
@@ -259,5 +260,5 @@ class SlideUtilityKnifeEnvFloatingDexHandRightCfg(FixateArticulationEnvFloatingD
                     # ever touch the wrist DOFs via their explicit dict entries.
                     continue
                 for joint_expr in limits:
-                    if "translation_joint" in joint_expr or "rotation_joint" in joint_expr:
+                    if is_wrist_joint_expr(joint_expr):
                         limits[joint_expr] = float(new_value)

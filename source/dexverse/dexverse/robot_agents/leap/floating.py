@@ -31,6 +31,14 @@ from isaaclab.utils import configclass
 from dexverse.devices.wrist_origin import compute_wrist_joint_origin
 
 from .. import TabletopRobotSetup, dex_retargeting_hand_spec
+from ..floating_wrist import UPSTREAM_ALLEGRO_WRIST_DRIVE, wrist_drive_terms
+
+_WRIST_SINGLE = wrist_drive_terms(
+    "(x|y|z)_translation_joint", "(x|y|z)_rotation_joint", UPSTREAM_ALLEGRO_WRIST_DRIVE
+)
+_WRIST_BIMANUAL = wrist_drive_terms(
+    "(right|left)_wrist_trans_(x|y|z)", "(right|left)_wrist_rot_(x|y|z)", UPSTREAM_ALLEGRO_WRIST_DRIVE
+)
 
 ASSET_DIR = Path(__file__).resolve().parent / "usd"
 _RETARGET_DIR = Path(__file__).resolve().parent / "retarget"
@@ -174,28 +182,23 @@ FLOATING_LEAP_RIGHT_CFG = ArticulationCfg(
                 "leap_(0|1|2|3|4|5|6|7|8|9|10|11|12|13|14|15)",
             ],
             effort_limit_sim={
-                "(x|y|z)_translation_joint": 50.0,
-                "(x|y|z)_rotation_joint": 50.0,
+                **_WRIST_SINGLE["effort_limit_sim"],
                 "leap_(0|1|2|3|4|5|6|7|8|9|10|11|12|13|14|15)": 3.0,
             },
             stiffness={
-                "(x|y|z)_translation_joint": 1000.0,
-                "(x|y|z)_rotation_joint": 1000.0,
+                **_WRIST_SINGLE["stiffness"],
                 "leap_(0|1|2|3|4|5|6|7|8|9|10|11|12|13|14|15)": 20.0,
             },
             damping={
-                "(x|y|z)_translation_joint": 200.0,
-                "(x|y|z)_rotation_joint": 200.0,
+                **_WRIST_SINGLE["damping"],
                 "leap_(0|1|2|3|4|5|6|7|8|9|10|11|12|13|14|15)": 1.0,
             },
             velocity_limit_sim={
-                "(x|y|z)_translation_joint": 1.0,
-                "(x|y|z)_rotation_joint": 6.28,
+                **_WRIST_SINGLE["velocity_limit_sim"],
                 "leap_(0|1|2|3|4|5|6|7|8|9|10|11|12|13|14|15)": 6.28,
             },
             friction={
-                "(x|y|z)_translation_joint": 0.01,
-                "(x|y|z)_rotation_joint": 0.01,
+                **_WRIST_SINGLE["friction"],
                 "leap_(0|1|2|3|4|5|6|7|8|9|10|11|12|13|14|15)": 0.01,
             },
         ),
@@ -384,24 +387,23 @@ BIMANUAL_LEAP_CFG = ArticulationCfg(
                 "(right|left)_(0|1|2|3|4|5|6|7|8|9|10|11|12|13|14|15)",
             ],
             effort_limit_sim={
-                "(right|left)_wrist_(trans|rot)_(x|y|z)": 50.0,
+                **_WRIST_BIMANUAL["effort_limit_sim"],
                 "(right|left)_(0|1|2|3|4|5|6|7|8|9|10|11|12|13|14|15)": 3.0,
             },
             stiffness={
-                "(right|left)_wrist_(trans|rot)_(x|y|z)": 1000.0,
+                **_WRIST_BIMANUAL["stiffness"],
                 "(right|left)_(0|1|2|3|4|5|6|7|8|9|10|11|12|13|14|15)": 20.0,
             },
             damping={
-                "(right|left)_wrist_(trans|rot)_(x|y|z)": 200.0,
+                **_WRIST_BIMANUAL["damping"],
                 "(right|left)_(0|1|2|3|4|5|6|7|8|9|10|11|12|13|14|15)": 0.1,
             },
             friction={
-                "(right|left)_wrist_(trans|rot)_(x|y|z)": 0.01,
+                **_WRIST_BIMANUAL["friction"],
                 "(right|left)_(0|1|2|3|4|5|6|7|8|9|10|11|12|13|14|15)": 0.01,
             },
             velocity_limit_sim={
-                "(right|left)_wrist_trans_(x|y|z)": 1.0,
-                "(right|left)_wrist_rot_(x|y|z)": 6.28,
+                **_WRIST_BIMANUAL["velocity_limit_sim"],
                 "(right|left)_(0|1|2|3|4|5|6|7|8|9|10|11|12|13|14|15)": 6.28,
             },
         ),

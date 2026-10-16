@@ -18,6 +18,17 @@ from isaaclab.utils import configclass
 from dexverse.devices.wrist_origin import compute_wrist_joint_origin
 
 from .. import TabletopRobotSetup, dex_retargeting_hand_spec
+from ..floating_wrist import UPSTREAM_SHARPA_WUJI_WRIST_DRIVE, wrist_drive_terms
+
+_WRIST_RIGHT = wrist_drive_terms(
+    "right_(x|y|z)_joint", "right_(roll|pitch|yaw)_joint", UPSTREAM_SHARPA_WUJI_WRIST_DRIVE
+)
+_WRIST_LEFT = wrist_drive_terms(
+    "left_(x|y|z)_joint", "left_(roll|pitch|yaw)_joint", UPSTREAM_SHARPA_WUJI_WRIST_DRIVE
+)
+_WRIST_BIMANUAL = wrist_drive_terms(
+    "(head|left|right)_(x|y|z)_joint", "(head|left|right)_(roll|pitch|yaw)_joint", UPSTREAM_SHARPA_WUJI_WRIST_DRIVE
+)
 
 _ASSET_DIR = Path(__file__).resolve().parent
 _RETARGET_DIR = _ASSET_DIR / "retarget"
@@ -231,24 +242,19 @@ FLOATING_SHARPA_RIGHT_CFG = ArticulationCfg(
                 "right_(roll|pitch|yaw)_joint",
             ],
             effort_limit_sim={
-                "right_(x|y|z)_joint": 15.0,
-                "right_(roll|pitch|yaw)_joint": 15.0,
+                **_WRIST_RIGHT["effort_limit_sim"],
             },
             stiffness={
-                "right_(x|y|z)_joint": 2000.0,
-                "right_(roll|pitch|yaw)_joint": 2000.0,
+                **_WRIST_RIGHT["stiffness"],
             },
             damping={
-                "right_(x|y|z)_joint": 400.0,
-                "right_(roll|pitch|yaw)_joint": 400.0,
+                **_WRIST_RIGHT["damping"],
             },
             velocity_limit_sim={
-                "right_(x|y|z)_joint": 10.0,
-                "right_(roll|pitch|yaw)_joint": 10.0,
+                **_WRIST_RIGHT["velocity_limit_sim"],
             },
             friction={
-                "right_(x|y|z)_joint": 0.01,
-                "right_(roll|pitch|yaw)_joint": 0.01,
+                **_WRIST_RIGHT["friction"],
             },
         ),
         "floating_sharpa_right_hand_actuators": ImplicitActuatorCfg(
@@ -305,24 +311,19 @@ FLOATING_SHARPA_LEFT_CFG = ArticulationCfg(
                 "left_(roll|pitch|yaw)_joint",
             ],
             effort_limit_sim={
-                "left_(x|y|z)_joint": 15.0,
-                "left_(roll|pitch|yaw)_joint": 15.0,
+                **_WRIST_LEFT["effort_limit_sim"],
             },
             stiffness={
-                "left_(x|y|z)_joint": 2000.0,
-                "left_(roll|pitch|yaw)_joint": 2000.0,
+                **_WRIST_LEFT["stiffness"],
             },
             damping={
-                "left_(x|y|z)_joint": 400.0,
-                "left_(roll|pitch|yaw)_joint": 400.0,
+                **_WRIST_LEFT["damping"],
             },
             velocity_limit_sim={
-                "left_(x|y|z)_joint": 10.0,
-                "left_(roll|pitch|yaw)_joint": 10.0,
+                **_WRIST_LEFT["velocity_limit_sim"],
             },
             friction={
-                "left_(x|y|z)_joint": 0.01,
-                "left_(roll|pitch|yaw)_joint": 0.01,
+                **_WRIST_LEFT["friction"],
             },
         ),
         "floating_sharpa_left_hand_actuators": ImplicitActuatorCfg(
@@ -393,24 +394,19 @@ FLOATING_SHARPA_BIMANUAL_CFG = ArticulationCfg(
                 "(left|right)_(roll|pitch|yaw)_joint",
             ],
             effort_limit_sim={
-                "(head|left|right)_(x|y|z)_joint": 15.0,
-                "(head|left|right)_(roll|pitch|yaw)_joint": 15.0,
+                **_WRIST_BIMANUAL["effort_limit_sim"],
             },
             stiffness={
-                "(head|left|right)_(x|y|z)_joint": 2000.0,
-                "(head|left|right)_(roll|pitch|yaw)_joint": 2000.0,
+                **_WRIST_BIMANUAL["stiffness"],
             },
             damping={
-                "(head|left|right)_(x|y|z)_joint": 400.0,
-                "(head|left|right)_(roll|pitch|yaw)_joint": 400.0,
+                **_WRIST_BIMANUAL["damping"],
             },
             velocity_limit_sim={
-                "(head|left|right)_(x|y|z)_joint": 10.0,
-                "(head|left|right)_(roll|pitch|yaw)_joint": 10.0,
+                **_WRIST_BIMANUAL["velocity_limit_sim"],
             },
             friction={
-                "(head|left|right)_(x|y|z)_joint": 0.01,
-                "(head|left|right)_(roll|pitch|yaw)_joint": 0.01,
+                **_WRIST_BIMANUAL["friction"],
             },
         ),
         "floating_sharpa_bimanual_right_hand_actuators": ImplicitActuatorCfg(

@@ -31,6 +31,7 @@ from isaaclab.envs.mdp.actions.actions_cfg import (
 from isaaclab.utils import configclass
 
 from .. import TabletopRobotSetup, dex_retargeting_hand_spec
+from ..floating_wrist import UPSTREAM_ALLEGRO_WRIST_DRIVE, wrist_drive_terms
 
 _ASSET_DIR = Path(__file__).resolve().parent
 _RETARGET_DIR = _ASSET_DIR / "retarget"
@@ -110,11 +111,7 @@ FLOATING_ALLEGRO_RIGHT_CFG = ArticulationCfg(
     actuators={
         "floating_base": ImplicitActuatorCfg(
             joint_names_expr=[_SINGLE_TRANS_EXPR, _SINGLE_ROT_EXPR],
-            effort_limit_sim={_SINGLE_TRANS_EXPR: 50.0, _SINGLE_ROT_EXPR: 50.0},
-            stiffness={_SINGLE_TRANS_EXPR: 1000.0, _SINGLE_ROT_EXPR: 1000.0},
-            damping={_SINGLE_TRANS_EXPR: 200.0, _SINGLE_ROT_EXPR: 200.0},
-            velocity_limit_sim={_SINGLE_TRANS_EXPR: 1.0, _SINGLE_ROT_EXPR: 6.28},
-            friction={_SINGLE_TRANS_EXPR: 0.01, _SINGLE_ROT_EXPR: 0.01},
+            **wrist_drive_terms(_SINGLE_TRANS_EXPR, _SINGLE_ROT_EXPR, UPSTREAM_ALLEGRO_WRIST_DRIVE),
         ),
         "hand": ImplicitActuatorCfg(
             joint_names_expr=[_SINGLE_FINGER_EXPR],
@@ -159,11 +156,7 @@ FLOATING_ALLEGRO_LEFT_CFG = ArticulationCfg(
     actuators={
         "floating_base": ImplicitActuatorCfg(
             joint_names_expr=[_SINGLE_TRANS_EXPR, _SINGLE_ROT_EXPR],
-            effort_limit_sim={_SINGLE_TRANS_EXPR: 50.0, _SINGLE_ROT_EXPR: 50.0},
-            stiffness={_SINGLE_TRANS_EXPR: 1000.0, _SINGLE_ROT_EXPR: 1000.0},
-            damping={_SINGLE_TRANS_EXPR: 200.0, _SINGLE_ROT_EXPR: 200.0},
-            velocity_limit_sim={_SINGLE_TRANS_EXPR: 1.0, _SINGLE_ROT_EXPR: 6.28},
-            friction={_SINGLE_TRANS_EXPR: 0.01, _SINGLE_ROT_EXPR: 0.01},
+            **wrist_drive_terms(_SINGLE_TRANS_EXPR, _SINGLE_ROT_EXPR, UPSTREAM_ALLEGRO_WRIST_DRIVE),
         ),
         "hand": ImplicitActuatorCfg(
             joint_names_expr=[_SINGLE_FINGER_EXPR],
@@ -296,11 +289,7 @@ FLOATING_ALLEGRO_BIMANUAL_CFG = ArticulationCfg(
     actuators={
         "floating_base": ImplicitActuatorCfg(
             joint_names_expr=[_BIMANUAL_TRANS_EXPR, _BIMANUAL_ROT_EXPR],
-            effort_limit_sim={_BIMANUAL_TRANS_EXPR: 50.0, _BIMANUAL_ROT_EXPR: 50.0},
-            stiffness={_BIMANUAL_TRANS_EXPR: 1000.0, _BIMANUAL_ROT_EXPR: 1000.0},
-            damping={_BIMANUAL_TRANS_EXPR: 200.0, _BIMANUAL_ROT_EXPR: 200.0},
-            velocity_limit_sim={_BIMANUAL_TRANS_EXPR: 1.0, _BIMANUAL_ROT_EXPR: 6.28},
-            friction={_BIMANUAL_TRANS_EXPR: 0.01, _BIMANUAL_ROT_EXPR: 0.01},
+            **wrist_drive_terms(_BIMANUAL_TRANS_EXPR, _BIMANUAL_ROT_EXPR, UPSTREAM_ALLEGRO_WRIST_DRIVE),
         ),
         "hand": ImplicitActuatorCfg(
             joint_names_expr=[_BIMANUAL_FINGER_EXPR],

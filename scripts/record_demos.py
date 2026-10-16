@@ -282,6 +282,15 @@ parser.add_argument(
         "pipeline without a headset and for re-exporting existing pickles (e.g. with --lerobot_root)."
     ),
 )
+parser.add_argument(
+    "--wrist_camera_body_collision",
+    choices=("auto", "on", "off"),
+    default="auto",
+    help=(
+        "Collision of the wrist camera body box. auto: off when recording; with --replay_demos the setting the "
+        "pickle was recorded with (older pickles without it: on for Shadow, off for the other hands)."
+    ),
+)
 
 AppLauncher.add_app_launcher_args(parser)
 # Demonstration recording is also a live teleoperation path, so prefer low
@@ -438,6 +447,7 @@ class TrajectoryPickleRecorder:
         seed: int | None = None,
         action_layout_metadata: dict | None = None,
         sim_device: str | None = None,
+        wrist_camera_body_collision: bool | None = None,
     ):
         self._output_file = output_file
         self.lerobot = None  # optional LeRobotSpoolRecorder, driven by this recorder's episode lifecycle
@@ -464,6 +474,7 @@ class TrajectoryPickleRecorder:
             "sim_device": sim_device,
             **task_identity(env_name or task_name),
             "action_layout": action_layout_metadata,
+            "wrist_camera_body_collision": wrist_camera_body_collision,
         }
 
     @property
@@ -924,6 +935,27 @@ def setup_output_file() -> str:
     return args_cli.dataset_file
 
 
+def _apply_wrist_camera_body_collision(env_cfg) -> None:
+    """Set the wrist camera body box collision for this session (``--wrist_camera_body_collision``)."""
+    from dexverse.teleop_utils.replay_teleop import (
+        recorded_wrist_camera_body_collision,
+        set_wrist_camera_body_collision,
+    )
+
+    mode = args_cli.wrist_camera_body_collision
+    if mode != "auto":
+        enabled, why = mode == "on", "--wrist_camera_body_collision"
+    elif args_cli.replay_demos:
+        with open(args_cli.replay_demos, "rb") as f:
+            metadata = {k: v for k, v in pickle.load(f).items() if k != "episodes"}
+        enabled = recorded_wrist_camera_body_collision(metadata, getattr(env_cfg, "robot_type", None))
+        why = f"as recorded in {os.path.basename(args_cli.replay_demos)}"
+    else:
+        return  # recording: keep the env default (no collision)
+    if set_wrist_camera_body_collision(env_cfg, enabled):
+        print(f"[wrist camera body] collision {'on' if enabled else 'off'} ({why})")
+
+
 def create_environment_config() -> tuple["ManagerBasedRLEnvCfg | DirectRLEnvCfg", object | None]:
     """Parse + configure the env config for demo recording.
 
@@ -974,6 +1006,8 @@ def create_environment_config() -> tuple["ManagerBasedRLEnvCfg | DirectRLEnvCfg"
     if "TopDownGrasp" in args_cli.task or "Lift" in args_cli.task:
         if hasattr(env_cfg, "commands") and hasattr(env_cfg.commands, "object_pose"):
             env_cfg.commands.object_pose.resampling_time_range = (1.0e9, 1.0e9)
+
+    _apply_wrist_camera_body_collision(env_cfg)
 
     success_term = None
     if hasattr(env_cfg.terminations, "success"):
@@ -1477,6 +1511,8 @@ def main() -> None:
     if arm_joint_names is not None:
         logger.info(f"Recording arm_joint_actions for joints: {arm_joint_names}")
 
+    from dexverse.teleop_utils.replay_teleop import wrist_camera_body_collision
+
     trajectory_recorder = TrajectoryPickleRecorder(
         output_file,
         task_name=args_cli.task,
@@ -1491,6 +1527,7 @@ def main() -> None:
         seed=getattr(env_cfg, "seed", None),
         action_layout_metadata=action_layout(env),
         sim_device=str(env.device),
+        wrist_camera_body_collision=wrist_camera_body_collision(env_cfg),
     )
 
     if not args_cli.no_lerobot:
