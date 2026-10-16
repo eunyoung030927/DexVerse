@@ -481,6 +481,7 @@ class LeRobotSpoolRecorder:
 
         self._ep = None
         self._needs_render = True
+        self._sensors_reset = True   # tactile / wrench of the next frame are zeros (the scene moved outside env.step)
         self.n_committed = 0
         print(f"[lerobot] recording {self.task_id} ({self.robot_type}) at {self.fps} fps -> {self.root} "
               f"(repo_id {self.repo_id}, task {self.task!r}); spool {self.spool}")
@@ -903,6 +904,7 @@ class LeRobotSpoolRecorder:
             "wrench": [], "wrist_sat": [],
         }
         self._needs_render = True
+        self._sensors_reset = True
 
     def annotate_episode(self, **info):
         """Add metadata to the episode being recorded (stored in its ``meta.json`` when it is committed)."""
@@ -912,6 +914,16 @@ class LeRobotSpoolRecorder:
     def mark_needs_render(self):
         """Call after anything that moves the scene outside env.step (reset, reset_to)."""
         self._needs_render = True
+        self._sensors_reset = True
+
+    def mark_state_restored(self):
+        """``record_demos --replay_states``: the recorded state was written right after ``env.step``. The cameras are
+        re-rendered, but the tactile / wrench readings of that env.step are kept: its substeps simulated the recorded
+        transition (from the previous recorded state with the recorded action). Only the pad pose cache restarts,
+        since the links moved outside env.step."""
+        self._needs_render = True
+        if self.tactile_log is not None:
+            self.tactile_log.pads.mark_reset()
 
     def capture(self, action):
         """Record frame t: images + joint state BEFORE ``env.step(action)``, plus ``action``."""
@@ -920,6 +932,8 @@ class LeRobotSpoolRecorder:
             return
         t0 = time.time()
         force = self._needs_render
+        zero_sensors = self._sensors_reset
+        self._sensors_reset = False
         if force:
             # After a reset the cameras still hold the pre-reset render; refresh once.
             self.env.sim.render()
@@ -944,9 +958,9 @@ class LeRobotSpoolRecorder:
             q = self.robot.data.body_link_pose_w[0, self.palm_ids, 3:7].detach().to("cpu").numpy()
             ep["palm_quat"].append(q.astype(np.float64))
         if self.tactile_log is not None:
-            # Right after a reset / state restore no contact has been solved yet (PhysX still holds the pre-reset
-            # contacts): zeros for that frame (and the substep accumulator restarts).
-            tac, pads, dg = self.tactile_log.capture(force)
+            # Right after a reset (not a --replay_states restore) no contact has been solved yet (PhysX still
+            # holds the pre-reset contacts): zeros for that frame (and the substep accumulator restarts).
+            tac, pads, dg = self.tactile_log.capture(zero_sensors)
             ep["tactile"].append(tac)
             ep["tactile_pads"].append(pads)
             pd = ep["pad_diag"]
@@ -962,8 +976,8 @@ class LeRobotSpoolRecorder:
                     pd["pose_source"][k] = pd["pose_source"].get(k, 0) + v
                 pd["palm_resid_max"] = max(pd["palm_resid_max"], dg.get("palm_resid_max_N", 0.0))
         if self.wrench_log is not None:
-            # zeros right after a reset / state restore (the incoming joint force still holds the pre-reset solve)
-            w, sat, _n = self.wrench_log.capture(force)
+            # zeros right after a reset, not a --replay_states restore (the incoming joint force still holds the pre-reset solve)
+            w, sat, _n = self.wrench_log.capture(zero_sensors)
             ep["wrench"].append(w)
             ep["wrist_sat"].append(sat)
         ep["n"] += 1

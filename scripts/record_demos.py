@@ -1413,7 +1413,8 @@ def run_simulation_loop(
                     # --replay_states: the recorded state replaces the re-simulated one (cameras re-render)
                     teleop_interface.restore_recorded_state()
                     if trajectory_recorder.lerobot is not None:
-                        trajectory_recorder.lerobot.mark_needs_render()
+                        # cameras re-render; tactile / wrench keep this env.step's substeps (not a reset)
+                        trajectory_recorder.lerobot.mark_state_restored()
                 if args_cli.record_state:
                     post_step_state = env.scene.get_state(is_relative=True)
                     trajectory_recorder.record_state(post_step_state)
