@@ -164,6 +164,8 @@ parser.add_argument(
 # --- Output ---
 parser.add_argument("--output_dir", type=str, default=None, help="Default: runs/<policy>_eval_online.")
 parser.add_argument("--save_videos", action="store_true", default=False)
+# Local addition (dexverse repro): also write the wrist camera(s) the policy sees, next to the third-person video.
+parser.add_argument("--save_wrist_videos", action="store_true", default=False)
 parser.add_argument("--video_fps", type=int, default=30)
 parser.add_argument(
     "--dump_first_frame",
@@ -544,6 +546,7 @@ class EpisodeResult(NamedTuple):
     success: bool
     latencies_ms: list[float]
     frames: list
+    wrist_frames: list = []
 
 
 def dump_first_frame(eval_obs, ctx: TaskContext) -> None:
@@ -584,6 +587,7 @@ def run_episode(env, episode: int, ctx: TaskContext) -> EpisodeResult:
     episode_return = 0.0
     success = False
     frames: list = []
+    wrist_frames: list = []
     latencies_ms: list[float] = []
     action_queue: deque = deque()
     length = args.max_steps
@@ -594,6 +598,12 @@ def run_episode(env, episode: int, ctx: TaskContext) -> EpisodeResult:
 
         if ctx.video_dir is not None:
             frames.append(eval_obs.third_person)
+            if args.save_wrist_videos:
+                wrist_frames.append(
+                    np.concatenate([eval_obs.left_wrist, eval_obs.right_wrist], axis=1)
+                    if eval_obs.is_bimanual
+                    else eval_obs.wrist
+                )
         if args.dump_first_frame and first_request:
             dump_first_frame(eval_obs, ctx)
 
@@ -633,7 +643,7 @@ def run_episode(env, episode: int, ctx: TaskContext) -> EpisodeResult:
             log_fired_terms(env, episode, step, success)
             break
 
-    return EpisodeResult(episode_return, length, success, latencies_ms, frames)
+    return EpisodeResult(episode_return, length, success, latencies_ms, frames, wrist_frames)
 
 
 # ---------------------------------------------------------------------------
@@ -737,6 +747,14 @@ def evaluate_task(task, imageio_mod, cv2_mod) -> dict:
                     imageio_mod=imageio_mod,
                     cv2_mod=cv2_mod,
                 )
+                if result.wrist_frames:
+                    save_video(
+                        result.wrist_frames,
+                        os.path.join(ctx.video_dir, f"episode_{episode:03d}_{suffix}_wrist.mp4"),
+                        fps=args.video_fps,
+                        imageio_mod=imageio_mod,
+                        cv2_mod=cv2_mod,
+                    )
             log(
                 f"{LOG} {task_name}  ep {episode + 1}/{args.num_episodes}  "
                 f"return={result.episode_return:.3f}  success={result.success}  steps={result.length}"
