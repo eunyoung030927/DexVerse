@@ -134,8 +134,27 @@ def train(cfg: TrainConfig) -> dict[str, Any] | None:
     history: list[dict[str, float]] = []
     best_val_loss, best_epoch, epochs_since_best = float("inf"), -1, 0
     started = time.time()
+    start_epoch = 1
+    resume_file = Path(cfg.resume_file) if cfg.resume_file else None
+    if resume_file is not None and resume_file.exists():
+        state = torch.load(resume_file, map_location="cpu", weights_only=False)
+        model.load_state_dict(state["model"])
+        ema_model.load_state_dict(state["ema_model"])
+        optimizer.load_state_dict(state["optimizer"])
+        if lr_scheduler is not None:
+            lr_scheduler.load_state_dict(state["lr_scheduler"])
+        optimization_step, history = state["optimization_step"], state["history"]
+        best_val_loss, best_epoch, epochs_since_best = state["best_val_loss"], state["best_epoch"], state["epochs_since_best"]
+        started -= state["elapsed_s"]
+        start_epoch = state["epoch"] + 1
+        torch.set_rng_state(state["rng"]["torch"])
+        np.random.set_state(state["rng"]["numpy"])
+        random.setstate(state["rng"]["python"])
+        if is_main:
+            print(f"[diffusion] resumed from {resume_file} at epoch {state['epoch']}", flush=True)
+        del state
 
-    for epoch in range(1, cfg.epochs + 1):
+    for epoch in range(start_epoch, cfg.epochs + 1):
         if train_sampler is not None:
             train_sampler.set_epoch(epoch)
         model.train()
@@ -204,6 +223,25 @@ def train(cfg: TrainConfig) -> dict[str, Any] | None:
             epoch_dir.mkdir(parents=True, exist_ok=True)
             snapshot = checkpoint if cfg.slim_checkpoints else {**checkpoint, "model": ema_model.state_dict()}
             _atomic_save(snapshot, epoch_dir / f"epoch_{epoch:04d}.pt")
+        if resume_file is not None and cfg.resume_every_epochs > 0 and epoch % cfg.resume_every_epochs == 0:
+            resume_file.parent.mkdir(parents=True, exist_ok=True)
+            _atomic_save(
+                {
+                    "epoch": epoch,
+                    "model": model.state_dict(),
+                    "ema_model": ema_model.state_dict(),
+                    "optimizer": optimizer.state_dict(),
+                    "lr_scheduler": None if lr_scheduler is None else lr_scheduler.state_dict(),
+                    "optimization_step": optimization_step,
+                    "history": history,
+                    "best_val_loss": best_val_loss,
+                    "best_epoch": best_epoch,
+                    "epochs_since_best": epochs_since_best,
+                    "elapsed_s": time.time() - started,
+                    "rng": {"torch": torch.get_rng_state(), "numpy": np.random.get_state(), "python": random.getstate()},
+                },
+                resume_file,
+            )
         if distributed:
             dist.broadcast(stop, src=0)
         if stop.item():
@@ -226,6 +264,8 @@ def train(cfg: TrainConfig) -> dict[str, Any] | None:
     (output_dir / "metrics.json").write_text(
         json.dumps({"config": asdict(cfg), "policy_cfg": asdict(policy_cfg), "history": history, "metrics": metrics}, indent=2)
     )
+    if resume_file is not None:
+        resume_file.unlink(missing_ok=True)
     if distributed:
         dist.destroy_process_group()
     return metrics

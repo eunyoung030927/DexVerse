@@ -122,6 +122,10 @@ class TrainConfig:
     (the official Diffusion Policy EMA schedule)."""
     ema_inv_gamma: float = 1.0
     ema_max_decay: float = 0.9999
+    resume_file: str = ""
+    """Full training state (weights, EMA, optimizer, lr schedule, history), rewritten every ``resume_every_epochs``.
+    If the file exists at start, training continues from it; it is deleted when training finishes. Empty = off."""
+    resume_every_epochs: int = 5
 
 
 @dataclass

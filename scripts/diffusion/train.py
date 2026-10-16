@@ -78,6 +78,10 @@ def main() -> None:
                         help="Camera encoder crop (random at train, center at eval); 0 = 7/8 of the stored image size.")
     parser.add_argument("--image_feature_dim", type=int, default=defaults.image_feature_dim)
     parser.add_argument("--num_keypoints", type=int, default=defaults.num_keypoints)
+    parser.add_argument("--resume_file", default=defaults.resume_file,
+                        help="Full training state, rewritten every --resume_every_epochs; training continues from it "
+                             "if it exists, and it is deleted when training finishes.")
+    parser.add_argument("--resume_every_epochs", type=int, default=defaults.resume_every_epochs)
     args = parser.parse_args()
 
     cfg = TrainConfig(**{**vars(args), "dataset_files": tuple(args.dataset_files),
