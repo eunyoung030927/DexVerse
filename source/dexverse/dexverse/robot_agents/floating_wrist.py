@@ -24,6 +24,9 @@ from dataclasses import dataclass
 
 WRIST_DRIVE_ENV = "DEXVERSE_FLOATING_WRIST_DRIVE"
 
+_WRIST_JOINT_EXPRS: set[str] = set()
+"""Joint-name expressions handed to :func:`wrist_drive_terms` by the robot configs (see :func:`is_wrist_joint_expr`)."""
+
 
 @dataclass(frozen=True)
 class WristDrive:
@@ -74,6 +77,7 @@ def wrist_drive_terms(
         ``{"effort_limit_sim": {...}, "stiffness": {...}, "damping": {...}, "velocity_limit_sim": {...},
         "friction": {...}}``; unpack into the actuator config or merge with the finger entries.
     """
+    _WRIST_JOINT_EXPRS.update((trans_expr, rot_expr))
     d = upstream if wrist_drive_mode() == "per_hand" else SHADOW_WRIST_DRIVE
     return {
         "effort_limit_sim": {trans_expr: d.effort_limit, rot_expr: d.effort_limit},
@@ -82,3 +86,13 @@ def wrist_drive_terms(
         "velocity_limit_sim": {trans_expr: d.velocity_limit_trans, rot_expr: d.velocity_limit_rot},
         "friction": {trans_expr: d.friction, rot_expr: d.friction},
     }
+
+
+def is_wrist_joint_expr(joint_expr: str) -> bool:
+    """Whether an actuator dict key is a virtual-wrist expression of some floating hand.
+
+    The hands name their wrist joints differently (Shadow ``*_translation_joint``, Sharpa / Wuji ``right_(x|y|z)_joint``
+    and ``right_(roll|pitch|yaw)_joint``, bimanual Allegro / Inspire / LEAP ``*_wrist_trans_*``), so tasks that retune the
+    wrist drive look the keys up here instead of matching name fragments. Covers every robot config imported so far.
+    """
+    return joint_expr in _WRIST_JOINT_EXPRS
