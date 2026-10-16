@@ -77,6 +77,12 @@ to the frame (``DEXVERSE_TACTILE_REDUCE=last``: last substep only). Appending to
 tactile features turns tactile logging off (warning; recorded in ``spool.json`` ``tactile_logging``). Definitions
 in ``dexverse/data_collection/tactile.py`` / ``tactile_pads.py`` and in ``spool.json`` / ``meta/isaac_tasks.json``.
 
+WRIST WRENCH (default ON for every floating hand; off with ``DEXVERSE_WRENCH=0``; see
+``dexverse/data_collection/wrist_wrench.py``): ``observation.wrench`` (per hand Fx, Fy, Fz, Tx, Ty, Tz in N / Nm,
+the real arm's wrist F/T layout: wrench the environment exerts on the robot through the virtual wrist, mount body
+axes) and ``observation.wrist_drive_saturated`` (uint8 per hand), reduced over the substeps like tactile. Appending
+to a dataset / spool recorded without them turns wrench logging off (``spool.json`` ``wrench_logging``).
+
 IMPORT NOTE. The module body is stdlib + numpy only: the writer loads it BY PATH outside Isaac Sim.
 Everything that needs torch / Isaac Lab / scipy is imported inside :class:`LeRobotSpoolRecorder`.
 """
@@ -458,6 +464,10 @@ class LeRobotSpoolRecorder:
         self.tactile_pads = None
         self.tactile_log = None
         self.tactile_status = self._setup_tactile(env)
+        # Wrist wrench logging (default on; dexverse.data_collection.wrist_wrench): PhysX incoming joint force of the
+        # hand mount body = the arm-flange F/T of a floating hand (read-only, no env-config change).
+        self.wrench_log = None
+        self.wrench_status = self._setup_wrench(env)
 
         self._features = self._build_features()
         os.makedirs(self.spool, exist_ok=True)
@@ -507,6 +517,29 @@ class LeRobotSpoolRecorder:
         self.tactile_log, self.tactile, self.tactile_pads = log, log.tactile, log.pads
         print(f"[lerobot] tactile logging ON ({log.reduce} over {log.decimation} substeps of {log.physics_dt:.6f} s; "
               f"{TL.ENABLE_ENV}=0 to disable): pad bodies {log.tactile.bodies}, targets {log.targets}")
+        return {"enabled": True, **log.info()}
+
+    def _setup_wrench(self, env) -> dict:
+        from dexverse.data_collection import tactile_logging as TL  # noqa: PLC0415
+        from dexverse.data_collection import wrist_wrench as WW  # noqa: PLC0415
+
+        if not WW.wrench_enabled():
+            return {"enabled": False, "reason": f"{WW.ENABLE_ENV}=0"}
+        existing = self._existing_features()
+        if existing is not None and WW.WRENCH_FEATURE not in existing:
+            reason = ("appending to an existing dataset / spool recorded without observation.wrench: wrench logging "
+                      "is OFF for this session so the episodes stay compatible")
+            print(f"[lerobot] WARNING {reason} ({self.root})")
+            return {"enabled": False, "reason": reason}
+        try:
+            log = WW.WristWrenchLogger(env, TL.reduce_mode())
+        except (RuntimeError, KeyError, ValueError) as exc:
+            reason = f"{type(exc).__name__}: {exc}"
+            print(f"[lerobot] WARNING wrench logging OFF for {self.robot_type}: {reason}")
+            return {"enabled": False, "reason": reason}
+        self.wrench_log = log
+        print(f"[lerobot] wrist wrench logging ON ({log.reduce}; {WW.ENABLE_ENV}=0 to disable): "
+              f"{[(m['side'], m['body'], m['joint']) for m in log.mounts]}")
         return {"enabled": True, **log.info()}
 
     # ----- static description ------------------------------------------------------------------------
@@ -691,6 +724,12 @@ class LeRobotSpoolRecorder:
                 from dexverse.data_collection.tactile_logging import TOUCH_FN_MAX_FEATURE  # noqa: PLC0415
 
                 feats[TOUCH_FN_MAX_FEATURE] = {"dtype": "float32", "shape": [len(sn)], "names": sn}
+        if self.wrench_log is not None:
+            from dexverse.data_collection.wrist_wrench import SATURATED_FEATURE, WRENCH_FEATURE  # noqa: PLC0415
+
+            wn, sn = self.wrench_log.names(), self.wrench_log.side_names()
+            feats[WRENCH_FEATURE] = {"dtype": "float32", "shape": [len(wn)], "names": wn}
+            feats[SATURATED_FEATURE] = {"dtype": "uint8", "shape": [len(sn)], "names": sn}
         return feats
 
     def _spool_info(self):
@@ -739,6 +778,7 @@ class LeRobotSpoolRecorder:
             "tactile_logging": self.tactile_status,
             **({"tactile": self._tactile_info()} if self.tactile is not None else {}),
             **({"tactile_pads": self._tactile_pad_info()} if self.tactile_pads is not None else {}),
+            "wrench_logging": self.wrench_status,
         }
 
     def _tactile_pad_info(self):
@@ -860,6 +900,7 @@ class LeRobotSpoolRecorder:
             "state": [], "joint_vel": [], "action": [], "palm_quat": [], "tactile": [], "tactile_pads": [],
             "pad_diag": {"resid_max": 0.0, "rows": 0, "boundary_rows": 0, "force": 0.0, "force_boundary": 0.0,
                          "pose_source": {}, "palm_resid_max": 0.0, "substeps": []}, "n": 0,
+            "wrench": [], "wrist_sat": [],
         }
         self._needs_render = True
 
@@ -920,6 +961,11 @@ class LeRobotSpoolRecorder:
                 for k, v in src.items():
                     pd["pose_source"][k] = pd["pose_source"].get(k, 0) + v
                 pd["palm_resid_max"] = max(pd["palm_resid_max"], dg.get("palm_resid_max_N", 0.0))
+        if self.wrench_log is not None:
+            # zeros right after a reset / state restore (the incoming joint force still holds the pre-reset solve)
+            w, sat, _n = self.wrench_log.capture(force)
+            ep["wrench"].append(w)
+            ep["wrist_sat"].append(sat)
         ep["n"] += 1
         ep["capture_s"] += time.time() - t0
 
@@ -1014,6 +1060,19 @@ class LeRobotSpoolRecorder:
                                                                                         return_counts=True))},
                         **({"palm_zones_plus_nonpad_minus_total_max_N": pd["palm_resid_max"]}
                            if self.tactile_pads.zones_on else {})}
+        wrench_meta = None
+        if self.wrench_log is not None:
+            from dexverse.data_collection.wrist_wrench import SATURATED_FEATURE, WRENCH_FEATURE  # noqa: PLC0415
+
+            wr = np.stack(ep["wrench"]).astype(np.float32)
+            sat = np.stack(ep["wrist_sat"]).astype(np.uint8)
+            arrays[WRENCH_FEATURE], arrays[SATURATED_FEATURE] = wr, sat
+            w3 = wr.reshape(T, -1, 6)
+            wrench_meta = {side: {"force_max_N": float(np.linalg.norm(w3[:, i, :3], axis=1).max()),
+                                  "force_p95_N": float(np.percentile(np.linalg.norm(w3[:, i, :3], axis=1), 95)),
+                                  "torque_max_Nm": float(np.linalg.norm(w3[:, i, 3:], axis=1).max()),
+                                  "drive_saturated_frames": int(sat[:, i].sum())}
+                           for i, side in enumerate(self.wrench_log.side_names())}
         np.savez(os.path.join(ep["dir"], DATA_FILE), **arrays)
         meta = {
             "task": self.task,
@@ -1027,6 +1086,7 @@ class LeRobotSpoolRecorder:
             "ee_rot_check_deg": ee_check,
             **({"tactile_summary": tactile_peak} if tactile_peak is not None else {}),
             **({"tactile_pads_check": pad_meta} if pad_meta is not None else {}),
+            **({"wrench_summary": wrench_meta} if wrench_meta is not None else {}),
             "timing": {"episode_wall_s": time.time() - ep["t0"], "capture_overhead_s": ep["capture_s"]},
             **ep["info"],
             **(extra_meta or {}),
