@@ -257,7 +257,7 @@ def spawn_cuboid_as_guide(prim_path, cfg, *args, **kwargs):
 
 def make_wrist_camera_body_cfg(
     prim_path: str = "{ENV_REGEX_NS}/Robot/palm/wrist_camera_body",
-    collision_enabled: bool = True,
+    collision_enabled: bool = False,
 ) -> AssetBaseCfg:
     body_pos, body_rot = _wrist_camera_body_pose(
         DEFAULT_WRIST_CAMERA_OFFSET_POS,
@@ -647,10 +647,11 @@ class SceneCfg(InteractiveSceneCfg):
     right_wrist_camera: TiledCameraCfg | None = None
     left_wrist_camera: TiledCameraCfg | None = None
 
-    # Toggle collision with this single-hand override:
-    # env.scene.wrist_camera_body.spawn.collision_props.collision_enabled=false
-    # For bimanual robots, use right_wrist_camera_body / left_wrist_camera_body.
-    wrist_camera_body: AssetBaseCfg | None = make_wrist_camera_body_cfg(collision_enabled=True)
+    # The camera body box is visual only: its offset is authored in the Shadow palm frame, so on other hands
+    # (e.g. LEAP left) a colliding box sits among the fingers and blocks them. Older pickles were recorded
+    # with it colliding; record_demos.py --replay_demos turns it back on for them (see
+    # teleop_utils/replay_teleop.recorded_wrist_camera_body_collision, --wrist_camera_body_collision).
+    wrist_camera_body: AssetBaseCfg | None = make_wrist_camera_body_cfg(collision_enabled=False)
     right_wrist_camera_body: AssetBaseCfg | None = None
     left_wrist_camera_body: AssetBaseCfg | None = None
 
