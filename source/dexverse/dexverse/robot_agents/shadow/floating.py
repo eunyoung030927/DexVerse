@@ -20,6 +20,10 @@ from isaaclab.envs.mdp.actions.actions_cfg import (
 from isaaclab.utils import configclass
 
 from .. import TabletopRobotSetup, dex_retargeting_hand_spec
+from ..floating_wrist import wrist_drive_terms
+
+_WRIST_SINGLE = wrist_drive_terms("(x|y|z)_translation_joint", "(x|y|z)_rotation_joint")
+_WRIST_BIMANUAL = wrist_drive_terms("(lh|rh)_(x|y|z)_translation_joint", "(lh|rh)_(x|y|z)_rotation_joint")
 
 _ASSET_DIR = Path(__file__).resolve().parent
 _RETARGET_DIR = _ASSET_DIR / "retarget"
@@ -180,8 +184,7 @@ FLOATING_SHADOW_RIGHT_CFG = ArticulationCfg(
                 "THJ(1|2|3|4|5)",
             ],
             effort_limit_sim={
-                "(x|y|z)_translation_joint": 15.0,
-                "(x|y|z)_rotation_joint": 15.0,
+                **_WRIST_SINGLE["effort_limit_sim"],
                 "FFJ(1|2|3|4)": 10.0,
                 "MFJ(1|2|3|4)": 10.0,
                 "RFJ(1|2|3|4)": 10.0,
@@ -189,8 +192,7 @@ FLOATING_SHADOW_RIGHT_CFG = ArticulationCfg(
                 "THJ(1|2|3|4|5)": 10.0,
             },
             stiffness={
-                "(x|y|z)_translation_joint": 2000.0,
-                "(x|y|z)_rotation_joint": 2000.0,
+                **_WRIST_SINGLE["stiffness"],
                 "FFJ(1|2|3|4)": 10.0,
                 "MFJ(1|2|3|4)": 10.0,
                 "RFJ(1|2|3|4)": 10.0,
@@ -198,8 +200,7 @@ FLOATING_SHADOW_RIGHT_CFG = ArticulationCfg(
                 "THJ(1|2|3|4|5)": 10.0,
             },
             damping={
-                "(x|y|z)_translation_joint": 400.0,
-                "(x|y|z)_rotation_joint": 400.0,
+                **_WRIST_SINGLE["damping"],
                 "FFJ(1|2|3|4)": 0.1,
                 "MFJ(1|2|3|4)": 0.1,
                 "RFJ(1|2|3|4)": 0.1,
@@ -207,8 +208,7 @@ FLOATING_SHADOW_RIGHT_CFG = ArticulationCfg(
                 "THJ(1|2|3|4|5)": 0.1,
             },
             velocity_limit_sim={
-                "(x|y|z)_translation_joint": 10.0,
-                "(x|y|z)_rotation_joint": 5.0,
+                **_WRIST_SINGLE["velocity_limit_sim"],
                 "FFJ(1|2|3|4)": 5.0,
                 "MFJ(1|2|3|4)": 5.0,
                 "RFJ(1|2|3|4)": 5.0,
@@ -216,8 +216,7 @@ FLOATING_SHADOW_RIGHT_CFG = ArticulationCfg(
                 "THJ(1|2|3|4|5)": 5.0,
             },
             friction={
-                "(x|y|z)_translation_joint": 0.01,
-                "(x|y|z)_rotation_joint": 0.01,
+                **_WRIST_SINGLE["friction"],
                 "FFJ(1|2|3|4)": 0.01,
                 "MFJ(1|2|3|4)": 0.01,
                 "RFJ(1|2|3|4)": 0.01,
@@ -400,8 +399,7 @@ FLOATING_SHADOW_LEFT_CFG = ArticulationCfg(
                 "THJ(1|2|3|4|5)",
             ],
             effort_limit_sim={
-                "(x|y|z)_translation_joint": 15.0,
-                "(x|y|z)_rotation_joint": 15.0,
+                **_WRIST_SINGLE["effort_limit_sim"],
                 "FFJ(1|2|3|4)": 10.0,
                 "MFJ(1|2|3|4)": 10.0,
                 "RFJ(1|2|3|4)": 10.0,
@@ -409,8 +407,7 @@ FLOATING_SHADOW_LEFT_CFG = ArticulationCfg(
                 "THJ(1|2|3|4|5)": 10.0,
             },
             stiffness={
-                "(x|y|z)_translation_joint": 2000.0,
-                "(x|y|z)_rotation_joint": 2000.0,
+                **_WRIST_SINGLE["stiffness"],
                 "FFJ(1|2|3|4)": 10.0,
                 "MFJ(1|2|3|4)": 10.0,
                 "RFJ(1|2|3|4)": 10.0,
@@ -418,8 +415,7 @@ FLOATING_SHADOW_LEFT_CFG = ArticulationCfg(
                 "THJ(1|2|3|4|5)": 10.0,
             },
             damping={
-                "(x|y|z)_translation_joint": 400.0,
-                "(x|y|z)_rotation_joint": 400.0,
+                **_WRIST_SINGLE["damping"],
                 "FFJ(1|2|3|4)": 0.1,
                 "MFJ(1|2|3|4)": 0.1,
                 "RFJ(1|2|3|4)": 0.1,
@@ -427,8 +423,7 @@ FLOATING_SHADOW_LEFT_CFG = ArticulationCfg(
                 "THJ(1|2|3|4|5)": 0.1,
             },
             velocity_limit_sim={
-                "(x|y|z)_translation_joint": 10.0,
-                "(x|y|z)_rotation_joint": 5.0,
+                **_WRIST_SINGLE["velocity_limit_sim"],
                 "FFJ(1|2|3|4)": 5.0,
                 "MFJ(1|2|3|4)": 5.0,
                 "RFJ(1|2|3|4)": 5.0,
@@ -436,8 +431,7 @@ FLOATING_SHADOW_LEFT_CFG = ArticulationCfg(
                 "THJ(1|2|3|4|5)": 5.0,
             },
             friction={
-                "(x|y|z)_translation_joint": 0.01,
-                "(x|y|z)_rotation_joint": 0.01,
+                **_WRIST_SINGLE["friction"],
                 "FFJ(1|2|3|4)": 0.01,
                 "MFJ(1|2|3|4)": 0.01,
                 "RFJ(1|2|3|4)": 0.01,
@@ -537,8 +531,7 @@ FLOATING_SHADOW_BIMANUAL_CFG = ArticulationCfg(
                 "(lh|rh)_THJ(1|2|3|4|5)",
             ],
             effort_limit_sim={
-                "(lh|rh)_(x|y|z)_translation_joint": 15.0,
-                "(lh|rh)_(x|y|z)_rotation_joint": 15.0,
+                **_WRIST_BIMANUAL["effort_limit_sim"],
                 "(lh|rh)_FFJ(1|2|3|4)": 10.0,
                 "(lh|rh)_MFJ(1|2|3|4)": 10.0,
                 "(lh|rh)_RFJ(1|2|3|4)": 10.0,
@@ -546,8 +539,7 @@ FLOATING_SHADOW_BIMANUAL_CFG = ArticulationCfg(
                 "(lh|rh)_THJ(1|2|3|4|5)": 10.0,
             },
             stiffness={
-                "(lh|rh)_(x|y|z)_translation_joint": 2000.0,
-                "(lh|rh)_(x|y|z)_rotation_joint": 2000.0,
+                **_WRIST_BIMANUAL["stiffness"],
                 "(lh|rh)_FFJ(1|2|3|4)": 10.0,
                 "(lh|rh)_MFJ(1|2|3|4)": 10.0,
                 "(lh|rh)_RFJ(1|2|3|4)": 10.0,
@@ -555,8 +547,7 @@ FLOATING_SHADOW_BIMANUAL_CFG = ArticulationCfg(
                 "(lh|rh)_THJ(1|2|3|4|5)": 10.0,
             },
             damping={
-                "(lh|rh)_(x|y|z)_translation_joint": 400.0,
-                "(lh|rh)_(x|y|z)_rotation_joint": 400.0,
+                **_WRIST_BIMANUAL["damping"],
                 "(lh|rh)_FFJ(1|2|3|4)": 0.1,
                 "(lh|rh)_MFJ(1|2|3|4)": 0.1,
                 "(lh|rh)_RFJ(1|2|3|4)": 0.1,
@@ -564,8 +555,7 @@ FLOATING_SHADOW_BIMANUAL_CFG = ArticulationCfg(
                 "(lh|rh)_THJ(1|2|3|4|5)": 0.1,
             },
             velocity_limit_sim={
-                "(lh|rh)_(x|y|z)_translation_joint": 10.0,
-                "(lh|rh)_(x|y|z)_rotation_joint": 5.0,
+                **_WRIST_BIMANUAL["velocity_limit_sim"],
                 "(lh|rh)_FFJ(1|2|3|4)": 5.0,
                 "(lh|rh)_MFJ(1|2|3|4)": 5.0,
                 "(lh|rh)_RFJ(1|2|3|4)": 5.0,
@@ -573,8 +563,7 @@ FLOATING_SHADOW_BIMANUAL_CFG = ArticulationCfg(
                 "(lh|rh)_THJ(1|2|3|4|5)": 5.0,
             },
             friction={
-                "(lh|rh)_(x|y|z)_translation_joint": 0.01,
-                "(lh|rh)_(x|y|z)_rotation_joint": 0.01,
+                **_WRIST_BIMANUAL["friction"],
                 "(lh|rh)_FFJ(1|2|3|4)": 0.01,
                 "(lh|rh)_MFJ(1|2|3|4)": 0.01,
                 "(lh|rh)_RFJ(1|2|3|4)": 0.01,

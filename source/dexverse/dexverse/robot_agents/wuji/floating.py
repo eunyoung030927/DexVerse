@@ -18,6 +18,17 @@ from isaaclab.utils import configclass
 from dexverse.devices.wrist_origin import compute_wrist_joint_origin
 
 from .. import TabletopRobotSetup, dex_retargeting_hand_spec
+from ..floating_wrist import UPSTREAM_SHARPA_WUJI_WRIST_DRIVE, wrist_drive_terms
+
+_WRIST_RIGHT = wrist_drive_terms(
+    "right_(x|y|z)_joint", "right_(roll|pitch|yaw)_joint", UPSTREAM_SHARPA_WUJI_WRIST_DRIVE
+)
+_WRIST_LEFT = wrist_drive_terms(
+    "left_(x|y|z)_joint", "left_(roll|pitch|yaw)_joint", UPSTREAM_SHARPA_WUJI_WRIST_DRIVE
+)
+_WRIST_BIMANUAL = wrist_drive_terms(
+    "(left|right)_(x|y|z)_joint", "(left|right)_(roll|pitch|yaw)_joint", UPSTREAM_SHARPA_WUJI_WRIST_DRIVE
+)
 
 _ASSET_DIR = Path(__file__).resolve().parent
 _RETARGET_DIR = _ASSET_DIR / "retarget"
@@ -290,28 +301,23 @@ FLOATING_WUJI_RIGHT_CFG = ArticulationCfg(
                 "right_finger(1|2|3|4|5)_joint(1|2|3|4)",
             ],
             effort_limit_sim={
-                "right_(x|y|z)_joint": 15.0,
-                "right_(roll|pitch|yaw)_joint": 15.0,
+                **_WRIST_RIGHT["effort_limit_sim"],
                 **_WUJI_FINGER_EFFORT_BY_EXPR,
             },
             stiffness={
-                "right_(x|y|z)_joint": 2000.0,
-                "right_(roll|pitch|yaw)_joint": 2000.0,
+                **_WRIST_RIGHT["stiffness"],
                 **_WUJI_FINGER_STIFFNESS_BY_EXPR,
             },
             damping={
-                "right_(x|y|z)_joint": 400.0,
-                "right_(roll|pitch|yaw)_joint": 400.0,
+                **_WRIST_RIGHT["damping"],
                 **_WUJI_FINGER_DAMPING_BY_EXPR,
             },
             velocity_limit_sim={
-                "right_(x|y|z)_joint": 10.0,
-                "right_(roll|pitch|yaw)_joint": 10.0,
+                **_WRIST_RIGHT["velocity_limit_sim"],
                 **_WUJI_FINGER_VELOCITY_BY_EXPR,
             },
             friction={
-                "right_(x|y|z)_joint": 0.01,
-                "right_(roll|pitch|yaw)_joint": 0.01,
+                **_WRIST_RIGHT["friction"],
                 ".*_finger(1|2|3|4|5)_joint(1|2|3|4)": 0.01,
             },
         ),
@@ -364,28 +370,23 @@ FLOATING_WUJI_LEFT_CFG = ArticulationCfg(
                 "left_finger(1|2|3|4|5)_joint(1|2|3|4)",
             ],
             effort_limit_sim={
-                "left_(x|y|z)_joint": 15.0,
-                "left_(roll|pitch|yaw)_joint": 15.0,
+                **_WRIST_LEFT["effort_limit_sim"],
                 **_WUJI_FINGER_EFFORT_BY_EXPR,
             },
             stiffness={
-                "left_(x|y|z)_joint": 2000.0,
-                "left_(roll|pitch|yaw)_joint": 2000.0,
+                **_WRIST_LEFT["stiffness"],
                 **_WUJI_FINGER_STIFFNESS_BY_EXPR,
             },
             damping={
-                "left_(x|y|z)_joint": 400.0,
-                "left_(roll|pitch|yaw)_joint": 400.0,
+                **_WRIST_LEFT["damping"],
                 **_WUJI_FINGER_DAMPING_BY_EXPR,
             },
             velocity_limit_sim={
-                "left_(x|y|z)_joint": 10.0,
-                "left_(roll|pitch|yaw)_joint": 10.0,
+                **_WRIST_LEFT["velocity_limit_sim"],
                 **_WUJI_FINGER_VELOCITY_BY_EXPR,
             },
             friction={
-                "left_(x|y|z)_joint": 0.01,
-                "left_(roll|pitch|yaw)_joint": 0.01,
+                **_WRIST_LEFT["friction"],
                 ".*_finger(1|2|3|4|5)_joint(1|2|3|4)": 0.01,
             },
         ),
@@ -444,28 +445,23 @@ FLOATING_WUJI_BIMANUAL_CFG = ArticulationCfg(
                 "(left|right)_finger(1|2|3|4|5)_joint(1|2|3|4)",
             ],
             effort_limit_sim={
-                "(left|right)_(x|y|z)_joint": 15.0,
-                "(left|right)_(roll|pitch|yaw)_joint": 15.0,
+                **_WRIST_BIMANUAL["effort_limit_sim"],
                 **_WUJI_FINGER_EFFORT_BY_EXPR,
             },
             stiffness={
-                "(left|right)_(x|y|z)_joint": 2000.0,
-                "(left|right)_(roll|pitch|yaw)_joint": 2000.0,
+                **_WRIST_BIMANUAL["stiffness"],
                 **_WUJI_FINGER_STIFFNESS_BY_EXPR,
             },
             damping={
-                "(left|right)_(x|y|z)_joint": 400.0,
-                "(left|right)_(roll|pitch|yaw)_joint": 400.0,
+                **_WRIST_BIMANUAL["damping"],
                 **_WUJI_FINGER_DAMPING_BY_EXPR,
             },
             velocity_limit_sim={
-                "(left|right)_(x|y|z)_joint": 10.0,
-                "(left|right)_(roll|pitch|yaw)_joint": 10.0,
+                **_WRIST_BIMANUAL["velocity_limit_sim"],
                 **_WUJI_FINGER_VELOCITY_BY_EXPR,
             },
             friction={
-                "(left|right)_(x|y|z)_joint": 0.01,
-                "(left|right)_(roll|pitch|yaw)_joint": 0.01,
+                **_WRIST_BIMANUAL["friction"],
                 ".*_finger(1|2|3|4|5)_joint(1|2|3|4)": 0.01,
             },
         ),
