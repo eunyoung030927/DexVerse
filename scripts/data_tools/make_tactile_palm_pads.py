@@ -217,8 +217,9 @@ def T_of(name):
 
 def canon(name):
     n = name.lower()
-    for side in ("right_", "left_"):
-        n = n.replace(side, "")
+    for side in ("right_", "left_", "rh_", "lh_"):   # rh_ / lh_: Shadow bimanual
+        if n.startswith(side):
+            n = n[len(side):]
     table = {"link_3_0": "index", "link_7_0": "middle", "link_11_0": "ring", "link_15_0": "thumb",
              "thdistal": "thumb", "ffdistal": "index", "mfdistal": "middle", "rfdistal": "ring", "lfdistal": "little",
              "finger1_link4": "thumb", "finger2_link4": "index", "finger3_link4": "middle", "finger4_link4": "ring",
@@ -263,7 +264,7 @@ def hand_of(link):
 
 
 finger_hand = [hand_of(d) for d in distal]
-hand_names = ["left" if "left" in p.lower() else "right" for p in palms]
+hand_names = ["left" if ("left" in p.lower() or p.lower().startswith("lh_")) else "right" for p in palms]
 if len(set(hand_names)) != len(hand_names):
     raise RuntimeError(f"[palm] cannot name the hands of palms {palms}")
 summary = {"robot_type": args.robot_type, "params": {"spacing": args.spacing, "max_angle": args.max_angle,
