@@ -930,6 +930,7 @@ class LeRobotSpoolRecorder:
         self._needs_render = True
         if self.tactile_log is not None:
             self.tactile_log.pads.mark_reset()
+            self.tactile_log.note_state_moved()
 
     def capture(self, action):
         """Record frame t: images + joint state BEFORE ``env.step(action)``, plus ``action``."""

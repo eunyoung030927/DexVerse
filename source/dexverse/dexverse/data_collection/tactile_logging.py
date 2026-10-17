@@ -11,6 +11,9 @@ is added to the env config: both readers open their own PhysX rigid-contact view
 (:class:`~dexverse.data_collection.tactile.RawContactView`). Environment variables:
 
 * ``DEXVERSE_TACTILE=0``            no tactile logging (the recorder behaves as without this module).
+* ``DEXVERSE_TACTILE_PROBE=<file>`` (diagnostic, off by default) also keep, per physics substep, each pad body's
+  contact force and the smallest contact separation (negative = penetration depth, m) against the target, and whether
+  the substep is the first one after a state restore / reset; saved to ``<file>`` (.npz) at exit.
 * ``DEXVERSE_TACTILE_REDUCE=mean``  (default) every physics substep of a control step is read from a read-only hook
   after ``scene.update`` (the substep's contacts are placed with the link poses before that substep) and the frame
   stores the AVERAGE over the substeps of the env.step that led to it (force-weighted pad centre over all those
@@ -25,6 +28,7 @@ import os
 import numpy as np
 
 REDUCE_ENV = "DEXVERSE_TACTILE_REDUCE"
+PROBE_ENV = "DEXVERSE_TACTILE_PROBE"
 ENABLE_ENV = "DEXVERSE_TACTILE"
 TOUCH_FN_MAX_FEATURE = "observation.touch_fn_substep_max"
 
@@ -65,6 +69,13 @@ class TactileLogger:
         self.debug_substeps = None        # set to a list to keep every substep's readings (validation)
         self._reset_acc()
         self.substep_counts = []
+        self.probe_path = os.environ.get(PROBE_ENV, "").strip() or None
+        if self.probe_path:
+            import atexit  # noqa: PLC0415
+
+            self._probe_rows, self._probe_first = [], True
+            atexit.register(self._probe_save)
+            print(f"[tactile] probe ON -> {self.probe_path} (pads {self.tactile.bodies})")
         if self.reduce == "mean":
             # after the pad reader's pose-cache hook (same scene.update wrapper, called in list order)
             env.scene._tactile_pad_pose_hooks.append(self._on_substep)
@@ -100,6 +111,8 @@ class TactileLogger:
         for k in ("rows", "boundary_rows", "force_rows", "force_boundary"):
             d[k] += dg[k]
         d["pose_source"][dg["pose_source"]] = d["pose_source"].get(dg["pose_source"], 0) + 1
+        if self.probe_path:
+            self._probe(tac)
         self._n += 1
         if self.debug_substeps is not None:
             self.debug_substeps.append({"tactile": {k: v.copy() for k, v in tac.items()},
@@ -110,6 +123,44 @@ class TactileLogger:
         """After anything that moves the scene outside env.step (reset / state restore)."""
         self.pads.mark_reset()
         self._reset_acc()
+        self.note_state_moved()
+
+    def note_state_moved(self):
+        """Probe only: the next substep starts from a state set outside env.step (reset / state restore)."""
+        if self.probe_path:
+            self._probe_first = True
+
+    # ------------------------------------------------------------------ probe (DEXVERSE_TACTILE_PROBE)
+    def _probe(self, tac):
+        """One row per substep: frame, substep, first-after-restore, per pad |force| (N), min separation (m), contacts."""
+        v = self.tactile.view
+        d = v._read(raw=True)
+        _f, _p, _n, sep, cnt, start = d["contact"]
+        sep = sep.reshape(-1)
+        B, F = len(v.names), max(v.view.filter_count, 1)
+        cnt, start = cnt.reshape(B, F).astype(int), start.reshape(B, F).astype(int)
+        row = [v.names.index(b) for b in self.tactile.bodies]
+        min_sep = np.full(len(row), np.nan)
+        n_c = np.zeros(len(row), int)
+        for i, b in enumerate(row):
+            s = [sep[start[b, m]:start[b, m] + cnt[b, m]] for m in range(F) if cnt[b, m]]
+            if s:
+                s = np.concatenate(s)
+                min_sep[i], n_c[i] = float(s.min()), s.size
+        self._probe_rows.append((len(self.substep_counts), self._n, self._probe_first,
+                                 np.linalg.norm(tac["force_w"], axis=1), min_sep, n_c))
+        self._probe_first = False
+        if len(self._probe_rows) % 2000 == 0:   # Isaac Sim may exit without running atexit
+            self._probe_save()
+
+    def _probe_save(self):
+        if not self._probe_rows:
+            return
+        r = list(zip(*self._probe_rows))
+        np.savez(self.probe_path, frame=np.array(r[0]), substep=np.array(r[1]), first_after_restore=np.array(r[2]),
+                 force=np.stack(r[3]), min_sep=np.stack(r[4]), contacts=np.stack(r[5]),
+                 pads=np.array(self.tactile.bodies), physics_dt=self.physics_dt)
+        print(f"[tactile] probe: {len(self._probe_rows)} substeps -> {self.probe_path}")
 
     # ------------------------------------------------------------------ frame
     def zeros(self):
