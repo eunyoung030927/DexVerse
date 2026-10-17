@@ -150,7 +150,7 @@ class TactileLogger:
         self._probe_rows.append((len(self.substep_counts), self._n, self._probe_first,
                                  np.linalg.norm(tac["force_w"], axis=1), min_sep, n_c))
         self._probe_first = False
-        if len(self._probe_rows) % 2000 == 0:   # Isaac Sim may exit without running atexit
+        if len(self._probe_rows) % 600 == 0:   # Isaac Sim may exit without running atexit
             self._probe_save()
 
     def _probe_save(self):

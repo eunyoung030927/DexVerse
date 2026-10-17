@@ -1137,6 +1137,8 @@ class LeRobotSpoolRecorder:
 
     def close(self):
         self.discard_episode("session ended")
+        if self.tactile_log is not None and self.tactile_log.probe_path:
+            self.tactile_log._probe_save()
         with open(os.path.join(self.spool, DONE_SENTINEL), "w", encoding="utf-8") as f:
             f.write(str(time.time()))
         pending = len(list_ready(self.spool))
