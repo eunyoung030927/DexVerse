@@ -7,7 +7,8 @@
 
 Same on-disk SPOOL format and the same LeRobot layout as the isaac-tasks collectors (UR7e + RH5DG2), so the
 datasets load with the same training code: ``observation.images.third_person``,
-``observation.images.eye_in_hand``, ``observation.state``, ``action`` (+ ``meta/isaac_tasks.json`` and
+``observation.images.eye_in_hand`` (bimanual: right wrist, + ``observation.images.eye_in_hand_left``),
+``observation.state``, ``action`` (+ ``meta/isaac_tasks.json`` and
 ``meta/isaac_tasks_episodes.jsonl``).
 
 TWO HALVES, ONE FILE FORMAT:
@@ -28,7 +29,7 @@ SPOOL LAYOUT (``<lerobot_root>.spool/``)::
     last_seq                   last sequence number handed out (kept monotonic across consumed entries)
     ep_000007.tmp/             a demo being recorded (deleted if it does not succeed)
     ep_000006/                 a READY episode
-        third_person.u8, eye_in_hand.u8   raw uint8 frames, (T, H, W, 3) row-major
+        third_person.u8, eye_in_hand.u8   raw uint8 frames, (T, H, W, 3) row-major (bimanual: + eye_in_hand_left.u8)
         data.npz               keep_idx (T,) + one (T, ...) array per non-video feature, keyed by feature name
         meta.json              per-episode metadata
     DONE                       the recorder has finished: finalize once the queue is empty
@@ -116,6 +117,7 @@ _ANY_RE = re.compile(r"^ep_(\d{6})(\.tmp)?$")
 # LeRobot feature key -> raw frame file. Keys match the isaac-tasks / DexSteer datasets.
 THIRD_PERSON_KEY = "observation.images.third_person"
 EYE_IN_HAND_KEY = "observation.images.eye_in_hand"
+EYE_IN_HAND_LEFT_KEY = "observation.images.eye_in_hand_left"  # bimanual only
 _POSE6 = ("ee_x", "ee_y", "ee_z", "ee_rx", "ee_ry", "ee_rz")
 _POSE9 = ("ee_x", "ee_y", "ee_z") + tuple(f"ee_r6d_{i}" for i in range(6))
 _DELTA6 = ("ee_dx", "ee_dy", "ee_dz", "ee_drx", "ee_dry", "ee_drz")
@@ -554,7 +556,11 @@ class LeRobotSpoolRecorder:
                 "LeRobot recording needs scene.third_person_camera and a wrist camera; got "
                 f"third_person={getattr(scene, third, None) is not None}, wrist={wrist}. "
                 "Run with cameras enabled (record_demos does this when --lerobot_root is set).")
-        return [(THIRD_PERSON_KEY, third, "third_person.u8"), (EYE_IN_HAND_KEY, wrist, "eye_in_hand.u8")]
+        cams = [(THIRD_PERSON_KEY, third, "third_person.u8"), (EYE_IN_HAND_KEY, wrist, "eye_in_hand.u8")]
+        # bimanual: eye_in_hand = right wrist (as before), eye_in_hand_left = left wrist
+        if wrist == "right_wrist_camera" and getattr(scene, "left_wrist_camera", None) is not None:
+            cams.append((EYE_IN_HAND_LEFT_KEY, "left_wrist_camera", "eye_in_hand_left.u8"))
+        return cams
 
     def _action_names(self):
         names = []
