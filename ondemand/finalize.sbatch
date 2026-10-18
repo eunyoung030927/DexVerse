@@ -18,6 +18,7 @@ export HOME="${HOME:-$(getent passwd "$(id -un)" | cut -d: -f6)}"
 # shellcheck source=/dev/null
 source "$HOME/dexverse/DexVerse/ondemand/env.sh"
 sync_repo
-export TASKS="${TASKS:?}"
+# default: every single-hand task (OOD submits without --export); the upload merges per episode, so extra tasks are harmless
+export TASKS="${TASKS:-Dexverse-GraspPan-v1 Dexverse-FunctionalHammerStrike-v1 Dexverse-FunctionalPourMug-v1 Dexverse-GraspBleach-v1 Dexverse-GraspKettle-v1}"
 bash "$CODE_DIR/dv_upload.sh" 0
 bash "$CODE_DIR/outputs_note.sh" || true
