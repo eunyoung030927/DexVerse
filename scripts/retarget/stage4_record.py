@@ -57,34 +57,39 @@ def main():
         if not res["task_success"]:
             skipped.append((i, "failed"))
             continue
-        with gzip.open(d / f"{args.tag}_traj.pkl.gz", "rb") as fh:
-            traj = pickle.load(fh)
-        layout = traj.get("action_layout", layout)
-        n = int(res["success_frame"]) + 1                          # actions up to the held-success frame
-        sep = src["episodes"][i]
-        actions = np.stack(traj["actions"][:n]).astype(np.float32)
-        # record_demos' arm_joint_actions: the commanded arm joint targets per step = action * scale + offset
-        am = traj.get("arm_joint_meta")
-        if am is None and (d / "arm_joint_meta.json").exists():
-            am = json.load(open(d / "arm_joint_meta.json"))
-        if am is None:
-            sys.exit(f"{d}: no arm_joint_meta (run scripts/retarget/arm_joint_meta.py for results older than it)")
-        arm_meta = am if arm_meta is None else arm_meta
-        extra = {}
-        if am["arm_joint_names"]:
-            col = {j: (c, s_, o) for c, (j, s_, o) in enumerate(am["action_map"])}
-            extra["arm_joint_actions"] = np.stack(
-                [actions[:, col[j][0]] * col[j][1] + col[j][2] for j in am["arm_joint_ids"]], 1).astype(np.float32)
-        # the run that produced it: SPIDER, or the kinematic joints alone (run_target's kinonly check)
-        method = "kinematic" if res.get("args", {}).get("tag") == "kinonly" else "spider"
-        episodes.append({
-            "episode_index": len(episodes), "episode_name": f"demo_{len(episodes)}",
-            "initial_state": traj["initial_state"], "goal_pose": sep.get("goal_pose"),
-            "actions": actions, **extra,
-            "states": traj["states"][: n + 1], "success": True, "num_steps": n,
-            "retarget_source": {"demos": os.path.abspath(args.demos), "episode": i, "robot_type": src["robot_type"],
-                                "method": method, "seed": res.get("seed"), "result": str(res_path.resolve())},
-        })
+        # one unreadable episode is skipped (listed in the RESULT line), not the whole target's export
+        try:
+            with gzip.open(d / f"{args.tag}_traj.pkl.gz", "rb") as fh:
+                traj = pickle.load(fh)
+            layout = traj.get("action_layout", layout)
+            n = int(res["success_frame"]) + 1                          # actions up to the held-success frame
+            sep = src["episodes"][i]
+            actions = np.stack(traj["actions"][:n]).astype(np.float32)
+            # record_demos' arm_joint_actions: the commanded arm joint targets per step = action * scale + offset
+            am = traj.get("arm_joint_meta")
+            if am is None and (d / "arm_joint_meta.json").exists():
+                am = json.load(open(d / "arm_joint_meta.json"))
+            if am is None:
+                raise RuntimeError("no arm_joint_meta (run scripts/retarget/arm_joint_meta.py for results older than it)")
+            arm_meta = am if arm_meta is None else arm_meta
+            extra = {}
+            if am["arm_joint_names"]:
+                col = {j: (c, s_, o) for c, (j, s_, o) in enumerate(am["action_map"])}
+                extra["arm_joint_actions"] = np.stack(
+                    [actions[:, col[j][0]] * col[j][1] + col[j][2] for j in am["arm_joint_ids"]], 1).astype(np.float32)
+            # the run that produced it: SPIDER, or the kinematic joints alone (run_target's kinonly check)
+            method = "kinematic" if res.get("args", {}).get("tag") == "kinonly" else "spider"
+            episodes.append({
+                "episode_index": len(episodes), "episode_name": f"demo_{len(episodes)}",
+                "initial_state": traj["initial_state"], "goal_pose": sep.get("goal_pose"),
+                "actions": actions, **extra,
+                "states": traj["states"][: n + 1], "success": True, "num_steps": n,
+                "retarget_source": {"demos": os.path.abspath(args.demos), "episode": i, "robot_type": src["robot_type"],
+                                    "method": method, "seed": res.get("seed"), "result": str(res_path.resolve())},
+            })
+        except Exception as e:  # noqa: BLE001
+            skipped.append((i, f"{type(e).__name__}: {e}"[:200]))
+            print(f"[stage4] skip ep{i:03d}: {type(e).__name__}: {e}", file=sys.stderr, flush=True)
     meta = {k: v for k, v in src.items() if k not in ("episodes", "num_episodes", "release_provenance")}
     if layout is not None:                                         # the source's layout is the source hand's
         meta["action_layout"] = layout
