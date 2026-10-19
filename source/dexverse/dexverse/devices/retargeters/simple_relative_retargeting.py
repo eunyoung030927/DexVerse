@@ -127,6 +127,15 @@ class SimpleRelativeRetargeter(RetargeterBase):
         # a full-revolution absolute joint command before configured limits are
         # applied.
         self._previous_wrist_euler_commands = {hand: None for hand in self._tracked_hands}
+        # Isaac Lab's OpenXRDevice reports a hand it has not seen since its reset as the default pose (origin,
+        # identity) for every joint. Such a hand keeps its last wrist / finger command instead of being
+        # retargeted (that pose curls the fingers and puts the wrist at the origin), and a START while it is
+        # untracked calibrates it on its first tracked frame instead of at the origin.
+        # A tracked hand only falls back to that default pose when the device is reset (with the env); it then
+        # holds the default command (home) again rather than the previous episode's last command.
+        self._last_hand_commands: dict = {hand: None for hand in self._tracked_hands}
+        self._was_tracked: dict = {hand: False for hand in self._tracked_hands}
+        self._pending_calibration: set = set()
         self._dex_retgt = {}
         # per-hand override of FINGER_Z_ROTATION_DEG from the retargeting YAML (dexverse.finger_z_rotation_deg)
         self._finger_z_rotation_deg = {}
@@ -180,7 +189,15 @@ class SimpleRelativeRetargeter(RetargeterBase):
         hand_data_by_target = {hand: self._get_hand_data(data, hand) for hand in self._tracked_hands}
 
         for hand, hand_data in hand_data_by_target.items():
-            self.latest_wrist_poses[hand] = self._extract_wrist_pose(hand_data)
+            tracked = self._is_tracked(hand_data)
+            if self._was_tracked[hand] and not tracked:
+                self._last_hand_commands[hand] = None
+                self._previous_wrist_euler_commands[hand] = None
+            self._was_tracked[hand] = tracked
+            self.latest_wrist_poses[hand] = self._extract_wrist_pose(hand_data) if tracked else None
+            if self.latest_wrist_poses[hand] is not None and hand in self._pending_calibration:
+                self._calibrate_hand(hand)
+                print(f"Calibrated wrist pose for {hand.name} (first tracked frame after START)")
 
         self.lastest_wrist_pose = self.latest_wrist_poses.get(self._bound_hand)
         if self._bound_hand in self.retarget_base_wrist_poses:
@@ -196,27 +213,61 @@ class SimpleRelativeRetargeter(RetargeterBase):
             action = np.zeros(self.cfg.output_dim, dtype=np.float32)
 
         for hand in self._tracked_hands:
+            if self.latest_wrist_poses[hand] is None:
+                self._hold_last_hand_command(action, hand)
+                continue
             self._assign_hand_wrist_command(action, hand)
             finger_values = self._retarget_hand_fingers(hand_data_by_target[hand], hand)
             self._assign_hand_fingers(action, hand, finger_values)
+            indices = self._hand_command_indices(hand)
+            self._last_hand_commands[hand] = (indices, action[list(indices)].copy())
 
         return torch.tensor(action, dtype=torch.float32, device=self._sim_device)
+
+    @staticmethod
+    def _is_tracked(hand_data: Any) -> bool:
+        """Whether the device has tracked this hand since its reset (else it reports the default pose)."""
+        if not isinstance(hand_data, dict) or hand_data.get("wrist") is None:
+            return False
+        return not np.array_equal(np.asarray(hand_data["wrist"], dtype=np.float32), _default_wrist_pose())
+
+    def _hand_command_indices(self, hand: DeviceBase.TrackingTarget) -> tuple[int, ...]:
+        hand_layout = self._layout["hands"][hand]
+        return tuple(
+            int(i)
+            for key in ("wrist_trans_indices", "wrist_rot_indices", "finger_indices")
+            for i in hand_layout.get(key, ())
+        )
+
+    def _hold_last_hand_command(self, action: np.ndarray, hand: DeviceBase.TrackingTarget) -> None:
+        """Repeat an untracked hand's last command (the default command before it was ever tracked)."""
+        last = self._last_hand_commands.get(hand)
+        if last is not None:
+            indices, values = last
+            action[list(indices)] = values
+
+    def _calibrate_hand(self, hand: DeviceBase.TrackingTarget) -> None:
+        self.retarget_base_wrist_poses[hand] = self.latest_wrist_poses[hand].copy()
+        self._previous_wrist_euler_commands[hand] = None
+        self._pending_calibration.discard(hand)
+        if hand == self._bound_hand:
+            self.retarget_base_wrist_pose = self.retarget_base_wrist_poses[hand].copy()
 
     def calibrate_wrist_pose(self):
         calibrated_hands = []
         missing_hands = []
 
         for hand in self._tracked_hands:
-            wrist_pose = self.latest_wrist_poses.get(hand)
-            if wrist_pose is None:
+            if self.latest_wrist_poses.get(hand) is None:
+                # Untracked: calibrate on its first tracked frame; until then it holds its last command.
+                self._pending_calibration.add(hand)
                 missing_hands.append(hand.name)
                 continue
-            self.retarget_base_wrist_poses[hand] = wrist_pose.copy()
-            self._previous_wrist_euler_commands[hand] = None
+            self._calibrate_hand(hand)
             calibrated_hands.append(hand.name)
 
         if not calibrated_hands:
-            print("No wrist pose available yet; move the hand once before calibrating.")
+            print("No hand tracked yet; each hand is calibrated on its first tracked frame.")
             return
 
         if self._bound_hand in self.retarget_base_wrist_poses:
@@ -224,7 +275,7 @@ class SimpleRelativeRetargeter(RetargeterBase):
 
         print(f"Calibrated wrist pose for {', '.join(calibrated_hands)}")
         if missing_hands:
-            print(f"No wrist pose available for {', '.join(missing_hands)}")
+            print(f"{', '.join(missing_hands)} not tracked yet; calibrated on its first tracked frame")
 
     def get_requirements(self) -> list[RetargeterBase.Requirement]:
         """Request only the device features this retargeter needs."""
@@ -281,11 +332,12 @@ class SimpleRelativeRetargeter(RetargeterBase):
 
             local_urdf_path = retrieve_file_path(urdf_path, force_download=True)
             limit_overrides = self._load_joint_limit_overrides(config_path)
+            origin_overrides = self._load_joint_origin_overrides(config_path)
             z_rot_override = self._load_finger_z_rotation(config_path)
             if z_rot_override is not None:
                 self._finger_z_rotation_deg[HAND_NAME_TO_TARGET[hand_name]] = z_rot_override
-            if limit_overrides:
-                local_urdf_path = self._create_urdf_with_joint_limits(local_urdf_path, limit_overrides)
+            if limit_overrides or origin_overrides:
+                local_urdf_path = self._create_patched_urdf(local_urdf_path, limit_overrides, origin_overrides)
             patched_config_path = self._create_dex_config_with_urdf(config_path, local_urdf_path)
             retargeter = RetargetingConfig.load_from_file(patched_config_path).build()
 
@@ -338,6 +390,21 @@ class SimpleRelativeRetargeter(RetargeterBase):
         return {str(name): (float(lim[0]), float(lim[1])) for name, lim in overrides.items()}
 
     @staticmethod
+    def _load_joint_origin_overrides(config_path: str) -> dict[str, dict[str, str]]:
+        """Read optional ``dexverse.joint_origin_overrides: {joint: {xyz: [..], rpy: [..]}}`` from a retargeting YAML.
+
+        Replaces those ``<origin>`` attributes in the retargeting URDF (e.g. a wrong root rotation, which makes the
+        tip-only optimizer compare robot and human fingers in rotated frames).
+        """
+        with open(config_path) as file:
+            config = yaml.safe_load(file) or {}
+        overrides = (config.get("dexverse") or {}).get("joint_origin_overrides") or {}
+        return {
+            str(name): {key: " ".join(repr(float(v)) for v in values) for key, values in origin.items()}
+            for name, origin in overrides.items()
+        }
+
+    @staticmethod
     def _load_finger_z_rotation(config_path: str) -> float | None:
         """Read optional ``dexverse.finger_z_rotation_deg`` from a retargeting YAML: this hand's heading correction,
         replacing the global :data:`FINGER_Z_ROTATION_DEG` entry for its side."""
@@ -346,15 +413,21 @@ class SimpleRelativeRetargeter(RetargeterBase):
         value = (config.get("dexverse") or {}).get("finger_z_rotation_deg")
         return None if value is None else float(value)
 
-    def _create_urdf_with_joint_limits(self, urdf_path: str, overrides: dict[str, tuple[float, float]]) -> str:
-        """Write a temporary copy of the retargeting URDF with narrower joint limits.
+    def _create_patched_urdf(
+        self,
+        urdf_path: str,
+        overrides: dict[str, tuple[float, float]],
+        origin_overrides: dict[str, dict[str, str]] | None = None,
+    ) -> str:
+        """Write a temporary copy of the retargeting URDF with narrower joint limits / replaced joint origins.
 
-        Only the finger optimizer sees these limits; the simulated robot keeps its own. Used where wide limits
-        let tip-only objectives (DexPilot / vector) reach a fingertip target through implausible postures,
+        Only the finger optimizer sees this URDF; the simulated robot keeps its own. Limits are narrowed where wide
+        limits let tip-only objectives (DexPilot / vector) reach a fingertip target through implausible postures,
         e.g. LEAP fingers swinging +-60 deg sideways with hyperextended PIPs instead of curling.
         """
+        origin_overrides = origin_overrides or {}
         tree = ET.parse(urdf_path)
-        found = set()
+        found, found_origins = set(), set()
         for joint in tree.getroot().iter("joint"):
             name = joint.get("name")
             limit = joint.find("limit")
@@ -362,9 +435,19 @@ class SimpleRelativeRetargeter(RetargeterBase):
                 limit.set("lower", repr(overrides[name][0]))
                 limit.set("upper", repr(overrides[name][1]))
                 found.add(name)
+            if name in origin_overrides:
+                origin = joint.find("origin")
+                if origin is None:
+                    origin = ET.SubElement(joint, "origin")
+                for key, value in origin_overrides[name].items():
+                    origin.set(key, value)
+                found_origins.add(name)
         missing = sorted(set(overrides) - found)
         if missing:
             raise ValueError(f"joint_limit_overrides name joints missing from '{urdf_path}': {missing}")
+        missing = sorted(set(origin_overrides) - found_origins)
+        if missing:
+            raise ValueError(f"joint_origin_overrides name joints missing from '{urdf_path}': {missing}")
         with tempfile.NamedTemporaryFile(mode="wb", suffix=".urdf", delete=False) as temp_file:
             tree.write(temp_file)
             temp_path = temp_file.name

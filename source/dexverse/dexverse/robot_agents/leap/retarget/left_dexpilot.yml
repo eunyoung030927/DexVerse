@@ -32,6 +32,11 @@ retargeting:
 dexverse:
   # mirror of the right hand's -6 deg (the global left value is +15)
   finger_z_rotation_deg: 6.0
+  # leap_hand_left_fixed.urdf rotates its root by -90 deg about y (rpy 0 -1.57079 0) with nothing undoing it
+  # (the right URDF cancels it at palm_wrist_joint), so in the optimizer frame the robot fingers pointed up
+  # (+z) while the canonical human fingers point along +x, and an open hand retargeted to MCP ~1.9 rad (fist).
+  joint_origin_overrides:
+    base_to_palm_wrist: {xyz: [0.0, 0.0, 0.0], rpy: [0.0, 0.0, 0.0]}
   joint_limit_overrides:
     leap_0: [-0.35, 0.35]
     leap_4: [-0.35, 0.35]
