@@ -50,3 +50,8 @@ retargeting:
   - right_finger5_joint4
   low_pass_alpha: 0.8
   scaling_factor: 1.3
+# DexVerse-only section (dex-retargeting reads just `retargeting`).
+# Global heading is -15 / +15 deg (Shadow). On the Quest recording an open Wuji hand leans all
+# abductions to one side at -15 deg; -6 / +6 deg gives the lowest DexPilot tip error (open + fist).
+dexverse:
+  finger_z_rotation_deg: -6.0

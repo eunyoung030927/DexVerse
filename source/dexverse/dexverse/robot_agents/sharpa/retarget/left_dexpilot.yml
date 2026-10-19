@@ -33,3 +33,8 @@ retargeting:
   - left_pinky_MCP_AA
   - left_pinky_PIP
   - left_pinky_DIP
+# DexVerse-only section (dex-retargeting reads just `retargeting`).
+# Global heading is -15 / +15 deg (Shadow). On the Quest recording -10 / +10 deg gives the lowest
+# DexPilot tip error (open + fist); at -15 deg the open index abduction sits at its limit.
+dexverse:
+  finger_z_rotation_deg: 10.0
