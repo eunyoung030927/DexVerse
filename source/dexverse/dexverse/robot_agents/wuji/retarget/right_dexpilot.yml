@@ -34,5 +34,13 @@ retargeting:
 # DexVerse-only section (dex-retargeting reads just `retargeting`).
 # Global heading is -15 / +15 deg (Shadow). On the Quest recording an open Wuji hand leans all
 # abductions to one side at -15 deg; -6 / +6 deg gives the lowest DexPilot tip error (open + fist).
+# Abduction of fingers 2-5 may not go thumb-ward (finger optimizer only; the simulated hand keeps its range):
+# DexPilot otherwise pinned every abduction at its thumb-side limit in a fist, so the curled fingers leaned
+# toward the thumb instead of converging on the middle finger as the tilted MCP axes make them do.
 dexverse:
   finger_z_rotation_deg: -6.0
+  joint_limit_overrides:
+    right_finger2_joint2: [-0.37, 0.0]
+    right_finger3_joint2: [-0.37, 0.0]
+    right_finger4_joint2: [-0.37, 0.0]
+    right_finger5_joint2: [-0.37, 0.0]
