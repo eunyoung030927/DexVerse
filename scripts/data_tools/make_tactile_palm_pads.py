@@ -15,7 +15,9 @@ nothing is modified) and, per palm body P of the definition:
 * palm frame in P (at the reset pose): palmar normal h = mean palmar direction of the non-thumb fingers' distal
   frames (their ``frame_i`` h) expressed in P; distal axis u = from the centroid of the bundle surface toward the
   mean base (first link below the palm) of the non-thumb fingers, orthogonalised to h; thumb-side axis t = from the
-  little-most to the index finger base, orthogonalised to h and u (anatomical: the same rule for a left hand);
+  little-most to the index finger base, orthogonalised to h and u (anatomical: the same rule for a left hand), flipped
+  if the thumb base lies on the other side (a model with the right hand's finger order and only the thumb mirrored,
+  e.g. Allegro left), so t always points to the thumb;
 * palmar face = bundle surface samples with  n . h >= cos(--max_angle)  (back and sides excluded) inside the palm
   band along u: from the finger bases (median of the non-thumb bases, + 10 mm) back by --band_factor x the lateral
   span of the non-thumb bases (wrist / forearm parts of the palm body excluded);
@@ -43,6 +45,7 @@ simulated hand's palmar face; RH5DG2 numbers are stored in the json for comparis
 import argparse
 import json
 import os
+import re
 import sys
 
 from isaaclab.app import AppLauncher
@@ -216,9 +219,7 @@ def T_of(name):
 
 
 def canon(name):
-    n = name.lower()
-    for side in ("right_", "left_"):
-        n = n.replace(side, "")
+    n = re.sub(r"^(right|left|rh|lh)_", "", name.lower())      # side prefix of bimanual / left hands (Shadow: rh_ / lh_)
     table = {"link_3_0": "index", "link_7_0": "middle", "link_11_0": "ring", "link_15_0": "thumb",
              "thdistal": "thumb", "ffdistal": "index", "mfdistal": "middle", "rfdistal": "ring", "lfdistal": "little",
              "finger1_link4": "thumb", "finger2_link4": "index", "finger3_link4": "middle", "finger4_link4": "ring",
@@ -262,8 +263,17 @@ def hand_of(link):
     return [i for i, P in enumerate(palms) if b in palm_group[P]][0]
 
 
+def side_of(P):
+    """hand side of a palm body: the robot config's left palm (bimanual), else the side of the robot type (palm names
+    do not carry it: Shadow ``rh_palm`` / ``lh_palm``, single left hands ``palm`` / ``hand_base_link``)"""
+    rc = env.cfg.robot_config
+    if getattr(rc, "left_palm_body_name", None):
+        return "left" if P == rc.left_palm_body_name else "right"
+    return "left" if str(args.robot_type).endswith("_left") else "right"
+
+
 finger_hand = [hand_of(d) for d in distal]
-hand_names = ["left" if "left" in p.lower() else "right" for p in palms]
+hand_names = [side_of(p) for p in palms]
 if len(set(hand_names)) != len(hand_names):
     raise RuntimeError(f"[palm] cannot name the hands of palms {palms}")
 summary = {"robot_type": args.robot_type, "params": {"spacing": args.spacing, "max_angle": args.max_angle,
@@ -330,11 +340,18 @@ for pi_, P in enumerate(palms):
     t = base[order[0]] - base[order[-1]]
     t -= h * (t @ h) + u * (t @ u)
     t /= np.linalg.norm(t)
+    # t must point to the THUMB: a model whose fingers keep the right hand's order with only the thumb mirrored
+    # (Allegro left: link_3_0 = "index" sits away from the thumb) gets t flipped, so palm_l / fty follow the thumb
+    mid = np.mean([base[c] for c in order], 0)
+    thumb_flip = "thumb" in base and float((base["thumb"] - mid) @ t) < 0
+    if thumb_flip:
+        t = -t
     lat = {c: float((base[c] - c_all) @ t * 1e3) for c in base}
-    mono = all(lat[order[k]] > lat[order[k + 1]] for k in range(len(order) - 1))
+    sgn = -1.0 if thumb_flip else 1.0
+    mono = all(sgn * (lat[order[k]] - lat[order[k + 1]]) > 0 for k in range(len(order) - 1))
     if not mono:
         raise RuntimeError(f"[palm] finger bases not ordered index->little along the thumb-side axis: {lat}")
-    thumb_side_ok = ("thumb" not in lat) or lat["thumb"] > lat[order[-1]]
+    thumb_side_ok = ("thumb" not in lat) or float((base["thumb"] - mid) @ t) > 0
     # palm band along the distal axis: from the finger bases (median of the non-thumb bases) back by
     # --band_factor x the lateral span of the non-thumb bases; excludes wrist / forearm parts of the palm body
     ub = np.array([(base[finger_canon[i]] - c_all) @ u for i in nonthumb])
@@ -359,6 +376,7 @@ for pi_, P in enumerate(palms):
              "frame_in_palm": {"centre_palmar_face": c_pad.tolist(), "u_distal": u.tolist(), "h_palmar": h.tolist(),
                                "t_thumb_side": t.tolist(), "handedness_det_u_h_t": float(np.linalg.det(np.c_[u, h, t]))},
              "finger_base_t_u_mm_from_face_centre": base_tu, "base_order_ok": mono, "thumb_on_thumb_side": bool(thumb_side_ok),
+             "t_flipped_toward_thumb": bool(thumb_flip),
              "palmar_face_lateral_extent_mm": [float((tmin - (c_pad - c_all) @ t) * 1e3),
                                                float((tmax - (c_pad - c_all) @ t) * 1e3)],
              "zone_edges_lateral_mm_from_face_centre": [float((e - (c_pad - c_all) @ t) * 1e3) for e in (e1, e2)],

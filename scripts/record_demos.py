@@ -261,7 +261,7 @@ parser.add_argument(
     "--lerobot_task", type=str, default=None, help="Language instruction stored with every frame (default: from the task id)."
 )
 parser.add_argument(
-    "--lerobot_image_size", type=str, default="480x640", help="HxW of both recorded cameras (default 480x640)."
+    "--lerobot_image_size", type=str, default="480x640", help="HxW of the recorded cameras (default 480x640)."
 )
 parser.add_argument("--spool_max_pending", type=int, default=4, help="Ready episodes allowed before recording waits.")
 parser.add_argument("--writer_threads", type=int, default=8, help="PNG writer threads of the spool writer.")

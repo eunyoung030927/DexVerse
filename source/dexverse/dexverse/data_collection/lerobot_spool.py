@@ -8,12 +8,14 @@
 Same on-disk SPOOL format and the same LeRobot layout as the isaac-tasks collectors (UR7e + RH5DG2), so the
 datasets load with the same training code: ``observation.images.third_person``,
 ``observation.images.eye_in_hand``, ``observation.state``, ``action`` (+ ``meta/isaac_tasks.json`` and
-``meta/isaac_tasks_episodes.jsonl``).
+``meta/isaac_tasks_episodes.jsonl``). Bimanual robots: ``eye_in_hand`` is the RIGHT wrist camera and the left one is
+``observation.images.eye_in_hand_left`` (single-hand datasets have no such key). Appending to a dataset / spool
+recorded without ``eye_in_hand_left`` leaves the left camera out (warning; ``spool.json`` ``eye_in_hand_left``).
 
 TWO HALVES, ONE FILE FORMAT:
 
 * :class:`LeRobotSpoolRecorder` runs inside ``record_demos.py`` (post-app). Every recorded control step it
-  captures the third-person and wrist camera RGB, the full joint state and the action BEFORE ``env.step``
+  captures the third-person and wrist camera(s) RGB, the full joint state and the action BEFORE ``env.step``
   applies the action (LeRobot convention: frame t = ``(o_t, a_t)``), streams the frames to
   ``ep_XXXXXX.tmp/`` as raw uint8 and, when the demo succeeds, atomically renames it to ``ep_XXXXXX/``.
   A failed / reset / abandoned demo is deleted -- its frames never reach the dataset.
@@ -28,7 +30,7 @@ SPOOL LAYOUT (``<lerobot_root>.spool/``)::
     last_seq                   last sequence number handed out (kept monotonic across consumed entries)
     ep_000007.tmp/             a demo being recorded (deleted if it does not succeed)
     ep_000006/                 a READY episode
-        third_person.u8, eye_in_hand.u8   raw uint8 frames, (T, H, W, 3) row-major
+        third_person.u8, eye_in_hand.u8   raw uint8 frames, (T, H, W, 3) row-major (+ eye_in_hand_left.u8)
         data.npz               keep_idx (T,) + one (T, ...) array per non-video feature, keyed by feature name
         meta.json              per-episode metadata
     DONE                       the recorder has finished: finalize once the queue is empty
@@ -116,6 +118,7 @@ _ANY_RE = re.compile(r"^ep_(\d{6})(\.tmp)?$")
 # LeRobot feature key -> raw frame file. Keys match the isaac-tasks / DexSteer datasets.
 THIRD_PERSON_KEY = "observation.images.third_person"
 EYE_IN_HAND_KEY = "observation.images.eye_in_hand"
+EYE_IN_HAND_LEFT_KEY = "observation.images.eye_in_hand_left"   # bimanual robots: the left wrist camera
 _POSE6 = ("ee_x", "ee_y", "ee_z", "ee_rx", "ee_ry", "ee_rz")
 _POSE9 = ("ee_x", "ee_y", "ee_z") + tuple(f"ee_r6d_{i}" for i in range(6))
 _DELTA6 = ("ee_dx", "ee_dy", "ee_dz", "ee_drx", "ee_dry", "ee_drz")
@@ -553,7 +556,20 @@ class LeRobotSpoolRecorder:
                 "LeRobot recording needs scene.third_person_camera and a wrist camera; got "
                 f"third_person={getattr(scene, third, None) is not None}, wrist={wrist}. "
                 "Run with cameras enabled (record_demos does this when --lerobot_root is set).")
-        return [(THIRD_PERSON_KEY, third, "third_person.u8"), (EYE_IN_HAND_KEY, wrist, "eye_in_hand.u8")]
+        cameras = [(THIRD_PERSON_KEY, third, "third_person.u8"), (EYE_IN_HAND_KEY, wrist, "eye_in_hand.u8")]
+        # Bimanual robots: eye_in_hand stays the right wrist camera, the left one gets its own key.
+        self.left_wrist_status = None
+        if wrist == "right_wrist_camera" and getattr(scene, "left_wrist_camera", None) is not None:
+            existing = self._existing_features()
+            if existing is not None and EYE_IN_HAND_LEFT_KEY not in existing:
+                reason = (f"appending to an existing dataset / spool recorded without {EYE_IN_HAND_LEFT_KEY}: the left "
+                          "wrist camera is NOT recorded in this session so the episodes stay compatible")
+                print(f"[lerobot] WARNING {reason} ({self.root})")
+                self.left_wrist_status = {"enabled": False, "reason": reason}
+            else:
+                cameras.append((EYE_IN_HAND_LEFT_KEY, "left_wrist_camera", "eye_in_hand_left.u8"))
+                self.left_wrist_status = {"enabled": True, "camera": "left_wrist_camera"}
+        return cameras
 
     def _action_names(self):
         names = []
@@ -745,6 +761,7 @@ class LeRobotSpoolRecorder:
             "image_shapes": self.image_shapes,
             "camera_mapping": {key: cam for key, cam, _ in self.cameras},
             "frame_files": {key: f for key, _, f in self.cameras},
+            **({"eye_in_hand_left": self.left_wrist_status} if self.left_wrist_status is not None else {}),
             "state_definition": "robot.data.joint_pos (rad / m for the virtual wrist prismatics) captured before the "
                                 "action of the same frame is applied; the action's joints first in action-column "
                                 "order (state[:len(action)] matches action by name), then the other joints",

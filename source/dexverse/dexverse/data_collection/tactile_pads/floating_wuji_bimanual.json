@@ -1,0 +1,1114 @@
+{
+ "robot_type": "floating_wuji_bimanual",
+ "params": {
+  "robot_type": "floating_wuji_bimanual",
+  "task": "Dexverse-PickCube-v0",
+  "spacing": 0.0006,
+  "max_angle": 60.0,
+  "pad_frac": 0.8,
+  "pad_min": 0.012,
+  "pad_max": 0.022,
+  "out_dir": "/workspace/dexverse/teleop_issues_261019/bimanual_audit/impl/figs",
+  "enable_cameras": null,
+  "xr": false,
+  "device": "cpu",
+  "cpu": false,
+  "verbose": false,
+  "info": false,
+  "rendering_mode": null,
+  "kit_args": "",
+  "anim_recording_enabled": false,
+  "anim_recording_start_time": 0,
+  "anim_recording_stop_time": 10,
+  "headless": true,
+  "hide_ui": true,
+  "create_new_stage": false,
+  "physics_gpu": 0,
+  "active_gpu": 0
+ },
+ "fingers": [
+  {
+   "finger": "right_finger1_link4",
+   "marker": "right_finger1_tip_link",
+   "distal": "right_finger1_link4",
+   "joint": "right_finger1_joint4",
+   "limits_deg": [
+    -26.92328643798828,
+    89.19806671142578
+   ],
+   "flex_sign": 1.0,
+   "bundle": [
+    "right_finger1_link4",
+    "right_finger1_tip_link"
+   ],
+   "L_bundle_mm": 33.271303078567904,
+   "L_pad_mm": 22.0,
+   "frame_in_distal": {
+    "o": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "u": [
+     -0.0764808487181458,
+     0.0,
+     0.9970710505171395
+    ],
+    "h_palmar": [
+     0.9970710505171395,
+     -0.0,
+     0.0764808487181458
+    ],
+    "a": [
+     0.0,
+     1.0,
+     0.0
+    ]
+   },
+   "links": [
+    {
+     "link": "right_finger1_link4",
+     "samples": 3428,
+     "area_mm2": 1234.2198074537064,
+     "pad_frac": 0.07030338389731622,
+     "pad_area_mm2": 86.76982893708963
+    },
+    {
+     "link": "right_finger1_tip_link",
+     "samples": 2576,
+     "area_mm2": 927.3808685459786,
+     "pad_frac": 0.2573757763975155,
+     "pad_area_mm2": 238.68537105822352
+    }
+   ],
+   "pad_extent_mm": {
+    "s": [
+     11.316752247529648,
+     31.519459909008027
+    ],
+    "w": [
+     -6.697977482721265,
+     6.212036422986037
+    ],
+    "h": [
+     3.650775915956761,
+     8.348535848950826
+    ]
+   },
+   "pad_area_mm2": 325.45519999531314
+  },
+  {
+   "finger": "right_finger2_link4",
+   "marker": "right_finger2_tip_link",
+   "distal": "right_finger2_link4",
+   "joint": "right_finger2_joint4",
+   "limits_deg": [
+    -26.831613540649414,
+    90.2580337524414
+   ],
+   "flex_sign": 1.0,
+   "bundle": [
+    "right_finger2_link4",
+    "right_finger2_tip_link"
+   ],
+   "L_bundle_mm": 29.19456305978569,
+   "L_pad_mm": 22.0,
+   "frame_in_distal": {
+    "o": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "u": [
+     -0.08609735418039047,
+     0.0,
+     0.996286728609358
+    ],
+    "h_palmar": [
+     0.996286728609358,
+     -0.0,
+     0.08609735418039047
+    ],
+    "a": [
+     0.0,
+     1.0,
+     0.0
+    ]
+   },
+   "links": [
+    {
+     "link": "right_finger2_link4",
+     "samples": 2455,
+     "area_mm2": 884.0653799552906,
+     "pad_frac": 0.05213849287169043,
+     "pad_area_mm2": 46.09383651090721
+    },
+    {
+     "link": "right_finger2_tip_link",
+     "samples": 2680,
+     "area_mm2": 965.1460910047333,
+     "pad_frac": 0.27686567164179104,
+     "pad_area_mm2": 267.2158207184747
+    }
+   ],
+   "pad_extent_mm": {
+    "s": [
+     7.201174207759015,
+     27.984828819774883
+    ],
+    "w": [
+     -6.4485242634679745,
+     7.0276762909236234
+    ],
+    "h": [
+     2.354199813983038,
+     7.745391766228017
+    ]
+   },
+   "pad_area_mm2": 313.3096572293819
+  },
+  {
+   "finger": "right_finger3_link4",
+   "marker": "right_finger3_tip_link",
+   "distal": "right_finger3_link4",
+   "joint": "right_finger3_joint4",
+   "limits_deg": [
+    -26.83734130859375,
+    90.21219635009766
+   ],
+   "flex_sign": 1.0,
+   "bundle": [
+    "right_finger3_link4",
+    "right_finger3_tip_link"
+   ],
+   "L_bundle_mm": 29.19036433334321,
+   "L_pad_mm": 22.0,
+   "frame_in_distal": {
+    "o": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "u": [
+     -0.08449205306275902,
+     0.0,
+     0.996424153144252
+    ],
+    "h_palmar": [
+     0.996424153144252,
+     -0.0,
+     0.08449205306275902
+    ],
+    "a": [
+     0.0,
+     1.0,
+     0.0
+    ]
+   },
+   "links": [
+    {
+     "link": "right_finger3_link4",
+     "samples": 2455,
+     "area_mm2": 884.065406990952,
+     "pad_frac": 0.05621181262729124,
+     "pad_area_mm2": 49.69491900804537
+    },
+    {
+     "link": "right_finger3_tip_link",
+     "samples": 2680,
+     "area_mm2": 965.1461837204092,
+     "pad_frac": 0.2783582089552239,
+     "pad_area_mm2": 268.65636308038256
+    }
+   ],
+   "pad_extent_mm": {
+    "s": [
+     7.194126465247858,
+     27.945107261440437
+    ],
+    "w": [
+     -6.454356754314236,
+     6.949982495293532
+    ],
+    "h": [
+     2.259486751261332,
+     7.713690101189342
+    ]
+   },
+   "pad_area_mm2": 318.3512820884279
+  },
+  {
+   "finger": "right_finger4_link4",
+   "marker": "right_finger4_tip_link",
+   "distal": "right_finger4_link4",
+   "joint": "right_finger4_joint4",
+   "limits_deg": [
+    -27.37019157409668,
+    89.57621765136719
+   ],
+   "flex_sign": 1.0,
+   "bundle": [
+    "right_finger4_link4",
+    "right_finger4_tip_link"
+   ],
+   "L_bundle_mm": 29.176929962906847,
+   "L_pad_mm": 22.0,
+   "frame_in_distal": {
+    "o": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "u": [
+     -0.08162092918054736,
+     0.0,
+     0.9966634456624283
+    ],
+    "h_palmar": [
+     0.9966634456624283,
+     -0.0,
+     0.08162092918054736
+    ],
+    "a": [
+     0.0,
+     1.0,
+     0.0
+    ]
+   },
+   "links": [
+    {
+     "link": "right_finger4_link4",
+     "samples": 2455,
+     "area_mm2": 884.0654063622128,
+     "pad_frac": 0.06313645621181263,
+     "pad_area_mm2": 55.81675681716619
+    },
+    {
+     "link": "right_finger4_tip_link",
+     "samples": 2680,
+     "area_mm2": 965.1486174511032,
+     "pad_frac": 0.2690298507462687,
+     "pad_area_mm2": 259.65378850083783
+    }
+   ],
+   "pad_extent_mm": {
+    "s": [
+     7.2138464637078785,
+     27.934662025063936
+    ],
+    "w": [
+     -6.4234331481960085,
+     6.905087963348068
+    ],
+    "h": [
+     2.323520649293677,
+     7.672799150784085
+    ]
+   },
+   "pad_area_mm2": 315.47054531800404
+  },
+  {
+   "finger": "right_finger5_link4",
+   "marker": "right_finger5_tip_link",
+   "distal": "right_finger5_link4",
+   "joint": "right_finger5_joint4",
+   "limits_deg": [
+    -26.831613540649414,
+    90.1549072265625
+   ],
+   "flex_sign": 1.0,
+   "bundle": [
+    "right_finger5_link4",
+    "right_finger5_tip_link"
+   ],
+   "L_bundle_mm": 29.15853071889146,
+   "L_pad_mm": 22.0,
+   "frame_in_distal": {
+    "o": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "u": [
+     -0.08636400648620036,
+     0.0,
+     0.9962636490325497
+    ],
+    "h_palmar": [
+     0.9962636490325497,
+     -0.0,
+     0.08636400648620036
+    ],
+    "a": [
+     0.0,
+     1.0,
+     0.0
+    ]
+   },
+   "links": [
+    {
+     "link": "right_finger5_link4",
+     "samples": 2455,
+     "area_mm2": 884.0653714698295,
+     "pad_frac": 0.05702647657841141,
+     "pad_area_mm2": 50.415133199908816
+    },
+    {
+     "link": "right_finger5_tip_link",
+     "samples": 2680,
+     "area_mm2": 965.1461694631404,
+     "pad_frac": 0.27798507462686567,
+     "pad_area_mm2": 268.2962299440446
+    }
+   ],
+   "pad_extent_mm": {
+    "s": [
+     7.222939613956829,
+     27.970710854393214
+    ],
+    "w": [
+     -6.464169267137114,
+     6.978730460420103
+    ],
+    "h": [
+     2.2543144638078942,
+     7.757555345037975
+    ]
+   },
+   "pad_area_mm2": 318.71136314395346
+  },
+  {
+   "finger": "left_finger1_link4",
+   "marker": "left_finger1_tip_link",
+   "distal": "left_finger1_link4",
+   "joint": "left_finger1_joint4",
+   "limits_deg": [
+    -26.92328643798828,
+    89.19806671142578
+   ],
+   "flex_sign": 1.0,
+   "bundle": [
+    "left_finger1_link4",
+    "left_finger1_tip_link"
+   ],
+   "L_bundle_mm": 33.274078278356754,
+   "L_pad_mm": 22.0,
+   "frame_in_distal": {
+    "o": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "u": [
+     -0.07940416269105624,
+     0.0,
+     0.9968425045850183
+    ],
+    "h_palmar": [
+     0.9968425045850183,
+     -0.0,
+     0.07940416269105624
+    ],
+    "a": [
+     0.0,
+     1.0,
+     0.0
+    ]
+   },
+   "links": [
+    {
+     "link": "left_finger1_link4",
+     "samples": 3428,
+     "area_mm2": 1234.2312160767303,
+     "pad_frac": 0.06942823803967328,
+     "pad_area_mm2": 85.69049866577066
+    },
+    {
+     "link": "left_finger1_tip_link",
+     "samples": 2576,
+     "area_mm2": 927.3835409698318,
+     "pad_frac": 0.23563664596273293,
+     "pad_area_mm2": 218.52554711517388
+    }
+   ],
+   "pad_extent_mm": {
+    "s": [
+     11.2842478301307,
+     31.703150460914888
+    ],
+    "w": [
+     -6.26874660661522,
+     6.690740376908149
+    ],
+    "h": [
+     3.8276412852829416,
+     8.414455104620792
+    ]
+   },
+   "pad_area_mm2": 304.2160457809445
+  },
+  {
+   "finger": "left_finger2_link4",
+   "marker": "left_finger2_tip_link",
+   "distal": "left_finger2_link4",
+   "joint": "left_finger2_joint4",
+   "limits_deg": [
+    -26.831613540649414,
+    90.2580337524414
+   ],
+   "flex_sign": 1.0,
+   "bundle": [
+    "left_finger2_link4",
+    "left_finger2_tip_link"
+   ],
+   "L_bundle_mm": 29.196337028776483,
+   "L_pad_mm": 22.0,
+   "frame_in_distal": {
+    "o": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "u": [
+     -0.09648928355232696,
+     0.0,
+     0.9953340234110148
+    ],
+    "h_palmar": [
+     0.9953340234110148,
+     -0.0,
+     0.09648928355232696
+    ],
+    "a": [
+     0.0,
+     1.0,
+     0.0
+    ]
+   },
+   "links": [
+    {
+     "link": "left_finger2_link4",
+     "samples": 2455,
+     "area_mm2": 884.0654047551626,
+     "pad_frac": 0.0615071283095723,
+     "pad_area_mm2": 54.37632428432976
+    },
+    {
+     "link": "left_finger2_tip_link",
+     "samples": 2680,
+     "area_mm2": 965.1461859835651,
+     "pad_frac": 0.2690298507462687,
+     "pad_area_mm2": 259.653134363489
+    }
+   ],
+   "pad_extent_mm": {
+    "s": [
+     7.209018054362025,
+     28.01523411343647
+    ],
+    "w": [
+     -6.428608274948153,
+     6.9818190418331625
+    ],
+    "h": [
+     2.5766146558488994,
+     7.907422200431558
+    ]
+   },
+   "pad_area_mm2": 314.0294586478188
+  },
+  {
+   "finger": "left_finger3_link4",
+   "marker": "left_finger3_tip_link",
+   "distal": "left_finger3_link4",
+   "joint": "left_finger3_joint4",
+   "limits_deg": [
+    -26.83734130859375,
+    90.21219635009766
+   ],
+   "flex_sign": 1.0,
+   "bundle": [
+    "left_finger3_link4",
+    "left_finger3_tip_link"
+   ],
+   "L_bundle_mm": 29.16103787485235,
+   "L_pad_mm": 22.0,
+   "frame_in_distal": {
+    "o": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "u": [
+     -0.07246803247357554,
+     0.0,
+     0.997370735619112
+    ],
+    "h_palmar": [
+     0.997370735619112,
+     -0.0,
+     0.07246803247357554
+    ],
+    "a": [
+     0.0,
+     1.0,
+     0.0
+    ]
+   },
+   "links": [
+    {
+     "link": "left_finger3_link4",
+     "samples": 2455,
+     "area_mm2": 884.0654049313997,
+     "pad_frac": 0.06069246435845214,
+     "pad_area_mm2": 53.65610807933953
+    },
+    {
+     "link": "left_finger3_tip_link",
+     "samples": 2680,
+     "area_mm2": 965.1461859028541,
+     "pad_frac": 0.2884328358208955,
+     "pad_area_mm2": 278.3798513816814
+    }
+   ],
+   "pad_extent_mm": {
+    "s": [
+     7.177533278323516,
+     28.062737231355428
+    ],
+    "w": [
+     -6.403493177778103,
+     7.0132880948464535
+    ],
+    "h": [
+     2.019186432811617,
+     7.528949115601622
+    ]
+   },
+   "pad_area_mm2": 332.0359594610209
+  },
+  {
+   "finger": "left_finger4_link4",
+   "marker": "left_finger4_tip_link",
+   "distal": "left_finger4_link4",
+   "joint": "left_finger4_joint4",
+   "limits_deg": [
+    -27.37019157409668,
+    89.57621765136719
+   ],
+   "flex_sign": 1.0,
+   "bundle": [
+    "left_finger4_link4",
+    "left_finger4_tip_link"
+   ],
+   "L_bundle_mm": 29.19858494742305,
+   "L_pad_mm": 22.0,
+   "frame_in_distal": {
+    "o": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "u": [
+     -0.09381213387675576,
+     0.0,
+     0.9955899173542737
+    ],
+    "h_palmar": [
+     0.9955899173542737,
+     -0.0,
+     0.09381213387675576
+    ],
+    "a": [
+     0.0,
+     1.0,
+     0.0
+    ]
+   },
+   "links": [
+    {
+     "link": "left_finger4_link4",
+     "samples": 2455,
+     "area_mm2": 884.0654049523628,
+     "pad_frac": 0.05702647657841141,
+     "pad_area_mm2": 50.41513510929971
+    },
+    {
+     "link": "left_finger4_tip_link",
+     "samples": 2680,
+     "area_mm2": 965.1461850568338,
+     "pad_frac": 0.2600746268656716,
+     "pad_area_mm2": 251.0100339494825
+    }
+   ],
+   "pad_extent_mm": {
+    "s": [
+     7.2359377737732755,
+     27.94961364890976
+    ],
+    "w": [
+     -6.347558451812645,
+     6.965890148816141
+    ],
+    "h": [
+     2.4555299214621056,
+     7.873260668946943
+    ]
+   },
+   "pad_area_mm2": 301.4251690587822
+  },
+  {
+   "finger": "left_finger5_link4",
+   "marker": "left_finger5_tip_link",
+   "distal": "left_finger5_link4",
+   "joint": "left_finger5_joint4",
+   "limits_deg": [
+    -26.831613540649414,
+    90.1549072265625
+   ],
+   "flex_sign": 1.0,
+   "bundle": [
+    "left_finger5_link4",
+    "left_finger5_tip_link"
+   ],
+   "L_bundle_mm": 29.17336143955145,
+   "L_pad_mm": 22.0,
+   "frame_in_distal": {
+    "o": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "u": [
+     -0.09036769516492417,
+     0.0,
+     0.9959084695244735
+    ],
+    "h_palmar": [
+     0.9959084695244735,
+     -0.0,
+     0.09036769516492417
+    ],
+    "a": [
+     0.0,
+     1.0,
+     0.0
+    ]
+   },
+   "links": [
+    {
+     "link": "left_finger5_link4",
+     "samples": 2455,
+     "area_mm2": 884.0654049523628,
+     "pad_frac": 0.05865580448065173,
+     "pad_area_mm2": 51.85556754099399
+    },
+    {
+     "link": "left_finger5_tip_link",
+     "samples": 2680,
+     "area_mm2": 965.1461856656849,
+     "pad_frac": 0.2682835820895522,
+     "pad_area_mm2": 258.932875930458
+    }
+   ],
+   "pad_extent_mm": {
+    "s": [
+     7.1752844829498565,
+     28.0491736788477
+    ],
+    "w": [
+     -6.493492749289108,
+     6.9774012892301105
+    ],
+    "h": [
+     2.4183136660033338,
+     7.819921327534004
+    ]
+   },
+   "pad_area_mm2": 310.788443471452
+  }
+ ],
+ "palms": [
+  "right_palm_link",
+  "left_palm_link"
+ ],
+ "palm_pads": {
+  "robot_type": "floating_wuji_bimanual",
+  "params": {
+   "spacing": 0.0012,
+   "max_angle": 60.0,
+   "band_factor": 1.5,
+   "task": "Dexverse-PickCube-v0"
+  },
+  "finger_canon": {
+   "right_finger1_link4": "thumb",
+   "right_finger2_link4": "index",
+   "right_finger3_link4": "middle",
+   "right_finger4_link4": "ring",
+   "right_finger5_link4": "little",
+   "left_finger1_link4": "thumb",
+   "left_finger2_link4": "index",
+   "left_finger3_link4": "middle",
+   "left_finger4_link4": "ring",
+   "left_finger5_link4": "little"
+  },
+  "finger_hand": {
+   "right_finger1_link4": 0,
+   "right_finger2_link4": 0,
+   "right_finger3_link4": 0,
+   "right_finger4_link4": 0,
+   "right_finger5_link4": 0,
+   "left_finger1_link4": 1,
+   "left_finger2_link4": 1,
+   "left_finger3_link4": 1,
+   "left_finger4_link4": 1,
+   "left_finger5_link4": 1
+  },
+  "hand_names": [
+   "right",
+   "left"
+  ],
+  "palms": [
+   {
+    "palm": "right_palm_link",
+    "hand": "right",
+    "bundle": [
+     "right_palm_link"
+    ],
+    "frame_in_palm": {
+     "centre_palmar_face": [
+      0.007327381218800779,
+      -0.0007733056463762948,
+      0.04698531788610815
+     ],
+     "u_distal": [
+      -0.1683114724521182,
+      -0.0698635111742465,
+      0.9832549710260335
+     ],
+     "h_palmar": [
+      0.9857217075445807,
+      -0.006975251279357542,
+      0.16823810848017182
+     ],
+     "t_thumb_side": [
+      -0.004895254477154562,
+      0.9975321727523357,
+      0.0700399943432903
+     ],
+     "handedness_det_u_h_t": 1.0
+    },
+    "finger_base_t_u_mm_from_face_centre": {
+     "thumb": [
+      20.034957725705542,
+      -19.468925139860332
+     ],
+     "index": [
+      33.34438236756001,
+      44.29027781232273
+     ],
+     "middle": [
+      11.282360143741434,
+      44.264575986363674
+     ],
+     "ring": [
+      -10.210833463284814,
+      40.24401559915631
+     ],
+     "little": [
+      -31.18701296886249,
+      30.775517793517935
+     ]
+    },
+    "base_order_ok": true,
+    "thumb_on_thumb_side": true,
+    "t_flipped_toward_thumb": false,
+    "palmar_face_lateral_extent_mm": [
+     -38.589496870785446,
+     40.95393615802666
+    ],
+    "zone_edges_lateral_mm_from_face_centre": [
+     -12.07501919451474,
+     14.43945848175596
+    ],
+    "zone_width_mm": 26.5144776762707,
+    "palm_band_rule": "palmar-facing AND distal coordinate within [median non-thumb base - 1.5 x lateral base span, max base + 10 mm]",
+    "palm_band_u_mm_from_face_centre": [
+     -54.54279721187375,
+     54.29027781232272
+    ],
+    "lateral_rule": "non-thumb finger-base span +- half the mean base spacing (RH5DG2 palm sensor spans the index..little bases: 61 mm vs 60 mm)",
+    "finger_palmar_dir_max_dev_deg": 11.42895929071353,
+    "reference_pose": "all joints 0 clipped to limits",
+    "links": [
+     {
+      "link": "right_palm_link",
+      "samples": 11991,
+      "palmar_face_frac": 0.40188474689350345,
+      "zone_samples": {
+       "palm_l": 1355,
+       "palm_c": 1928,
+       "palm_r": 1536
+      }
+     }
+    ],
+    "palmar_face_distal_extent_mm": [
+     -54.5172951925158,
+     48.47949352982246
+    ]
+   },
+   {
+    "palm": "left_palm_link",
+    "hand": "left",
+    "bundle": [
+     "left_palm_link"
+    ],
+    "frame_in_palm": {
+     "centre_palmar_face": [
+      0.007299841713270887,
+      0.0013775159022140757,
+      0.0472917197157027
+     ],
+     "u_distal": [
+      -0.17190258078814633,
+      0.06484252196403371,
+      0.9829775938767469
+     ],
+     "h_palmar": [
+      0.9851052484000538,
+      0.0071199348533503735,
+      0.17180499440456407
+     ],
+     "t_thumb_side": [
+      -0.004141532692503098,
+      -0.9978701087180775,
+      0.06510064388259973
+     ],
+     "handedness_det_u_h_t": -0.9999999999999998
+    },
+    "finger_base_t_u_mm_from_face_centre": {
+     "thumb": [
+      20.715241229071996,
+      -19.70575590239451
+     ],
+     "index": [
+      33.70556776931333,
+      44.13171141229434
+     ],
+     "middle": [
+      11.644386175631103,
+      44.012895588798074
+     ],
+     "ring": [
+      -9.828591112989006,
+      39.877404745263895
+     ],
+     "little": [
+      -30.757470651800407,
+      30.29041495333731
+     ]
+    },
+    "base_order_ok": true,
+    "thumb_on_thumb_side": true,
+    "t_flipped_toward_thumb": false,
+    "palmar_face_lateral_extent_mm": [
+     -38.55211329048444,
+     41.63008483321707
+    ],
+    "zone_edges_lateral_mm_from_face_centre": [
+     -11.824713915917272,
+     14.902685458649897
+    ],
+    "zone_width_mm": 26.727399374567167,
+    "palm_band_rule": "palmar-facing AND distal coordinate within [median non-thumb base - 1.5 x lateral base span, max base + 10 mm]",
+    "palm_band_u_mm_from_face_centre": [
+     -54.74940746463964,
+     54.13171141229434
+    ],
+    "lateral_rule": "non-thumb finger-base span +- half the mean base spacing (RH5DG2 palm sensor spans the index..little bases: 61 mm vs 60 mm)",
+    "finger_palmar_dir_max_dev_deg": 11.32325427041839,
+    "reference_pose": "all joints 0 clipped to limits",
+    "links": [
+     {
+      "link": "left_palm_link",
+      "samples": 11992,
+      "palmar_face_frac": 0.3949299533022015,
+      "zone_samples": {
+       "palm_l": 1314,
+       "palm_c": 1883,
+       "palm_r": 1539
+      }
+     }
+    ],
+    "palmar_face_distal_extent_mm": [
+     -54.736980036650756,
+     48.319765383032994
+    ]
+   }
+  ],
+  "touch": {
+   "pad_order": [
+    "little",
+    "ring",
+    "middle",
+    "index",
+    "thumb",
+    "palm_r",
+    "palm_c",
+    "palm_l"
+   ],
+   "fingers": [
+    {
+     "finger": "right_finger1_link4",
+     "canon": "thumb",
+     "hand": "right",
+     "fty_rule": "thumb: toward the palm distal axis u",
+     "alignment_dot": -0.8114027880552601,
+     "weak_alignment": false
+    },
+    {
+     "finger": "right_finger2_link4",
+     "canon": "index",
+     "hand": "right",
+     "fty_rule": "toward the palm thumb-side axis t",
+     "alignment_dot": 0.9573495618484165,
+     "weak_alignment": false
+    },
+    {
+     "finger": "right_finger3_link4",
+     "canon": "middle",
+     "hand": "right",
+     "fty_rule": "toward the palm thumb-side axis t",
+     "alignment_dot": 0.9975317323088158,
+     "weak_alignment": false
+    },
+    {
+     "finger": "right_finger4_link4",
+     "canon": "ring",
+     "hand": "right",
+     "fty_rule": "toward the palm thumb-side axis t",
+     "alignment_dot": 0.9985832480278036,
+     "weak_alignment": false
+    },
+    {
+     "finger": "right_finger5_link4",
+     "canon": "little",
+     "hand": "right",
+     "fty_rule": "toward the palm thumb-side axis t",
+     "alignment_dot": 0.9784195935896433,
+     "weak_alignment": false
+    },
+    {
+     "finger": "left_finger1_link4",
+     "canon": "thumb",
+     "hand": "left",
+     "fty_rule": "thumb: toward the palm distal axis u",
+     "alignment_dot": 0.8124338001679056,
+     "weak_alignment": false
+    },
+    {
+     "finger": "left_finger2_link4",
+     "canon": "index",
+     "hand": "left",
+     "fty_rule": "toward the palm thumb-side axis t",
+     "alignment_dot": -0.9583894440034796,
+     "weak_alignment": false
+    },
+    {
+     "finger": "left_finger3_link4",
+     "canon": "middle",
+     "hand": "left",
+     "fty_rule": "toward the palm thumb-side axis t",
+     "alignment_dot": -0.9978695735289781,
+     "weak_alignment": false
+    },
+    {
+     "finger": "left_finger4_link4",
+     "canon": "ring",
+     "hand": "left",
+     "fty_rule": "toward the palm thumb-side axis t",
+     "alignment_dot": -0.9984341090006467,
+     "weak_alignment": false
+    },
+    {
+     "finger": "left_finger5_link4",
+     "canon": "little",
+     "hand": "left",
+     "fty_rule": "toward the palm thumb-side axis t",
+     "alignment_dot": -0.9776760920536371,
+     "weak_alignment": false
+    }
+   ],
+   "slots_valid": {
+    "right": {
+     "little": 1,
+     "ring": 1,
+     "middle": 1,
+     "index": 1,
+     "thumb": 1,
+     "palm_r": 1,
+     "palm_c": 1,
+     "palm_l": 1
+    },
+    "left": {
+     "little": 1,
+     "ring": 1,
+     "middle": 1,
+     "index": 1,
+     "thumb": 1,
+     "palm_r": 1,
+     "palm_c": 1,
+     "palm_l": 1
+    }
+   }
+  },
+  "rh5dg2_reference": {
+   "source": "ro1 robosynapse rh5dg2_right.urdf (right_palm_force_sensor link + STL) and robots/ur7/profile.py touch_layout (read-only)",
+   "palm_sensor_mesh_extent_mm": [
+    61.1,
+    28.3,
+    11.8
+   ],
+   "palm_sensor_origin_in_palm_m": [
+    0.021234,
+    0.0001482,
+    0.1121
+   ],
+   "finger_mcp_origins_in_palm_m": {
+    "index": [
+     0.0111,
+     0.033249,
+     0.15225
+    ],
+    "middle": [
+     0.0155,
+     0.0075087,
+     0.14468
+    ],
+    "ring": [
+     0.0111,
+     -0.0056513,
+     0.15225
+    ],
+    "little": [
+     0.0111,
+     -0.027151,
+     0.15225
+    ]
+   },
+   "palm_link_mesh_extent_mm": [
+    51.0,
+    95.4,
+    126.5
+   ],
+   "touch_layout_facing_view_x": {
+    "thumb": 0.22,
+    "palm_l": 0.44,
+    "palm_c": 0.54,
+    "palm_r": 0.64,
+    "little": 0.7
+   },
+   "note": "one physical palm sensor read as 3 zones; zone boundaries unpublished; raw direction conventions (robosynapse profile.py touch_layout, back-computed from a DISPLAY calibration, to be re-verified on the hardware): fingertip pads 0 deg = distal, counter-clockwise toward the thumb side; palm_l / palm_c 0 deg = thumb side, clockwise toward distal; palm_r = the same with only the distal-proximal axis mirrored (0 deg = thumb side, 90 deg = proximal), not a 180 deg rotation"
+  }
+ }
+}

@@ -137,7 +137,8 @@ scripts/teleop_tools/run_teleop.sh record_demos --task Dexverse-PickCube-v0 --ro
 | 키 | 내용 |
 |---|---|
 | `observation.images.third_person` | 월드 고정 3인칭 카메라, video 3×480×640 |
-| `observation.images.eye_in_hand` | 손목 카메라 (양손 태스크는 오른손), video 3×480×640 |
+| `observation.images.eye_in_hand` | 손목 카메라 (양손 로봇은 오른손), video 3×480×640 |
+| `observation.images.eye_in_hand_left` | 양손 로봇만: 왼손 손목 카메라, video 3×480×640. 이 키 없이 녹화된 데이터셋에 이어 쓰면 왼손 카메라는 빠진다(경고, `isaac_tasks.json`의 `eye_in_hand_left`) |
 | `observation.state` | 전체 관절 위치. **action과 같은 순서**: action이 구동하는 관절을 action 열 순서로 먼저, 그 뒤에 나머지(mimic 등) 관절. `state[:len(action)]`이 action과 이름별로 맞는다 |
 | `observation.state.joint_vel` | 관절 속도 (rad/s, m/s), `observation.state`와 같은 순서 |
 | `observation.state.ee` | 실측 손목 자세 `[x,y,z,rx,ry,rz]`(rotvec) + 손가락 관절 위치 (`action.ee_abs`와 같은 배치) |
