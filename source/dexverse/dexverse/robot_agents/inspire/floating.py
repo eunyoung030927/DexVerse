@@ -13,7 +13,8 @@ home orientation is baked into the converted USDs
 The Inspire hand is underactuated: 6 driver joints + 6 mimic joints (kept as
 coupled joints in the USD). The 6 mimics get a zero-gain actuator group (covered
 so every DOF is assigned, but left to the PhysX mimic coupling), and only the 6
-drivers are exposed to the action layout.
+drivers are exposed to the action layout. The coupling is made rigid at spawn
+(see :func:`_spawn_inspire_usd`), like the real hand's linkage.
 
 Configurations:
 
@@ -27,6 +28,10 @@ from __future__ import annotations
 from pathlib import Path
 
 import isaaclab.sim as sim_utils
+from isaaclab.sim.spawners.from_files import spawn_from_usd
+from isaaclab.sim.utils.queries import find_matching_prim_paths
+from isaaclab.sim.utils.stage import get_current_stage
+from pxr import Usd
 from isaaclab.actuators.actuator_cfg import ImplicitActuatorCfg
 from isaaclab.assets.articulation import ArticulationCfg
 from isaaclab.envs.mdp.actions.actions_cfg import (
@@ -98,6 +103,38 @@ def _finger_mimic_names(prefix: str = "") -> list[str]:
     return [f"{prefix}{n}" for n in _FINGER_MIMICS]
 
 
+# PhysX mimic offset of the four finger intermediates, in degrees (USD angular unit). The converted USDs store the
+# URDF value -0.04545 rad as -0.04545 deg; the PhysX sign convention also flips it, so the coupling that matches
+# _MIMIC_INIT (q_mimic = 1.064 * q_driver - 0.04545 rad) needs +2.604 deg (measured).
+_FINGER_MIMIC_OFFSET_DEG = 2.604095
+
+
+def _make_mimic_joints_rigid(prim_path: str) -> None:
+    """Rigid mimic coupling for every Inspire hand spawned at ``prim_path`` (regex allowed).
+
+    The converted USDs author the PhysX mimic joints as soft springs (naturalFrequency 25, dampingRatio 0.005): a
+    finger blocked by an object bent its distal phalanx back by up to ~0.5 rad. naturalFrequency 0 makes the
+    coupling a hard constraint, and the finger intermediates get the offset in the right unit and sign.
+    """
+    stage = get_current_stage()
+    for root in find_matching_prim_paths(prim_path):
+        for prim in Usd.PrimRange(stage.GetPrimAtPath(root)):
+            natural_frequency = prim.GetAttribute("physxMimicJoint:rotZ:naturalFrequency")
+            if not natural_frequency.IsValid():
+                continue
+            natural_frequency.Set(0.0)
+            name = prim.GetName()
+            if name.endswith("intermediate_joint") and "thumb" not in name:
+                prim.GetAttribute("physxMimicJoint:rotZ:offset").Set(_FINGER_MIMIC_OFFSET_DEG)
+
+
+def _spawn_inspire_usd(prim_path: str, cfg: sim_utils.UsdFileCfg, *args, **kwargs) -> Usd.Prim:
+    """``spawn_from_usd`` followed by :func:`_make_mimic_joints_rigid`."""
+    prim = spawn_from_usd(prim_path, cfg, *args, **kwargs)
+    _make_mimic_joints_rigid(prim_path)
+    return prim
+
+
 def _finger_home(prefix: str = "") -> dict[str, float]:
     """Home joint positions for all 12 finger DOFs: drivers at 0, mimics at the
     constraint-satisfying value for driver=0."""
@@ -125,6 +162,7 @@ _SINGLE_HOME_JOINTS = {
 
 FLOATING_INSPIRE_RIGHT_CFG = ArticulationCfg(
     spawn=sim_utils.UsdFileCfg(
+        func=_spawn_inspire_usd,
         usd_path=str((_ASSET_DIR / "floating_inspire_hand_right" / "floating_inspire_hand_right.usd").resolve()),
         activate_contact_sensors=True,
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
@@ -182,6 +220,7 @@ FLOATING_INSPIRE_RIGHT_CFG = ArticulationCfg(
 
 FLOATING_INSPIRE_LEFT_CFG = ArticulationCfg(
     spawn=sim_utils.UsdFileCfg(
+        func=_spawn_inspire_usd,
         usd_path=str((_ASSET_DIR / "floating_inspire_hand_left" / "floating_inspire_hand_left.usd").resolve()),
         activate_contact_sensors=True,
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
@@ -324,6 +363,7 @@ for _side in ("right", "left"):
 
 FLOATING_INSPIRE_BIMANUAL_CFG = ArticulationCfg(
     spawn=sim_utils.UsdFileCfg(
+        func=_spawn_inspire_usd,
         usd_path=str((_ASSET_DIR / "floating_inspire_hand_bimanual" / "floating_inspire_hand_bimanual.usd").resolve()),
         activate_contact_sensors=True,
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
@@ -364,14 +404,16 @@ FLOATING_INSPIRE_BIMANUAL_CFG = ArticulationCfg(
             velocity_limit_sim=6.0,
             friction=0.01,
         ),
+        # Zero-gain like the single hands: a drive on the mimics pulls them back to their default target and
+        # fights the coupling (the fingers stopped ~0.9 rad short of the coupled pose).
         "hand_mimics": ImplicitActuatorCfg(
             joint_names_expr=_finger_mimic_names("right_") + _finger_mimic_names("left_"),
             effort_limit_sim=10.0,
-            stiffness=20.0,
-            damping=0.5,
+            stiffness=0.0,
+            damping=0.0,
             armature=_FINGER_ARMATURE,
             velocity_limit_sim=6.0,
-            friction=0.01,
+            friction=0.0,
         ),
     },
     soft_joint_pos_limit_factor=1.0,
