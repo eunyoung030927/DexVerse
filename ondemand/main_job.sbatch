@@ -50,14 +50,14 @@ echo "=== dvr-main start: $(date) on $(hostname) ==="
 
 REPO_URL="${REPO_URL:-https://github.com/eunyoung030927/DexVerse.git}"
 export REPO_BRANCH="${REPO_BRANCH:-retarget/shadow-cross-hand}"
-# Retry round (2026-10-18): every single-hand (task, hand) item that has not succeeded yet. Recorded items are
-# skipped; failed ones get attempts a3..a5 (MAX_ATTEMPTS 3 -> 6: more samples and iterations, new seeds; the attempts
-# already made are not re-run); stage2_failed and never-run items (leap, GraspKettle) run from the start.
-# Fill order: the fewest items left first (HammerStrike 51, PourMug 51, Pan 73, Bleach 187, Kettle 250 on 2026-10-18).
-# The bimanual tasks come later in their own job:
+# Fill round (2026-10-20): the 4 single-hand tasks whose ep0 succeeded, every hand except leap, up to 50 episodes.
+# Recorded items are skipped; failed ones get the attempts they have not had yet up to MAX_ATTEMPTS (new seeds, more
+# samples and iterations; attempts already made are not re-run). Left on HF 2026-10-20: HammerStrike 0, PourMug 0,
+# Pan 15 (allegro 3, sharpa 4, wuji 8), Bleach 106 (allegro 31, inspire 27, sharpa 31, wuji 17).
+# leap (needs the merged upstream code), GraspKettle and the bimanual tasks come later in their own jobs:
 #   TASKS="Dexverse-BimanualLiftTray-v1 Dexverse-BimanualLiftCarton-v1 Dexverse-SlideUtilityKnife-v1 Dexverse-OpenFlatFolder-v1"
-export TASKS="${TASKS:-Dexverse-FunctionalHammerStrike-v1 Dexverse-FunctionalPourMug-v1 Dexverse-GraspPan-v1 Dexverse-GraspBleach-v1 Dexverse-GraspKettle-v1}"
-export HANDS="${HANDS:-allegro inspire leap sharpa wuji}"   # target hand families; unsupported ones are skipped with a log line
+export TASKS="${TASKS:-Dexverse-GraspPan-v1 Dexverse-GraspBleach-v1 Dexverse-FunctionalHammerStrike-v1 Dexverse-FunctionalPourMug-v1}"
+export HANDS="${HANDS:-allegro inspire sharpa wuji}"   # target hand families; unsupported ones are skipped with a log line
 export MAX_ATTEMPTS="${MAX_ATTEMPTS:-6}"
 export EPISODES="${EPISODES:-50}"
 export PER_GPU="${PER_GPU:-10}" MIN_FREE_GB="${MIN_FREE_GB:-10}" SESSION_GB="${SESSION_GB:-6}"
