@@ -65,3 +65,23 @@ def _flatten_group(name: str, value: Any, num_envs: int) -> torch.Tensor:
     if tensor.ndim >= 2 and tensor.shape[0] == num_envs:
         tensor = tensor[0]
     return tensor.reshape(-1)
+
+
+def select_state_index(layout: list[dict[str, Any]], groups: tuple[str, ...]) -> list[int]:
+    """Indices into the full state vector that keep ``groups`` (in layout order).
+
+    ``layout`` is the dataset meta's ``state_layout`` (``group``, ``dim``, optional ``history``).
+    A group the env stacks over ``history`` steps (oldest first) keeps only its latest step.
+    Empty ``groups`` keeps everything.
+    """
+    unknown = [g for g in groups if g not in {entry["group"] for entry in layout}]
+    if unknown:
+        raise KeyError(f"State groups {unknown} are not in the dataset layout {[e['group'] for e in layout]}.")
+    index, start = [], 0
+    for entry in layout:
+        dim, history = int(entry["dim"]), int(entry.get("history") or 1)
+        if not groups or entry["group"] in groups:
+            step = dim // history
+            index.extend(range(start + dim - step, start + dim) if history > 1 and groups else range(start, start + dim))
+        start += dim
+    return index

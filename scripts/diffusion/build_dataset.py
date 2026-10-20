@@ -13,6 +13,10 @@ Sim launch -- using the same group order the eval runner uses at runtime
 (``dexverse.IL.diffusion.obs_state``), and copies each episode's recorded
 ``initial_state`` across so evaluation can pin episode starts.
 
+When the replay captured cameras (``--obs-groups rgb``), every ``rgb`` term is
+stored as ``obs/images/<term>`` resized to ``--image_size`` with the same
+function the eval runner uses (``dexverse.IL.diffusion.obs_images``).
+
 Usage::
 
     python scripts/diffusion/build_dataset.py \
@@ -31,26 +35,41 @@ from typing import Any
 import h5py
 import numpy as np
 
+from dexverse.IL.diffusion.obs_images import IMAGE_GROUP, resize_images
 from dexverse.IL.diffusion.obs_state import OPTIONAL_GROUPS, REQUIRED_GROUPS
 
 
-def build_dataset(in_file: Path, out_file: Path, *, task: str | None, pkl_file: Path | None) -> dict[str, Any]:
+PRESET_HISTORY = {"rgb": 3, "rgb_depth": 3, "pointcloud": 3, "3view_rgb": 3, "3view_rgb_depth": 3, "3view_pointcloud": 3, "state": 0}
+"""``history_length`` of each observation preset (``baseline_v1/dexverse_base_env_cfg._OBSERVATION_PRESETS``)."""
+HISTORY_GROUPS = ("policy", "proprio")
+"""Groups the preset's ``history_length`` applies to."""
+
+
+def build_dataset(
+    in_file: Path, out_file: Path, *, task: str | None, pkl_file: Path | None, image_size: int = 128
+) -> dict[str, Any]:
     out_file.parent.mkdir(parents=True, exist_ok=True)
     with h5py.File(in_file, "r") as src, h5py.File(out_file, "w") as dst:
         if "data" not in src:
             raise ValueError(f"'{in_file}' has no top-level 'data' group; not a replay HDF5.")
         task_name = task or str(src.attrs.get("task", ""))
         term_order = _read_term_order(src, in_file)
+        # Groups the observation preset stacks over time (oldest step first), e.g. rgb: policy/proprio x 3.
+        history = PRESET_HISTORY.get(str(src.attrs.get("observation_preset", "")), 0)
         initial_states = _read_initial_states(pkl_file or _source_pickle(src))
 
         data = dst.create_group("data")
         layout: list[dict[str, Any]] = []
         dims: set[tuple[int, int]] = set()
+        cameras: list[str] = []
         for name in sorted(src["data"]):
             episode = src["data"][name]
             if "obs" not in episode or "actions" not in episode:
                 continue
             state, layout = _flatten_state(episode["obs"], term_order)
+            for entry in layout:
+                if history > 1 and entry["group"] in HISTORY_GROUPS:
+                    entry["history"] = history
             actions = np.asarray(episode["actions"][...], dtype=np.float32)
             length = min(state.shape[0], actions.shape[0])
             if length == 0:
@@ -63,6 +82,16 @@ def build_dataset(in_file: Path, out_file: Path, *, task: str | None, pkl_file: 
             demo = data.create_group(name)
             demo.create_dataset("actions", data=actions[:length], compression="gzip")
             demo.create_dataset("obs/state", data=state[:length], compression="gzip")
+            if IMAGE_GROUP in episode["obs"]:
+                cameras = term_order.get(IMAGE_GROUP) or sorted(episode["obs"][IMAGE_GROUP])
+                for camera in cameras:
+                    frames = episode["obs"][IMAGE_GROUP][camera]
+                    images = np.concatenate(
+                        [resize_images(frames[i : i + 256], image_size).numpy() for i in range(0, length, 256)]
+                    )[:length]
+                    demo.create_dataset(
+                        f"obs/images/{camera}", data=images, chunks=(1, *images.shape[1:]), compression="lzf"
+                    )
             if name in initial_states:
                 _write_tree(demo.create_group("initial_state"), initial_states[name])
 
@@ -77,6 +106,9 @@ def build_dataset(in_file: Path, out_file: Path, *, task: str | None, pkl_file: 
             "state_dim": state_dim,
             "action_dim": action_dim,
             "state_layout": layout,
+            "term_order": term_order,
+            "image_keys": cameras,
+            "image_size": image_size if cameras else 0,
         }
         dst.attrs["meta"] = json.dumps(summary)
     return {**summary, "out_file": str(out_file)}
@@ -168,8 +200,10 @@ def main() -> None:
         default=None,
         help="Demonstration pickle to copy initial_state from (default: the input's 'source_pickles' attribute).",
     )
+    parser.add_argument("--image_size", type=int, default=128, help="Square size the rgb cameras are resized to.")
     args = parser.parse_args()
-    print(json.dumps(build_dataset(args.in_file, args.out_file, task=args.task, pkl_file=args.pkl_file), indent=2))
+    summary = build_dataset(args.in_file, args.out_file, task=args.task, pkl_file=args.pkl_file, image_size=args.image_size)
+    print(json.dumps(summary, indent=2))
 
 
 if __name__ == "__main__":

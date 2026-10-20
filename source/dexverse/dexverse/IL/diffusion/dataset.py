@@ -7,8 +7,9 @@
 
 Input files are the ones written by ``scripts/diffusion/build_dataset.py``::
 
-    data/<demo>/obs/state   (T, state_dim)
-    data/<demo>/actions     (T, action_dim)
+    data/<demo>/obs/state            (T, state_dim)
+    data/<demo>/obs/images/<camera>  (T, 3, H, W) uint8, optional (image policy)
+    data/<demo>/actions              (T, action_dim)
 
 Each window is one timestep ``t0``: the ``obs_horizon`` states ending at ``t0``
 (left-padded with the first state near the episode start) and the
@@ -18,7 +19,7 @@ near the end, with a mask so padding does not contribute to the loss).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import h5py
@@ -34,6 +35,8 @@ class Episode:
     name: str
     state: torch.Tensor
     action: torch.Tensor
+    images: dict[str, torch.Tensor] = field(default_factory=dict)
+    """Camera term name -> ``(T, 3, H, W)`` uint8 (kept uint8 in memory; the model scales to [0, 1])."""
 
 
 class DiffusionDataset(Dataset):
@@ -45,6 +48,10 @@ class DiffusionDataset(Dataset):
 
         self.cfg = cfg
         episodes = _load_episodes(cfg.dataset_files)
+        if cfg.state_index:
+            index = torch.tensor(cfg.state_index, dtype=torch.long)
+            for ep in episodes:
+                ep.state = ep.state[:, index]
         self.episodes = [episodes[i] for i in _split_indices(len(episodes), cfg)]
         self.windows = [(idx, t0) for idx, ep in enumerate(self.episodes) for t0 in range(ep.action.shape[0])]
         if not self.windows:
@@ -56,6 +63,8 @@ class DiffusionDataset(Dataset):
         }
         self.state_dim = int(self.episodes[0].state.shape[-1])
         self.action_dim = int(self.episodes[0].action.shape[-1])
+        self.image_keys: tuple[str, ...] = tuple(self.episodes[0].images)
+        self.image_size = int(next(iter(self.episodes[0].images.values())).shape[-1]) if self.image_keys else 0
 
     def __len__(self) -> int:
         return len(self.windows)
@@ -69,11 +78,14 @@ class DiffusionDataset(Dataset):
         action_rows = [min(length - 1, t0 + step) for step in range(self.cfg.action_horizon)]
         mask = [float(t0 + step < length) for step in range(self.cfg.action_horizon)]
 
-        return {
+        item = {
             "obs": episode.state[obs_rows],
             "action": episode.action[action_rows],
             "action_mask": torch.tensor(mask, dtype=torch.float32),
         }
+        if episode.images:
+            item["images"] = {key: frames[obs_rows] for key, frames in episode.images.items()}
+        return item
 
 
 def _load_episodes(dataset_files: tuple[str, ...]) -> list[Episode]:
@@ -87,8 +99,14 @@ def _load_episodes(dataset_files: tuple[str, ...]) -> list[Episode]:
                 state = torch.as_tensor(demo["obs/state"][...], dtype=torch.float32)
                 action = torch.as_tensor(demo["actions"][...], dtype=torch.float32)
                 length = min(state.shape[0], action.shape[0])
+                images = {}
+                if "obs/images" in demo:
+                    # Sorted by name, so encoder order never depends on HDF5 iteration order.
+                    images = {key: torch.from_numpy(demo["obs/images"][key][...]) for key in sorted(demo["obs/images"])}
+                    length = min([length] + [frames.shape[0] for frames in images.values()])
+                    images = {key: frames[:length] for key, frames in images.items()}
                 if length > 0:
-                    episodes.append(Episode(name, state[:length], action[:length]))
+                    episodes.append(Episode(name, state[:length], action[:length], images))
     if not episodes:
         raise ValueError(f"No usable episodes in {list(dataset_files)}.")
 
@@ -96,6 +114,9 @@ def _load_episodes(dataset_files: tuple[str, ...]) -> list[Episode]:
     action_dims = {ep.action.shape[-1] for ep in episodes}
     if len(state_dims) > 1 or len(action_dims) > 1:
         raise ValueError(f"Inconsistent dims across episodes: state {state_dims}, action {action_dims}.")
+    cameras = {(tuple(ep.images), tuple({tuple(f.shape[1:]) for f in ep.images.values()})) for ep in episodes}
+    if len(cameras) > 1:
+        raise ValueError(f"Inconsistent cameras / image shapes across episodes: {cameras}.")
     return episodes
 
 

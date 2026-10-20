@@ -144,6 +144,16 @@ parser.add_argument(
     ),
 )
 parser.add_argument(
+    "--resync-every",
+    type=int,
+    default=0,
+    help=(
+        "With --no-set-state: every K steps first restore the recorded state of that step, then step the recorded "
+        "action (K=1: one-step consistency, state t + action t vs recorded state t+1; K=15: one SPIDER commit). "
+        "0 = pure open-loop action replay."
+    ),
+)
+parser.add_argument(
     "--strip-cameras",
     action=argparse.BooleanOptionalAction,
     default=True,
@@ -1028,7 +1038,7 @@ def _replay_one_episode(
         print(f"  [skip] episode {ep_index} has no actions.")
         return ep_success
 
-    states_seq = episode.get("states") if args_cli.set_state else None
+    states_seq = episode.get("states") if (args_cli.set_state or args_cli.resync_every > 0) else None
     if args_cli.set_state and (states_seq is None or len(states_seq) != T + 1):
         raise ValueError(
             f"--set-state requires episode['states'] of length T+1={T+1} for episode {ep_index} in {label}."
@@ -1123,6 +1133,14 @@ def _replay_one_episode(
                 _set_last_action(env, action_batched)
                 _get_runtime_obs(env, update_history=True)
             else:
+                if args_cli.resync_every > 0 and step_idx % args_cli.resync_every == 0:
+                    sync_state = _build_replay_state(
+                        _tensorize_state(states_seq[step_idx], env.device),
+                        env.scene.get_state(is_relative=True),
+                        extra_skip_entity_names=skip,
+                    )
+                    env.scene.reset_to(sync_state, env_ids_one, is_relative=True)
+                    _refresh_after_set_state(env)
                 env.step(action_batched)
 
             post_flat = capture.capture(0)

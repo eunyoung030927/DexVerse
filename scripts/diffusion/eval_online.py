@@ -27,7 +27,8 @@ parser.add_argument("--ckpt", required=True, help="Checkpoint from scripts/diffu
 parser.add_argument("--output_dir", default="runs/diffusion_eval")
 parser.add_argument("--num_episodes", type=int, default=50)
 parser.add_argument("--max_steps", type=int, default=1000)
-parser.add_argument("--sample_steps", type=int, default=20, help="DDPM denoising steps per replan.")
+parser.add_argument("--sample_steps", type=int, default=20, help="Denoising steps per replan.")
+parser.add_argument("--sampler", choices=("ddpm", "ddim"), default="ddpm", help="Inference denoising scheduler.")
 parser.add_argument("--replan_interval", type=int, default=4, help="Env steps between replans.")
 parser.add_argument("--observation_preset", default=None,
                     help="Observation preset to narrow the live env to. Must match the --obs-groups "
@@ -35,7 +36,8 @@ parser.add_argument("--observation_preset", default=None,
 parser.add_argument("--reset_from_dataset", default=None,
                     help="Training HDF5 to pin each episode's start to a recorded initial_state, "
                          "instead of the env's reset randomization. Diagnostic.")
-parser.add_argument("--video", action="store_true", help="Record one MP4 per episode under <output_dir>/videos/.")
+parser.add_argument("--video", action=argparse.BooleanOptionalAction, default=True,
+                    help="Record one MP4 per episode under <output_dir>/videos/ (default on; --no-video to disable).")
 parser.add_argument("--video_length", type=int, default=None, help="Frames per recorded episode (default: --max_steps).")
 parser.add_argument("--json_path", default=None, help="Task-specific object/scene JSON.")
 parser.add_argument("--policy_device", default=None,
