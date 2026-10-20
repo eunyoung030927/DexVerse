@@ -50,14 +50,15 @@ echo "=== dvr-main start: $(date) on $(hostname) ==="
 
 REPO_URL="${REPO_URL:-https://github.com/eunyoung030927/DexVerse.git}"
 export REPO_BRANCH="${REPO_BRANCH:-retarget/shadow-cross-hand}"
-# First the (task, hand) pairs whose ep0 already succeeded on a4/amp7 (2026-10-16): GraspKettle (ep0 failed for every
-# hand) and leap (ep0 succeeded only in GraspPan) come later, as do the bimanual tasks, each in its own job:
-#   TASKS="Dexverse-GraspKettle-v1"  HANDS="allegro inspire leap sharpa wuji"
-#   TASKS="Dexverse-GraspPan-v1 Dexverse-GraspBleach-v1 Dexverse-FunctionalPourMug-v1 Dexverse-FunctionalHammerStrike-v1"  HANDS="leap"
+# Fill round (2026-10-20): the 4 single-hand tasks whose ep0 succeeded, every hand except leap, up to 50 episodes.
+# Recorded items are skipped; failed ones get the attempts they have not had yet up to MAX_ATTEMPTS (new seeds, more
+# samples and iterations; attempts already made are not re-run). Left on HF 2026-10-20: HammerStrike 0, PourMug 0,
+# Pan 15 (allegro 3, sharpa 4, wuji 8), Bleach 106 (allegro 31, inspire 27, sharpa 31, wuji 17).
+# leap (needs the merged upstream code), GraspKettle and the bimanual tasks come later in their own jobs:
 #   TASKS="Dexverse-BimanualLiftTray-v1 Dexverse-BimanualLiftCarton-v1 Dexverse-SlideUtilityKnife-v1 Dexverse-OpenFlatFolder-v1"
-# Fill order: the tasks with the fewest results so far first.
-export TASKS="${TASKS:-Dexverse-GraspPan-v1 Dexverse-FunctionalHammerStrike-v1 Dexverse-FunctionalPourMug-v1 Dexverse-GraspBleach-v1}"
+export TASKS="${TASKS:-Dexverse-GraspPan-v1 Dexverse-GraspBleach-v1 Dexverse-FunctionalHammerStrike-v1 Dexverse-FunctionalPourMug-v1}"
 export HANDS="${HANDS:-allegro inspire sharpa wuji}"   # target hand families; unsupported ones are skipped with a log line
+export MAX_ATTEMPTS="${MAX_ATTEMPTS:-6}"
 export EPISODES="${EPISODES:-50}"
 export PER_GPU="${PER_GPU:-10}" MIN_FREE_GB="${MIN_FREE_GB:-10}" SESSION_GB="${SESSION_GB:-6}"
 CHAIN_N="${CHAIN_N:-1}"; MAX_CHAIN="${MAX_CHAIN:-10}"

@@ -84,7 +84,9 @@ def main():
                 r = subprocess.run([py, str(HERE / "stage4_record.py"), "--task", task, "--demos", str(demos),
                                     "--target", tgt, "--episodes", *map(str, ok), "--per_episode_dir", str(dst)],
                                    capture_output=True, text=True, env={**os.environ, "DEXVERSE_RETARGET_RUNS": str(runs)})
-                print(r.stdout.strip().splitlines()[-1] if r.stdout.strip() else r.stderr.strip()[-500:], flush=True)
+                keep = [ln for ln in (r.stdout + r.stderr).splitlines()
+                        if ln.startswith(("RESULT", "[stage4]")) or "Error" in ln or "error" in ln]
+                print("\n".join(keep[-8:]) or f"stage4 rc={r.returncode}", flush=True)
             for p in dst.glob("ep[0-9][0-9][0-9].pkl"):              # an episode no longer successful is not kept
                 if int(p.stem[2:]) not in ok:
                     p.unlink()
