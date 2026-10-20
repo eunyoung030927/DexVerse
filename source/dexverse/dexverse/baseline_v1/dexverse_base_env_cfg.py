@@ -9,6 +9,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 import math
+import os
 from copy import deepcopy
 from dataclasses import MISSING
 
