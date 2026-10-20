@@ -263,9 +263,15 @@ parser.add_argument(
 parser.add_argument(
     "--lerobot_image_size", type=str, default="480x640", help="HxW of the recorded cameras (default 480x640)."
 )
-parser.add_argument("--spool_max_pending", type=int, default=4, help="Ready episodes allowed before recording waits.")
+parser.add_argument(
+    "--spool_max_pending", type=int, default=4,
+    help="Ready episodes allowed before recording waits for the writer (no limit with --no_spool_writer).",
+)
 parser.add_argument("--writer_threads", type=int, default=8, help="PNG writer threads of the spool writer.")
-parser.add_argument("--no_spool_writer", action="store_true", help="Only spool; run lerobot_spool_writer.py later.")
+parser.add_argument(
+    "--no_spool_writer", action="store_true",
+    help="Only spool (never waits, the spool grows); run lerobot_spool_writer.py later.",
+)
 parser.add_argument(
     "--lerobot_python",
     type=str,

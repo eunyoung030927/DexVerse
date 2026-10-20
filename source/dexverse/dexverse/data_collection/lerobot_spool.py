@@ -897,6 +897,10 @@ class LeRobotSpoolRecorder:
         return self._writer is not None and self._writer.poll() is None
 
     def _wait_for_room(self):
+        # No writer launched (--no_spool_writer): nothing drains the spool, waiting would block forever (a replay
+        # stopped silently after max_pending episodes, 2026-10-19). Keep recording; the writer runs later.
+        if self._writer is None:
+            return
         while len(list_ready(self.spool)) >= self.max_pending:
             if self._writer is not None and not self.writer_alive():
                 raise RuntimeError(f"[lerobot] spool writer exited (see {os.path.join(self.spool, WRITER_LOG)}) "

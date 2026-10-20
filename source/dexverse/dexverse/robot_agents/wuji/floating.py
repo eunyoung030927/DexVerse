@@ -46,7 +46,9 @@ _WUJI_LEFT_FINGER_JOINT_NAMES = tuple(f"left_{suffix}" for suffix in _WUJI_FINGE
 _WUJI_HOME_BASE_ROT = (0.7071067811865476, 0.0, 0.7071067811865475, 0.0)
 _WUJI_HOME_TRANSLATION = (-0.3, 0.0, 0.5)
 
-# Official Wuji finger actuator settings from wujihand/body/mjcf/{right,left}.xml and body/urdf.
+# Wuji finger actuator settings (uniform 10 Nm / 20 / 0.5). NOT the vendor values: wuji-hand-description
+# (mjcf/right.xml, urdf) has per joint kp 0.21-0.69, kv 0.009-0.031, effort 0.15-0.65 Nm, see
+# data_collection/official_finger_drives.json and docs/finger_drives_official.md (checked 2026-10-20).
 _WUJI_FINGER_EFFORT_BY_EXPR = {
     ".*_finger1_joint1": 10.0,
     ".*_finger1_joint2": 10.0,
