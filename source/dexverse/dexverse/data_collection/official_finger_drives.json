@@ -1,0 +1,198 @@
+{
+ "_doc": "Official / reference finger drives per floating hand (single right hand). Units: stiffness Nm/rad, damping Nm*s/rad, effort_limit_sim Nm. 'override' = actuator-name substring -> ImplicitActuatorCfg attributes (scalar or {joint regex: value}); '_drop' lists group keys removed before per-joint keys are merged. Applied by scripts/experiments/drive_override.py (DEXVERSE_DRIVE_OVERRIDE=@<hand>). Not the default configs: robot_agents/<hand>/floating.py keep the DexVerse values. See docs/finger_drives_official.md.",
+ "allegro": {
+  "source": "Wonik allegro_hand_ros_v4 driver (github.com/simlabrobotics/allegro_hand_ros_v4): gains_pd.yaml kp 4000, kd 150-300 and AllegroHandDrv.cpp tau = (kp*e - kd*v)/1200, |tau| <= PWM limit/1200 per joint (v4, 12 V). Spec 0.7 Nm. IsaacLab ALLEGRO_HAND_CFG: 3.0 / 0.1 / 0.5.",
+  "dexverse_default": "stiffness 50, damping 0.1, effort 30",
+  "override": {
+   "hand": {
+    "stiffness": 3.3333,
+    "damping": {
+     "joint_0_0": 0.125,
+     "joint_1_0": 0.1667,
+     "joint_2_0": 0.125,
+     "joint_3_0": 0.125,
+     "joint_4_0": 0.125,
+     "joint_5_0": 0.1667,
+     "joint_6_0": 0.125,
+     "joint_7_0": 0.125,
+     "joint_8_0": 0.125,
+     "joint_9_0": 0.1667,
+     "joint_10_0": 0.125,
+     "joint_11_0": 0.125,
+     "joint_12_0": 0.25,
+     "joint_13_0": 0.1667,
+     "joint_14_0": 0.1667,
+     "joint_15_0": 0.125
+    },
+    "effort_limit_sim": {
+     "joint_0_0": 0.3125,
+     "joint_1_0": 0.5625,
+     "joint_2_0": 0.375,
+     "joint_3_0": 0.2375,
+     "joint_4_0": 0.3125,
+     "joint_5_0": 0.5625,
+     "joint_6_0": 0.375,
+     "joint_7_0": 0.2375,
+     "joint_8_0": 0.3125,
+     "joint_9_0": 0.5625,
+     "joint_10_0": 0.375,
+     "joint_11_0": 0.2375,
+     "joint_12_0": 0.4375,
+     "joint_13_0": 0.3375,
+     "joint_14_0": 0.225,
+     "joint_15_0": 0.225
+    }
+   }
+  }
+ },
+ "inspire": {
+  "source": "No vendor model published. NVIDIA Isaac Sim OpenUSD tuning tutorials 5-6 (RH56DFX): max force 1.68 Nm = 10 N fingertip x 0.084 m x 2 (mimic chain), stiffness 0.01-0.07 /deg, damping 0.0001 /deg. Applied to the 6 driver joints; mimic joints unchanged (zero gain).",
+  "dexverse_default": "drivers stiffness 20, damping 2.0, effort 5; mimics 0/0/10",
+  "override": {
+   "hand_drivers": {
+    "stiffness": 4.0107,
+    "damping": 0.00573,
+    "effort_limit_sim": 1.68
+   }
+  }
+ },
+ "shadow": {
+  "source": "IsaacLab SHADOW_HAND_CFG (NVIDIA asset): stiffness 1.0, damping 0.1, effort per joint, OpenAI robot0 J(k) mapped to sr J(k+1).",
+  "dexverse_default": "stiffness 10, damping 0.1, effort 10",
+  "override": {
+   "actuators": {
+    "_drop": [
+     "FFJ(1|2|3|4)",
+     "MFJ(1|2|3|4)",
+     "RFJ(1|2|3|4)",
+     "LFJ(1|2|3|4|5)",
+     "THJ(1|2|3|4|5)"
+    ],
+    "stiffness": {
+     "FFJ(1|2|3|4)": 1.0,
+     "MFJ(1|2|3|4)": 1.0,
+     "RFJ(1|2|3|4)": 1.0,
+     "LFJ(1|2|3|4|5)": 1.0,
+     "THJ(1|2|3|4|5)": 1.0
+    },
+    "damping": {
+     "FFJ(1|2|3|4)": 0.1,
+     "MFJ(1|2|3|4)": 0.1,
+     "RFJ(1|2|3|4)": 0.1,
+     "LFJ(1|2|3|4|5)": 0.1,
+     "THJ(1|2|3|4|5)": 0.1
+    },
+    "effort_limit_sim": {
+     "FFJ(1|2)": 0.7245,
+     "FFJ(3|4)": 0.9,
+     "MFJ(1|2)": 0.7245,
+     "MFJ(3|4)": 0.9,
+     "RFJ(1|2)": 0.7245,
+     "RFJ(3|4)": 0.9,
+     "LFJ(1|2)": 0.7245,
+     "LFJ(3|4|5)": 0.9,
+     "THJ5": 2.3722,
+     "THJ4": 1.45,
+     "THJ(2|3)": 0.99,
+     "THJ1": 0.81
+    }
+   }
+  }
+ },
+ "leap": {
+  "source": "LEAP_Hand_Sim (github.com/leap-hand/LEAP_Hand_Sim, LeapHandRot.yaml pgain 3, dgain 0.1; dof effort 0.5). Official URDF effort 0.95.",
+  "dexverse_default": "stiffness 20, damping 1.0, effort 3",
+  "override": {
+   "actuators": {
+    "stiffness": {
+     "leap_(0|1|2|3|4|5|6|7|8|9|10|11|12|13|14|15)": 3.0
+    },
+    "damping": {
+     "leap_(0|1|2|3|4|5|6|7|8|9|10|11|12|13|14|15)": 0.1
+    },
+    "effort_limit_sim": {
+     "leap_(0|1|2|3|4|5|6|7|8|9|10|11|12|13|14|15)": 0.5
+    }
+   }
+  }
+ },
+ "wuji": {
+  "source": "wuji-hand-description (github.com/wuji-technology/wuji-hand-description) mjcf/right.xml position actuators kp, kv, forcerange per joint (= URDF effort).",
+  "dexverse_default": "stiffness 20, damping 0.5, effort 10",
+  "override": {
+   "actuators": {
+    "stiffness": {
+     ".*_finger1_joint1": 0.40844710645048043,
+     ".*_finger1_joint2": 0.6858601063643346,
+     ".*_finger1_joint3": 0.2391112196099482,
+     ".*_finger1_joint4": 0.20736128319711747,
+     ".*_finger2_joint1": 0.37352218155860073,
+     ".*_finger2_joint2": 0.45592448909027794,
+     ".*_finger2_joint3": 0.24368366649522863,
+     ".*_finger2_joint4": 0.18026971340925335,
+     ".*_finger3_joint1": 0.3687093483646485,
+     ".*_finger3_joint2": 0.4164253443634641,
+     ".*_finger3_joint3": 0.22218607502059182,
+     ".*_finger3_joint4": 0.19427606072023446,
+     ".*_finger4_joint1": 0.35718151495111794,
+     ".*_finger4_joint2": 0.42977315313086895,
+     ".*_finger4_joint3": 0.24930151196247122,
+     ".*_finger4_joint4": 0.2285032688178066,
+     ".*_finger5_joint1": 0.3655325975433942,
+     ".*_finger5_joint2": 0.41393113081120425,
+     ".*_finger5_joint3": 0.22729367621965954,
+     ".*_finger5_joint4": 0.1964723550341816
+    },
+    "damping": {
+     ".*_finger1_joint1": 0.020882010257063675,
+     ".*_finger1_joint2": 0.030610939996373314,
+     ".*_finger1_joint3": 0.010181475050560962,
+     ".*_finger1_joint4": 0.00909698844675045,
+     ".*_finger2_joint1": 0.01882274330029718,
+     ".*_finger2_joint2": 0.019798167597016643,
+     ".*_finger2_joint3": 0.010477031953162727,
+     ".*_finger2_joint4": 0.008240212147903584,
+     ".*_finger3_joint1": 0.01848622487024593,
+     ".*_finger3_joint2": 0.018032947229953678,
+     ".*_finger3_joint3": 0.009592200014076666,
+     ".*_finger3_joint4": 0.009152994605972402,
+     ".*_finger4_joint1": 0.018376606800780005,
+     ".*_finger4_joint2": 0.01867700966212433,
+     ".*_finger4_joint3": 0.01059512121009555,
+     ".*_finger4_joint4": 0.009917602877441107,
+     ".*_finger5_joint1": 0.018616960278988272,
+     ".*_finger5_joint2": 0.018732177029667153,
+     ".*_finger5_joint3": 0.00951005441616486,
+     ".*_finger5_joint4": 0.009017295241756363
+    },
+    "effort_limit_sim": {
+     ".*_finger1_joint1": 0.4452,
+     ".*_finger1_joint2": 0.4259,
+     ".*_finger1_joint3": 0.1888,
+     ".*_finger1_joint4": 0.1468,
+     ".*_finger2_joint1": 0.6188,
+     ".*_finger2_joint2": 0.1822,
+     ".*_finger2_joint3": 0.2251,
+     ".*_finger2_joint4": 0.217,
+     ".*_finger3_joint1": 0.6494,
+     ".*_finger3_joint2": 0.1827,
+     ".*_finger3_joint3": 0.2078,
+     ".*_finger3_joint4": 0.2018,
+     ".*_finger4_joint1": 0.6389,
+     ".*_finger4_joint2": 0.1832,
+     ".*_finger4_joint3": 0.2249,
+     ".*_finger4_joint4": 0.2044,
+     ".*_finger5_joint1": 0.6441,
+     ".*_finger5_joint2": 0.1798,
+     ".*_finger5_joint3": 0.2384,
+     ".*_finger5_joint4": 0.1866
+    }
+   }
+  }
+ },
+ "sharpa": {
+  "source": "sharpa-urdf-usd-xml (github.com/sharpa-robotics/sharpa-urdf-usd-xml): right_sharpa_wave_MITmode.usda drives + URDF effort. DexVerse already uses these values (all 22 finger joints identical), no override.",
+  "dexverse_default": "vendor MITmode USD values",
+  "override": {}
+ }
+}
