@@ -22,8 +22,8 @@ upstream README의 텔레옵 절차(Apple Vision Pro + CloudXR 런타임 docker 
 
 ```bash
 docker exec -it dexverse bash
-# DexVerse 패키지 (NAS 레포, 브랜치 teleop/quest-cloudxr6)
-/workspace/isaaclab/_isaac_sim/python.sh -m pip install -e /workspace/dexverse/DexVerse/source/dexverse
+# DexVerse 패키지 (중앙 codes/에서 sync된 레포, 브랜치 teleop/quest-cloudxr6)
+/workspace/isaaclab/_isaac_sim/python.sh -m pip install -e /workspace/codes/dexverse/DexVerse/source/dexverse
 # isaacteleop + CloudXR 런타임 (conda-forge 채널만 사용 → Anaconda ToS 불필요)
 source /opt/conda/etc/profile.d/conda.sh && unset PYTHONPATH
 conda create -y -n isaacteleop -c conda-forge --override-channels python=3.11
@@ -32,7 +32,7 @@ pip install "isaacteleop[cloudxr,retargeters]==1.0.193" --extra-index-url https:
 conda deactivate
 ```
 
-에셋(손 6종 + core)은 NAS 레포에 이미 받아져 있다
+에셋(손 6종 + core)은 코드 sync 제외 대상이라 서버마다 한 번 받는다
 (`scripts/asset_tools/download_robot_agents.py --all`, `scripts/asset_tools/download_assets.py --core`).
 
 ## 실행
@@ -41,7 +41,7 @@ conda deactivate
 
 ```bash
 docker exec -it dexverse bash
-/workspace/dexverse/DexVerse/scripts/teleop_tools/start_cloudxr_runtime.sh
+/workspace/codes/dexverse/DexVerse/scripts/teleop_tools/start_cloudxr_runtime.sh
 # 최초 1회: NVIDIA CloudXR EULA 수락 프롬프트 [y/N] → y  (이후 /root/.cloudxr/run/eula_accepted 로 기억)
 # "CloudXR runtime: running / WSS proxy: running" 이 뜨면 OK
 ```
@@ -55,7 +55,7 @@ docker exec -it dexverse bash
 
 ```bash
 docker exec -it dexverse bash
-cd /workspace/dexverse/DexVerse
+cd /workspace/codes/dexverse/DexVerse
 # 디버그 텔레옵 (저장 안 함)
 scripts/teleop_tools/run_teleop.sh teleop_agent --task Dexverse-PickCube-v0 --robot_type floating_allegro_right
 # 데모 녹화
@@ -102,7 +102,7 @@ conda activate lerobot && pip install "lerobot==0.4.2" scipy && conda deactivate
 ### 녹화
 
 ```bash
-cd /workspace/dexverse/DexVerse   # n1은 /workspace/local/DexVerse
+cd /workspace/codes/dexverse/DexVerse   # n1은 /workspace/local/DexVerse
 scripts/teleop_tools/run_teleop.sh record_demos --task Dexverse-PickCube-v0 --robot_type floating_allegro_right --num_demos 50
 ```
 

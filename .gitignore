@@ -126,3 +126,7 @@ tests/
 AGENTS.md
 env.sh
 /.worktrees/
+
+# cross-hand retargeting outputs
+results/
+!ondemand/env.sh
