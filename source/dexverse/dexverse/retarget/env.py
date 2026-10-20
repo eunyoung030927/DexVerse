@@ -22,6 +22,7 @@ import torch
 from isaaclab.assets import Articulation, RigidObject
 from isaaclab.utils.math import quat_apply
 
+from ..scene_state import reset_scene_to
 from . import hands
 
 # Rigid objects that are part of the set, not of the task: never contact targets, never manipulated.
@@ -195,7 +196,8 @@ class RetargetEnv:
     def set_state(self, state, env_ids=None):
         """Write a ``scene.get_state(is_relative=True)``-style state (batch 1 is broadcast) and refresh buffers."""
         ids = torch.arange(self.num_envs, device=self.device) if env_ids is None else env_ids
-        self.scene.reset_to(_broadcast(state, len(ids), self.device), env_ids=ids, is_relative=True)
+        # zero velocity targets: reset_to sets them to the written joint velocities (hidden force, see scene_state)
+        reset_scene_to(self.scene, _broadcast(state, len(ids), self.device), env_ids=ids, is_relative=True)
         q = self.robot.data.joint_pos[ids].clone()
         self.robot.set_joint_position_target(q, env_ids=ids)
         self.q_target[ids] = q

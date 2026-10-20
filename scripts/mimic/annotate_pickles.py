@@ -151,6 +151,7 @@ from dexverse.mimic.env_setup import (  # noqa: E402
     resolve_success_term,
 )
 from dexverse.mimic.recorders import MimicAnnotationRecorderManagerCfg  # noqa: E402
+from dexverse.scene_state import clear_joint_velocity_targets  # noqa: E402
 from dexverse.teleop_utils.replay_teleop import _to_torch  # noqa: E402
 from isaaclab.managers import DatasetExportMode  # noqa: E402
 
@@ -188,6 +189,7 @@ with torch.inference_mode():
             env.sim.reset()
             env.recorder_manager.reset()
             env.reset_to(_to_torch(ep["initial_state"], env.device), None, is_relative=True)
+            clear_joint_velocity_targets(env.scene)   # reset_to leaves them at the written velocities
             # Same rule as record_demos --replay_demos: the demo ends once success held for --num_success_steps
             # steps; after the last action it is held for up to --hold_steps more (public demos can be cut short).
             run, ok, n = 0, False, 0

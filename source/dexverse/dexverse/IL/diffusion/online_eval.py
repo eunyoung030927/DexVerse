@@ -22,6 +22,7 @@ import h5py
 import numpy as np
 import torch
 
+from ...scene_state import clear_joint_velocity_targets
 from .config import EvalConfig
 from .runner import DiffusionPolicyRunner, load_policy
 
@@ -59,6 +60,7 @@ def evaluate(cfg: EvalConfig) -> dict[str, Any]:
         if initial_states is not None:
             state = _to_torch(initial_states[episode % len(initial_states)], env.unwrapped.device)
             obs, _ = env.unwrapped.reset_to(state, torch.tensor([0], device=env.unwrapped.device), is_relative=True)
+            clear_joint_velocity_targets(env.unwrapped.scene)   # reset_to leaves them at the written velocities
         runner.reset()
 
         episode_return = 0.0

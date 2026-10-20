@@ -93,6 +93,7 @@ import gymnasium as gym  # noqa: E402
 import torch  # noqa: E402
 from dexverse.tasks.utils import parse_env_cfg, prune_stale_obs_refs, strip_camera_cfgs  # noqa: E402
 from dexverse.benchmark import action_layout, task_identity  # noqa: E402
+from dexverse.scene_state import clear_joint_velocity_targets  # noqa: E402
 from dexverse.teleop_utils.episode_task_state import (  # noqa: E402
     capture_episode_task_state,
     restore_episode_task_state,
@@ -171,6 +172,7 @@ def main():
                         # Still test state restoration from an unrelated reset.
                         env.reset(seed=perturbation_seeds[reset_index])
                     env.reset_to(scene_state, env_ids=None, is_relative=True)
+                    clear_joint_velocity_targets(env.scene)   # reset_to leaves them at the written velocities
                     reset_managers_after_state_restore(env)
                     skipped = restore_episode_task_state(env, snapshot)
                     if skipped:

@@ -293,6 +293,7 @@ import h5py  # noqa: E402
 import isaaclab_tasks  # noqa: F401, E402
 import numpy as np  # noqa: E402
 from dexverse.tasks.utils import parse_env_cfg, prune_stale_obs_refs, strip_camera_cfgs  # noqa: E402
+from dexverse.scene_state import clear_joint_velocity_targets, reset_scene_to  # noqa: E402
 from dexverse.teleop_utils.episode_task_state import restore_episode_task_state  # noqa: E402
 from dexverse.benchmark import task_identity, validate_replay_identity  # noqa: E402
 from isaaclab.managers import TerminationTermCfg as DoneTerm  # noqa: E402
@@ -1058,6 +1059,7 @@ def _replay_one_episode(
             extra_skip_entity_names=skip,
         )
         env.reset_to(initial_state, env_ids_one, is_relative=True)
+        clear_joint_velocity_targets(env.scene, env_ids_one)   # reset_to leaves them at the written velocities
         apply_recorded_active_masks(env, episode, env_ids_one)
         skipped_task_state = restore_episode_task_state(
             env,
@@ -1120,7 +1122,7 @@ def _replay_one_episode(
                     env.scene.get_state(is_relative=True),
                     extra_skip_entity_names=skip,
                 )
-                env.scene.reset_to(step_state, env_ids_one, is_relative=True)
+                reset_scene_to(env.scene, step_state, env_ids_one, is_relative=True)   # zero velocity targets
                 _refresh_after_set_state(env)
                 # Mirror ManagerBasedRLEnv.step: advance the per-env step counter.
                 # Step-keyed runtime logic (stage-machine / cut-sweep reset detection
@@ -1139,7 +1141,7 @@ def _replay_one_episode(
                         env.scene.get_state(is_relative=True),
                         extra_skip_entity_names=skip,
                     )
-                    env.scene.reset_to(sync_state, env_ids_one, is_relative=True)
+                    reset_scene_to(env.scene, sync_state, env_ids_one, is_relative=True)   # zero velocity targets
                     _refresh_after_set_state(env)
                 env.step(action_batched)
 

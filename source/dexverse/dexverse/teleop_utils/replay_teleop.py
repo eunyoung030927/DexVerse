@@ -27,6 +27,8 @@ from collections.abc import Callable
 import numpy as np
 import torch
 
+from ..scene_state import clear_joint_velocity_targets, reset_scene_to
+
 
 WRIST_CAMERA_BODY_COLLISION_KEY = "wrist_camera_body_collision"
 """Trajectory pickle metadata key: whether the wrist camera body box collided while the pickle was recorded."""
@@ -132,6 +134,7 @@ class ReplayDemoDevice:
             return
         state = _to_torch(ep["initial_state"], self.env.device)
         self.env.reset_to(state, env_ids=None, is_relative=True)
+        clear_joint_velocity_targets(self.env.scene)   # reset_to leaves them at the written velocities
         # rebase terms that capture a reference at reset (e.g. OpenLaptop base_displaced) on the restored scene
         from .episode_task_state import reset_managers_after_state_restore  # noqa: PLC0415
 
@@ -147,7 +150,7 @@ class ReplayDemoDevice:
             return
         states = ep["states"]
         state = _to_torch(states[min(self._t, len(states) - 1)], self.env.device)
-        self.env.scene.reset_to(state, env_ids=None, is_relative=True)
+        reset_scene_to(self.env.scene, state, env_ids=None, is_relative=True)   # zero velocity targets
         self.env.sim.forward()
         self.env.scene.update(dt=0.0)
 
