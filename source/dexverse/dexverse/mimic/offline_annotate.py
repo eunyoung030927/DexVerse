@@ -12,7 +12,7 @@ datagen info the replay annotator would record can be computed directly:
   pose of that step,
 * target palm pose = wrist model at the wrist joint targets of ``actions[t]``,
 * object poses = the recorded rigid-object root poses,
-* ``object_lifted`` = object height above its spawn height > the lift threshold.
+* ``object_lifted`` = object height above its height at the episode start > the lift threshold.
 
 The HDF5 layout is the one Isaac Lab's ``HDF5DatasetFileHandler`` writes and ``DataGenInfoPool`` reads.
 """
@@ -105,7 +105,10 @@ def annotate_episode(ep: dict, cache: dict, subtasks: int) -> tuple[dict | None,
             return None, "no lifted object in this task: use --subtasks 1"
         lifted = np.zeros(T, dtype=bool)
     else:
-        lifted = (rigid["object"]["root_pose"][:, 2] - lift["object_default_z"]) > lift["height"]
+        # above its height at the episode start (not the cfg default: e.g. the LiftTray tray starts on a rack,
+        # 0.38 m above its default spawn height, and would count as lifted from the first step)
+        z = rigid["object"]["root_pose"][:, 2]
+        lifted = (z - z[0]) > lift["height"]
     if subtasks == 2 and (not lifted.any() or lifted[0]):
         return None, "object_lifted never switches 0 -> 1"
 

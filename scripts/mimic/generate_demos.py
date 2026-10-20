@@ -42,6 +42,9 @@ ap.add_argument("--object_ref", default="auto",
 ap.add_argument("--keep_failed", action="store_true",
                 help="also export failed attempts (<output>_failed.hdf5) for analysis")
 ap.add_argument("--action_noise", type=float, default=0.002, help="noise on the wrist joint targets (m / rad)")
+ap.add_argument("--wrist_camera_body_collision", choices=("on", "off"), default=None,
+                help="wrist camera body box collision during the generation (default: the env cfg's, i.e. off; no "
+                     "effect with DEXVERSE_WRIST_CAMERA_BODY=0). Stored in the pickle, so the replay uses the same")
 AppLauncher.add_app_launcher_args(ap)
 # enable_cameras: rendering every step changes the physics outcome; keep it as on the recording / replay path
 ap.set_defaults(device="cpu", headless=True, enable_cameras=True)
@@ -97,6 +100,11 @@ gen_hdf5 = os.path.splitext(out_pickle)[0] + ".hdf5"
 
 env_seed = args.env_seed if args.env_seed is not None else args.seed
 env_cfg, success_term = build_env_cfg(TASK, ROBOT, device=args.device, num_envs=args.num_envs, seed=env_seed)
+if args.wrist_camera_body_collision is not None:
+    from dexverse.teleop_utils.replay_teleop import set_wrist_camera_body_collision  # noqa: E402
+
+    n = set_wrist_camera_body_collision(env_cfg, args.wrist_camera_body_collision == "on")
+    print(f"[mimic] wrist camera body collision {args.wrist_camera_body_collision} ({n} boxes)", flush=True)
 num_subtasks = int(args.subtasks or SIDECAR.get("subtasks", 2))
 second_ref = args.second_ref
 if second_ref == "auto":

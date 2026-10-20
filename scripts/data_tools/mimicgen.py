@@ -59,6 +59,8 @@ def main(argv=None):
     ap.add_argument("--max_num_failures", type=int, default=1000)
     ap.add_argument("--datasets_dir", default=None, help="default: same as record_demos")
     ap.add_argument("--no_lerobot", action="store_true", help="stop after the generated pickle")
+    ap.add_argument("--wrist_camera_body_collision", choices=("on", "off"), default=None,
+                    help="wrist camera body box collision while generating (default: env cfg, off)")
     args = ap.parse_args(argv)
 
     S = _load_spool()
@@ -113,7 +115,8 @@ def main(argv=None):
     run([python, os.path.join(_REPO, "scripts", "mimic", "generate_demos.py"), "--input", annotated,
          "--num_demos", str(args.num_demos), "--output_pickle", generated, "--seed", str(args.seed),
          "--action_noise", str(args.action_noise), "--max_num_failures", str(args.max_num_failures),
-         "--second_ref", args.second_ref, "--object_ref", args.object_ref, "--headless"],
+         "--second_ref", args.second_ref, "--object_ref", args.object_ref, "--headless",
+         *(["--wrist_camera_body_collision", args.wrist_camera_body_collision] if args.wrist_camera_body_collision else [])],
         "2_generate.log", generated)
     if args.no_lerobot:
         print(f"[mimicgen] generated pickle: {generated}")
