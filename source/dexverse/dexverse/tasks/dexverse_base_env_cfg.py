@@ -53,6 +53,13 @@ DEFAULT_WRIST_CAMERA_BODY_COLOR = (0.25, 0.25, 0.25)
 # without moving the camera. Each component is a meters-offset added to the
 # cube's palm-local pose: (x, y, z).
 DEFAULT_WRIST_CAMERA_BODY_PALM_OFFSET = (0.0, 0.0, 0.0)
+WRIST_CAMERA_BODY_ENV = "DEXVERSE_WRIST_CAMERA_BODY"
+"""``0`` / ``off``: no wrist camera body box at all (no guide visual, no collider); the wrist cameras are unchanged."""
+
+
+def wrist_camera_body_enabled() -> bool:
+    """Whether the wrist camera body box is spawned (``$DEXVERSE_WRIST_CAMERA_BODY``, default on)."""
+    return os.environ.get(WRIST_CAMERA_BODY_ENV, "1").strip().lower() not in ("0", "off", "false", "no")
 
 
 def _collect_polyhaven_hdri_pool() -> list[str]:
@@ -467,6 +474,9 @@ def _configure_wrist_camera_attachments(scene_cfg, robot_config) -> None:
         scene_cfg.right_wrist_camera_body = None
         scene_cfg.left_wrist_camera_body = None
         _sync_wrist_camera_attachment(scene_cfg, "wrist_camera", "wrist_camera_body", robot_config.palm_body_name)
+    if not wrist_camera_body_enabled():
+        for body_attr in ("wrist_camera_body", "right_wrist_camera_body", "left_wrist_camera_body"):
+            setattr(scene_cfg, body_attr, None)
 
 
 def make_default_object_cfg(

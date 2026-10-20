@@ -86,6 +86,8 @@ def main(argv=None):
     run_dir = os.path.join(datasets_dir, "mimicgen", name, time.strftime("%Y%m%d_%H%M%S"))
     os.makedirs(run_dir, exist_ok=True)
     python = os.path.join(os.environ.get("ISAACLAB_PATH", "/workspace/isaaclab"), "_isaac_sim", "python.sh")
+    if not os.path.exists(python):  # pip-installed Isaac Sim (conda env): this interpreter runs the steps
+        python = sys.executable
     annotated = os.path.join(run_dir, "annotated.hdf5")
     generated = os.path.join(run_dir, "generated.pkl")
     env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}

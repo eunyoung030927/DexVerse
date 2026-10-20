@@ -81,6 +81,10 @@ from dexverse.mimic.env_setup import (  # noqa: E402
     resolve_object_ref,
     resolve_success_term,
 )
+from dexverse.teleop_utils.replay_teleop import (  # noqa: E402
+    WRIST_CAMERA_BODY_COLLISION_KEY,
+    wrist_camera_body_collision,
+)
 from isaaclab.envs.mdp.recorders.recorders_cfg import ActionStateRecorderManagerCfg  # noqa: E402
 from isaaclab.managers import DatasetExportMode  # noqa: E402
 from isaaclab.utils.datasets import HDF5DatasetFileHandler  # noqa: E402
@@ -213,6 +217,8 @@ handler.close()
 payload = dict(SIDECAR["pickle_metadata"])
 payload.update({
     "record_state": False,
+    # what the generation ran with (None: no box), so the replay rebuilds the same scene
+    WRIST_CAMERA_BODY_COLLISION_KEY: wrist_camera_body_collision(env_cfg),
     "generator": {"type": "isaaclab_mimic", "annotated_dataset": os.path.abspath(args.input),
                   "subtasks": num_subtasks, "object_ref": object_ref, "second_ref": second_ref, "seed": args.seed,
                   "env_seed": env_seed,
