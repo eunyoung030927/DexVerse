@@ -26,7 +26,7 @@ MAIN="${MAIN_JOB:-$(squeue -h -u "$USER" -t R -o '%i %j' | awk '$2 ~ /^dvr-(main
 echo; echo "## 2. node of job ${MAIN:-none}"
 if [ -n "$MAIN" ]; then
   unset SLURM_JOB_ID SLURM_JOBID                          # srun must attach to MAIN, not to this job
-  timeout 120 srun --jobid="$MAIN" --overlap --ntasks=1 --cpus-per-task=1 --mem=0 bash -c '
+  timeout 120 srun --jobid="$MAIN" --overlap --ntasks=1 --cpus-per-task=1 --mem=0 /bin/bash -c '
     nvidia-smi
     echo; echo "uptime: $(uptime)"
     echo; echo "PID ELAPSED %CPU RSS(MB) COMMAND"
@@ -50,11 +50,11 @@ for st in "$RUNS"/*/demos/ep*/*/status.json; do
 done
 
 echo; echo "## 4. last Tracebacks (session logs)"
-for f in $(grep -l Traceback "$RUNS"/logs/*.log 2>/dev/null | xargs -r ls -t | head -3); do
+for f in $(grep -l Traceback "$RUNS"/logs/*.log 2>/dev/null | xargs -r ls -t 2>/dev/null | head -3); do
   echo "--- $f ($(stat -c %y "$f" | cut -c1-19))"
   grep -n -A14 Traceback "$f" | tail -32 | cut -c1-220
 done
-for f in $(grep -l Traceback "$RUNS"/*/demos/ep*/*/run.log 2>/dev/null | xargs -r ls -t | head -3); do
+for f in $(grep -l Traceback "$RUNS"/*/demos/ep*/*/run.log 2>/dev/null | xargs -r ls -t 2>/dev/null | head -3); do
   echo "--- ${f#$RUNS/} ($(stat -c %y "$f" | cut -c1-19))"
   grep -n -A14 Traceback "$f" | tail -32 | cut -c1-220
 done
