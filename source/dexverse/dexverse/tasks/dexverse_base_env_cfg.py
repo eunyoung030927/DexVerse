@@ -55,12 +55,14 @@ DEFAULT_WRIST_CAMERA_BODY_COLOR = (0.25, 0.25, 0.25)
 # cube's palm-local pose: (x, y, z).
 DEFAULT_WRIST_CAMERA_BODY_PALM_OFFSET = (0.0, 0.0, 0.0)
 WRIST_CAMERA_BODY_ENV = "DEXVERSE_WRIST_CAMERA_BODY"
-"""``0`` / ``off``: no wrist camera body box at all (no guide visual, no collider); the wrist cameras are unchanged."""
+"""Default off: no wrist camera body box at all (no guide visual, no collider) for every hand, in retargeting,
+teleoperation and rendering; the wrist cameras are unchanged. ``1`` / ``on`` spawns it (e.g. to replay old pickles
+recorded with it colliding)."""
 
 
 def wrist_camera_body_enabled() -> bool:
-    """Whether the wrist camera body box is spawned (``$DEXVERSE_WRIST_CAMERA_BODY``, default on)."""
-    return os.environ.get(WRIST_CAMERA_BODY_ENV, "1").strip().lower() not in ("0", "off", "false", "no")
+    """Whether the wrist camera body box is spawned (``$DEXVERSE_WRIST_CAMERA_BODY``, default off)."""
+    return os.environ.get(WRIST_CAMERA_BODY_ENV, "0").strip().lower() in ("1", "on", "true", "yes")
 
 
 def _collect_polyhaven_hdri_pool() -> list[str]:
@@ -609,6 +611,7 @@ class SceneCfg(InteractiveSceneCfg):
     # (e.g. LEAP left) a colliding box sits among the fingers and blocks them. Older pickles were recorded
     # with it colliding; record_demos.py --replay_demos turns it back on for them (see
     # teleop_utils/replay_teleop.recorded_wrist_camera_body_collision, --wrist_camera_body_collision).
+    # The box is only spawned with DEXVERSE_WRIST_CAMERA_BODY=1 (wrist_camera_body_enabled); default: none.
     wrist_camera_body: AssetBaseCfg | None = make_wrist_camera_body_cfg(collision_enabled=False)
     right_wrist_camera_body: AssetBaseCfg | None = None
     left_wrist_camera_body: AssetBaseCfg | None = None
