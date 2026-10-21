@@ -1024,6 +1024,10 @@ def create_environment_config() -> tuple["ManagerBasedRLEnvCfg | DirectRLEnvCfg"
             env_cfg.commands.object_pose.resampling_time_range = (1.0e9, 1.0e9)
 
     _apply_wrist_camera_body_collision(env_cfg)
+    # finger drive experiments (e.g. LeRobot conversion with the official drives): DEXVERSE_FINGER_DRIVE=@<hand>
+    from dexverse.data_collection.finger_drives import apply_env_finger_drive
+
+    apply_env_finger_drive(env_cfg)
 
     success_term = None
     if hasattr(env_cfg.terminations, "success"):

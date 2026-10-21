@@ -56,11 +56,9 @@ def build_env_cfg(task: str, robot_type: str | None, *, device: str = "cpu", num
     env_cfg.observations.policy.concatenate_terms = False
     # finger drive experiments (e.g. retargeting with the official drives): DEXVERSE_FINGER_DRIVE=@allegro applies
     # to that hand only (the retargeting source hand keeps its drives)
-    drive = os.environ.get("DEXVERSE_FINGER_DRIVE", "").strip()
-    if drive and (not drive.startswith("@") or drive[1:] in str(robot_type or getattr(env_cfg, "robot_type", ""))):
-        from dexverse.data_collection.finger_drives import apply_drive_spec  # noqa: PLC0415
+    from dexverse.data_collection.finger_drives import apply_env_finger_drive  # noqa: PLC0415
 
-        apply_drive_spec(env_cfg, drive)
+    apply_env_finger_drive(env_cfg, robot_type)
     return env_cfg, success_term
 
 
