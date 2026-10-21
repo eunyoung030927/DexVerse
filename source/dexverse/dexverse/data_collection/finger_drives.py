@@ -41,9 +41,14 @@ def parse_drive_spec(spec: str) -> dict:
 
 def apply_env_finger_drive(env_cfg, robot_type: str | None = None, log=print) -> list[str]:
     """Apply ``$DEXVERSE_FINGER_DRIVE`` (a spec, e.g. ``@allegro``) if set; ``@<hand>`` only to that hand's robot
-    type (retargeting also builds the source hand)."""
+    type (retargeting also builds the source hand). ``@*``: the entry of whichever hand the robot type names
+    (one setting for a run over several hands); robot types without an entry are left as they are."""
     spec = os.environ.get("DEXVERSE_FINGER_DRIVE", "").strip()
     rt = str(robot_type or getattr(env_cfg, "robot_type", "") or "")
+    if spec == "@*":
+        specs = json.load(open(os.environ.get("DEXVERSE_DRIVE_SPECS") or SPECS_PATH))
+        hand = next((k for k in specs if not k.startswith("_") and k in rt), None)
+        return apply_drive_spec(env_cfg, f"@{hand}", log=log) if hand else []
     if not spec or (spec.startswith("@") and spec[1:] not in rt):
         return []
     return apply_drive_spec(env_cfg, spec, log=log)

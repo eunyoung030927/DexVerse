@@ -97,6 +97,8 @@ def main():
     ap.add_argument("--retry_failed", action="store_true",
                     help="also re-run items that ended failed_all_attempts (new attempts if --max_attempts grew) "
                          "or stage2_failed (stage 2 is re-run; a crash there is a bug, not a verdict)")
+    ap.add_argument("--keep_source", action="store_true",
+                    help="also retarget onto the source hand itself (e.g. Shadow -> Shadow with other finger drives)")
     ap.add_argument("--dry_run", action="store_true")
     a = ap.parse_args()
 
@@ -167,7 +169,7 @@ def main():
         targets = []
         for hand in a.hands:
             rt = src.replace(src.split("_")[1], hand, 1)              # floating_<hand>_<right|left|bimanual>
-            if rt == src:
+            if rt == src and not a.keep_source:
                 continue
             if rt not in supported:
                 log(f"skip {task} -> {rt}: not supported by the retargeting yet (dexverse/retarget/hands.py)")
