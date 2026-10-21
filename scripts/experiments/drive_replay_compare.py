@@ -39,6 +39,7 @@ ap.add_argument("--out", required=True)
 ap.add_argument("--hold_steps", type=int, default=120, help="frames holding the last action (record_demos replay: 120)")
 ap.add_argument("--success_steps", type=int, default=10)
 ap.add_argument("--video_hw", default="240x320")
+ap.add_argument("--wrist_video", action="store_true", help="also write the wrist camera (hand close-up) mp4")
 ap.add_argument("--fps", type=int, default=30)
 ap.add_argument("--wrist_camera_body_collision", choices=("on", "off"), default=None)
 AppLauncher.add_app_launcher_args(ap)
@@ -69,6 +70,10 @@ cfg, success = build_env_cfg(args.task, args.robot_type, device=args.device, kee
                              seed=data.get("seed"))
 cam = cfg.scene.third_person_camera
 cam.height, cam.width = H, W
+WRIST = next((n for n in ("wrist_camera", "right_wrist_camera") if getattr(cfg.scene, n, None) is not None), None)
+if args.wrist_video and WRIST:
+    wc = getattr(cfg.scene, WRIST)
+    wc.height, wc.width = H, W
 cfg.episode_length_s = 1.0e6
 if args.wrist_camera_body_collision:
     set_wrist_camera_body_collision(cfg, args.wrist_camera_body_collision == "on")
@@ -78,11 +83,11 @@ env.reset()
 term = resolve_success_term(env, success)
 robot = env.scene["robot"]
 finger = torch.tensor([i for i, n in enumerate(robot.joint_names) if not WRIST_RE.search(n)], device=env.device)
-tac = TactileReader(env, tactile_body_names(args.robot_type, list(cfg.robot_config.fingertip_body_names),
-                                            list(robot.body_names)), resolve_targets(env.cfg, None))
+PADS = tactile_body_names(args.robot_type, list(cfg.robot_config.fingertip_body_names), list(robot.body_names))
+tac = TactileReader(env, PADS, resolve_targets(env.cfg, None))
 episodes = data["episodes"]
 summary = {"task": args.task, "robot_type": args.robot_type, "demos": args.demos, "drive": args.drive,
-           "drive_changes": drive_lines, "episodes": []}
+           "drive_changes": drive_lines, "pads": PADS, "episodes": []}
 
 
 def object_positions(state):
@@ -107,33 +112,42 @@ for e in args.episodes:
     T = len(actions) + args.hold_steps
     writer = imageio.get_writer(os.path.join(args.out, f"ep{e:03d}.mp4"), fps=args.fps, codec="libx264",
                                 quality=6, macro_block_size=8)
+    wwriter = (imageio.get_writer(os.path.join(args.out, f"ep{e:03d}_wrist.mp4"), fps=args.fps, codec="libx264", quality=6,
+                                  macro_block_size=8) if args.wrist_video and WRIST else None)
     run, success_frame = 0, -1
+    pad_force = []
     obj_err, joint_err, tip_force, succ = [], [], [], []
     for t in range(T):
         a = torch.as_tensor(actions[min(t, len(actions) - 1)], device=env.device).unsqueeze(0)
         env.step(a)
         frame = env.scene["third_person_camera"].data.output["rgb"][0, ..., :3].cpu().numpy().astype(np.uint8)
         writer.append_data(frame)
+        if wwriter is not None:
+            wwriter.append_data(env.scene[WRIST].data.output["rgb"][0, ..., :3].cpu().numpy().astype(np.uint8))
         live = object_positions(env.scene.get_state(is_relative=True))
         rec = object_positions(states[min(t + 1, len(states) - 1)]) if states else {}
         errs = [np.linalg.norm(live[k] - rec[k]) for k in rec if k in live]
         obj_err.append(round(100 * max(errs), 2) if errs else None)
         jt = (robot.data.joint_pos_target[0, finger] - robot.data.joint_pos[0, finger]).abs().max().item()
         joint_err.append(round(jt, 4))
-        f = tac.read()["force"]
-        tip_force.append(round(float(np.linalg.norm(np.asarray(f).reshape(-1, 3), axis=1).max()), 1))
+        fp = np.linalg.norm(np.asarray(tac.read()["force"]).reshape(-1, 3), axis=1)
+        pad_force.append([round(float(v), 1) for v in fp])
+        tip_force.append(round(float(fp.max()), 1))
         s = bool(term.func(env, **term.params)[0])
         succ.append(int(s))
         run = run + 1 if s else 0
         if success_frame < 0 and run >= args.success_steps:
             success_frame = t
     writer.close()
+    if wwriter is not None:
+        wwriter.close()
     rec_row = {"episode": e, "source_episode": ep.get("episode_index", e), "num_actions": len(actions),
                "success": success_frame >= 0, "success_frame": success_frame,
                "obj_err_cm_final": obj_err[len(actions) - 1], "obj_err_cm_max": max(x for x in obj_err if x is not None)
                if any(x is not None for x in obj_err) else None,
                "joint_err_max": max(joint_err), "tip_force_max": max(tip_force),
-               "frames": {"obj_err_cm": obj_err, "joint_err": joint_err, "tip_force": tip_force, "success": succ},
+               "frames": {"obj_err_cm": obj_err, "joint_err": joint_err, "tip_force": tip_force, "success": succ,
+                          "pad_force": pad_force},
                "video": f"ep{e:03d}.mp4", "seconds": round(time.time() - t0, 1)}
     json.dump(rec_row, open(os.path.join(args.out, f"ep{e:03d}.json"), "w"))
     summary["episodes"].append({k: v for k, v in rec_row.items() if k != "frames"})
