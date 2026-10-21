@@ -1,7 +1,7 @@
 {
  "_doc": "Official / reference finger drives per floating hand (single right hand). Units: stiffness Nm/rad, damping Nm*s/rad, effort_limit_sim Nm. 'override' = actuator-name substring -> ImplicitActuatorCfg attributes (scalar or {joint regex: value}); '_drop' lists group keys removed before per-joint keys are merged. Applied by scripts/experiments/drive_override.py (DEXVERSE_DRIVE_OVERRIDE=@<hand>). Not the default configs: robot_agents/<hand>/floating.py keep the DexVerse values. See docs/finger_drives_official.md.",
  "allegro": {
-  "source": "Wonik allegro_hand_ros_v4 driver (github.com/simlabrobotics/allegro_hand_ros_v4): gains_pd.yaml kp 4000, kd 150-300 and AllegroHandDrv.cpp tau = (kp*e - kd*v)/1200, |tau| <= PWM limit/1200 per joint (v4, 12 V). Spec 0.7 Nm. IsaacLab ALLEGRO_HAND_CFG: 3.0 / 0.1 / 0.5.",
+  "source": "Stiffness / damping: Wonik allegro_hand_ros_v4 driver (gains_pd.yaml kp 4000, kd 150-300; AllegroHandDrv.cpp tau = (kp*e - kd*v)/1200). Effort limit 0.9 Nm on every joint = the published spec's upper figure (0.7 Nm, ~0.9 Nm overdrive). Comment (2026-10-21): the driver's PWM caps (0.24-0.56 Nm/joint) were used first, but with them the hand could not hold the 0.5 kg GraspPan pan (hold test 3-4/4 drops, SPIDER 0/5), so the spec's upper value is used.",
   "dexverse_default": "stiffness 50, damping 0.1, effort 30",
   "override": {
    "hand": {
@@ -25,22 +25,22 @@
      "joint_15_0": 0.125
     },
     "effort_limit_sim": {
-     "joint_0_0": 0.3125,
-     "joint_1_0": 0.5625,
-     "joint_2_0": 0.375,
-     "joint_3_0": 0.2375,
-     "joint_4_0": 0.3125,
-     "joint_5_0": 0.5625,
-     "joint_6_0": 0.375,
-     "joint_7_0": 0.2375,
-     "joint_8_0": 0.3125,
-     "joint_9_0": 0.5625,
-     "joint_10_0": 0.375,
-     "joint_11_0": 0.2375,
-     "joint_12_0": 0.4375,
-     "joint_13_0": 0.3375,
-     "joint_14_0": 0.225,
-     "joint_15_0": 0.225
+     "joint_0_0": 0.9,
+     "joint_1_0": 0.9,
+     "joint_2_0": 0.9,
+     "joint_3_0": 0.9,
+     "joint_4_0": 0.9,
+     "joint_5_0": 0.9,
+     "joint_6_0": 0.9,
+     "joint_7_0": 0.9,
+     "joint_8_0": 0.9,
+     "joint_9_0": 0.9,
+     "joint_10_0": 0.9,
+     "joint_11_0": 0.9,
+     "joint_12_0": 0.9,
+     "joint_13_0": 0.9,
+     "joint_14_0": 0.9,
+     "joint_15_0": 0.9
     }
    }
   }

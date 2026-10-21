@@ -16,16 +16,17 @@ USD에 degree 기준으로 적힌 값(Isaac Sim 각도 구동)은 ×57.3으로 r
 
 | 손 | 출처 | 강성 | 감쇠 | 토크 한계 | DexVerse 설정 (강성 / 감쇠 / 한계) |
 |---|---|---|---|---|---|
-| Allegro V4 | Wonik 공식 ROS v4 드라이버: τ = (kp·e − kd·v)/1200, kp 4000, kd 150~300, 관절별 PWM 상한/1200 | 3.33 | 0.125~0.25 | 0.24~0.56 (사양 0.7) | 50 / 0.1 / 30 |
+| Allegro V4 | 강성·감쇠: Wonik 공식 ROS v4 드라이버 (τ = (kp·e − kd·v)/1200, kp 4000, kd 150~300). 토크 한계: 공개 사양 상한 | 3.33 | 0.125~0.25 | **0.9** (전 관절) ※ | 50 / 0.1 / 30 |
 | Inspire RH56DFX | 제조사 모델 미공개. NVIDIA Isaac Sim 튜토리얼 5·6 (손끝 10 N × 0.084 m × 2) | 4.01 (0.07/deg) | 0.0057 (0.0001/deg) | 1.68 | 구동 20 / 2.0 / 5, 연동(mimic) 0 / 0 / 10 |
 | Shadow | IsaacLab `SHADOW_HAND_CFG` (NVIDIA 자산, OpenAI J(k) → sr J(k+1)) | 1.0 | 0.1 | 0.72~2.37 | 10 / 0.1 / 10 |
 | LEAP | 공식 LEAP_Hand_Sim (pgain 3, dgain 0.1, effort 0.5; URDF 0.95) | 3.0 | 0.1 | 0.5 | 20 / 1.0 / 3 |
 | Wuji | 제조사 wuji-hand-description MJCF (관절별 kp, kv, forcerange) | 0.21~0.69 | 0.009~0.031 | 0.15~0.65 | 20 / 0.5 / 10 |
 | Sharpa Wave | 제조사 sharpa-urdf-usd-xml (MITmode USD + URDF effort) | 0.62~23.6 | 0.012~0.39 | 0.19~3.3 | **제조사 값 그대로** (22개 관절 일치) |
 
+- ※ Allegro 토크 한계 (2026-10-21 변경): 처음에는 Wonik 드라이버 PWM 상한(관절별 0.24~0.56 Nm)을 썼으나, 그 값으로는 0.5 kg 냄비(GraspPan)를 들지 못해(들고 있기 시험 3~4/4 낙하, 공식 구동 리타게팅 0/5) 공개 사양의 높은 값(0.7 Nm, 과구동 약 0.9 Nm) 중 0.9 Nm를 쓴다.
 - Allegro·Inspire 공식 URDF의 effort(15, 10, 1)는 전 관절 같은 자리 표시용 값이라 쓰지 않았다.
 - Wuji 설정 코드 주석은 "공식 MJCF 값"이라 하지만 현재 공식 저장소 값과 다르다.
-- 강성·한계 배수 (DexVerse / 공식): Allegro 15배·60배, Inspire 5배·3배, LEAP 7배·6배, Wuji 29~95배·15~67배, Shadow 10배·4~14배.
+- 강성·한계 배수 (DexVerse / 공식): Allegro 15배·33배, Inspire 5배·3배, LEAP 7배·6배, Wuji 29~95배·15~67배, Shadow 10배·4~14배.
 
 ### Sharpa 관절별 (공식 = DexVerse)
 
@@ -45,6 +46,7 @@ middle·ring·pinky의 MCP·PIP·DIP는 index와 같다.
 ## 2. 공식 구동값 적용 결과 (>100 N substep 비율, 최대 힘)
 
 같은 데모를 기록 상태 재생(`--replay_states`)으로 돌리고 손가락 구동만 바꿨다.
+Allegro 행은 변경 전 토크 한계(0.24~0.56 Nm)로 잰 값이다 (2026-10-21 이후 공식 값은 0.9 Nm).
 
 | 손 (데이터) | DexVerse 설정 | 공식 구동값 |
 |---|---|---|
