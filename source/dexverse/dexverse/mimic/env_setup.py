@@ -15,6 +15,8 @@ re-anchored on the object pose at that moment. ``--subtasks 1`` uses a single su
 
 from __future__ import annotations
 
+import os
+
 from isaaclab.envs.mimic_env_cfg import DataGenConfig, MimicEnvCfg, SubTaskConfig
 
 
@@ -52,6 +54,12 @@ def build_env_cfg(task: str, robot_type: str | None, *, device: str = "cpu", num
         env_cfg = strip_camera_cfgs(env_cfg)
         env_cfg = prune_stale_obs_refs(env_cfg)
     env_cfg.observations.policy.concatenate_terms = False
+    # finger drive experiments (e.g. retargeting with the official drives): DEXVERSE_FINGER_DRIVE=@allegro
+    drive = os.environ.get("DEXVERSE_FINGER_DRIVE", "").strip()
+    if drive:
+        from dexverse.data_collection.finger_drives import apply_drive_spec  # noqa: PLC0415
+
+        apply_drive_spec(env_cfg, drive)
     return env_cfg, success_term
 
 
