@@ -180,6 +180,9 @@ def main(argv=None) -> int:
                "--lerobot_root", root, *(["--replay_states"] if h.get("replay_states") else []), *extra]
         print(f"\n[convert] ({i}/{len(jobs)}) replaying {os.path.basename(p)} ... log {replay_log}", flush=True)
         env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+        # import dexverse from THIS checkout (the editable install points at one worktree; a replay run from another
+        # worktree would otherwise mix its record_demos.py with the other worktree's package)
+        env["PYTHONPATH"] = os.path.join(_REPO, "source", "dexverse")
         t0 = time.time()
         with open(replay_log, "w", encoding="utf-8") as log:
             rc = subprocess.call(cmd, stdout=log, stderr=subprocess.STDOUT, cwd=_REPO, env=env)
