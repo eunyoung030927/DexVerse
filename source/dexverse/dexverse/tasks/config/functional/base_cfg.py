@@ -26,6 +26,7 @@ lies inside that object-local region.
 from __future__ import annotations
 
 import math
+import os
 from dataclasses import field
 
 import isaaclab.sim as sim_utils
@@ -463,6 +464,25 @@ class FunctionalGraspingEnvCfg(dexverse_base_env.DexVerseBaseEnvCfg):
             )
 
         super().__post_init__()
+
+        # PhysX material of the object (object_static/dynamic_friction, object_restitution). build_object_cfg_from_usd
+        # takes these but UsdFileCfg has no physics material, so they were silently dropped and every object kept the
+        # PhysX default (friction 0.5); the grasping base applies them the same way. Startup event with equal bounds
+        # and one bucket = one deterministic coefficient on every shape (combine mode stays PhysX's "average").
+        # DEXVERSE_OBJECT_MATERIAL=legacy keeps the old behaviour (default material) to replay data recorded with it.
+        if (self.object_static_friction is not None and self.object_dynamic_friction is not None
+                and os.environ.get("DEXVERSE_OBJECT_MATERIAL", "").strip().lower() != "legacy"):
+            self.events.object_physics_material = EventTerm(
+                func=mdp.randomize_rigid_body_material,
+                mode="startup",
+                params={
+                    "asset_cfg": SceneEntityCfg("object"),
+                    "static_friction_range": (float(self.object_static_friction),) * 2,
+                    "dynamic_friction_range": (float(self.object_dynamic_friction),) * 2,
+                    "restitution_range": (float(self.object_restitution),) * 2,
+                    "num_buckets": 1,
+                },
+            )
 
         self.episode_length_s = 20.0
 
