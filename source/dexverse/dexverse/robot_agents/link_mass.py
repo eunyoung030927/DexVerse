@@ -6,7 +6,7 @@
 """Mass of the robot's dummy links (no mass in the USD).
 
 PhysX gives a rigid body without mass properties 1 kg and an inertia of 1e-4 kg m^2. Some hand USDs have such
-dummy links inside the fingers: LEAP's ``*_virtual_link`` (the 2-DoF MCP split into two joints) and Inspire's
+dummy links on the fingers: LEAP's ``*_virtual_link`` (1 cm visual-only spheres on fixed joints) and Inspire's
 ``*_tip`` markers (index..pinky). With 1 kg each the LEAP hand weighs 23.7 kg and the Inspire hand 13.2 kg in the
 simulator, the finger joints carry ~100x their real inertia and the tactile pads feel the dummy masses.
 
