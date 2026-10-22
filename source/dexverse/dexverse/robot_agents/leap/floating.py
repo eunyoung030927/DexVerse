@@ -445,6 +445,7 @@ def build_tabletop_floating_leap_right_setup(
         robot_config_kwargs={
             "palm_body_name": FLOATING_LEAP_RIGHT_PALM_BODY_NAME,
             "fingertip_body_names": FLOATING_LEAP_RIGHT_FINGERTIP_BODY_NAMES,
+            "dummy_mass_body_names": [".*_virtual_link"],
             "hand_tips_body_names": FLOATING_LEAP_RIGHT_HAND_TIPS_BODY_NAMES,
             "wrist_joint_name": FLOATING_LEAP_RIGHT_WRIST_JOINT_NAME,
             "arm_joint_names_expr": FLOATING_LEAP_RIGHT_ARM_JOINT_NAMES_EXPR,
@@ -480,6 +481,7 @@ def build_tabletop_bimanual_leap_setup(
             "right_palm_body_name": BIMANUAL_LEAP_RIGHT_PALM_BODY_NAME,
             "left_palm_body_name": BIMANUAL_LEAP_LEFT_PALM_BODY_NAME,
             "fingertip_body_names": BIMANUAL_LEAP_FINGERTIP_BODY_NAMES,
+            "dummy_mass_body_names": [".*_virtual_link.*"],
             "hand_tips_body_names": BIMANUAL_LEAP_HAND_TIPS_BODY_NAMES,
             "wrist_joint_name": None,
             "arm_joint_names_expr": BIMANUAL_LEAP_ARM_JOINT_NAMES_EXPR,

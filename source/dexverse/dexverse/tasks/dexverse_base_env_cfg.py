@@ -636,6 +636,9 @@ class RobotConfig:
     """Joint name pattern(s) for arm joints used in IK reset functions. If None, IK resets are disabled."""
     setup_contact_sensors: bool = False
     """Whether to set up contact sensors for fingertips. Should be True in robot-specific configs."""
+    dummy_mass_body_names: list[str] | None = None
+    """Regex list of robot links without mass in the USD (PhysX default 1 kg) that get 1 g at startup
+    (:mod:`dexverse.robot_agents.link_mass`)."""
 
     def __post_init__(self):
         """Set default hand_tips_body_names if not provided."""
@@ -1309,6 +1312,14 @@ class DexVerseBaseEnvCfg(ManagerBasedEnvCfg):
         self._configure_robot_from_type()
         _sync_table_legs_to_table(self.scene)
         _configure_wrist_camera_attachments(self.scene, self.robot_config)
+        from dexverse.robot_agents.link_mass import dummy_link_mass_enabled, set_link_mass
+
+        if self.robot_config.dummy_mass_body_names and dummy_link_mass_enabled():
+            self.events.robot_dummy_link_mass = EventTerm(
+                func=set_link_mass,
+                mode="startup",
+                params={"asset_cfg": SceneEntityCfg("robot", body_names=self.robot_config.dummy_mass_body_names)},
+            )
 
         # Null wrist-camera obs terms for cameras the active robot setup
         # doesn't populate. ``_configure_wrist_camera_attachments`` leaves the
