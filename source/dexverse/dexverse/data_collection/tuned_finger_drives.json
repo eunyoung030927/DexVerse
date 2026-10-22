@@ -1,6 +1,38 @@
 {
- "_doc": "Tuned finger drives (experiments/vast-isaac/finger-drive-tuning/20261022-021500_vast-isaac_drive-tune-f20): effort = F* (20 N fingertip) x lever, P = effort / theta_sat, D = zeta 2 sqrt(P I_eff). Use with DEXVERSE_DRIVE_SPECS=<this file> DEXVERSE_FINGER_DRIVE=@* (or @<hand>). LEAP / Inspire retuned after the dummy-link mass fix (1e-5 kg, robot_agents/link_mass.py).",
+ "_doc": "Tuned finger drives (experiments/vast-isaac/finger-drive-tuning/20261022-021500_vast-isaac_drive-tune-f20): effort = F* (20 N fingertip) x lever, P = effort / theta_sat, D = zeta 2 sqrt(P I_eff). Use with DEXVERSE_DRIVE_SPECS=<this file> DEXVERSE_FINGER_DRIVE=@* (or @<hand>). LEAP / Inspire retuned after the dummy-link mass fix (1e-5 kg, robot_agents/link_mass.py). Wrist entries of shared actuators kept (2026-10-22 fix: they had been dropped -> wrist P/D/effort 0 for Shadow, Wuji, LEAP).",
  "allegro": {
+  "wrist_expected (env default, checked)": {
+   "x_rotation_joint": [
+    2000.0,
+    400.0,
+    15.0
+   ],
+   "x_translation_joint": [
+    2000.0,
+    400.0,
+    15.0
+   ],
+   "y_rotation_joint": [
+    2000.0,
+    400.0,
+    15.0
+   ],
+   "y_translation_joint": [
+    2000.0,
+    400.0,
+    15.0
+   ],
+   "z_rotation_joint": [
+    2000.0,
+    400.0,
+    15.0
+   ],
+   "z_translation_joint": [
+    2000.0,
+    400.0,
+    15.0
+   ]
+  },
   "source": "tuned th0.125_z2.0 (theta_sat 0.125, zeta 2.0, armature None)",
   "selection": {
    "name": "th0.125_z2.0",
@@ -101,6 +133,38 @@
   }
  },
  "inspire": {
+  "wrist_expected (env default, checked)": {
+   "x_rotation_joint": [
+    2000.0,
+    400.0,
+    15.0
+   ],
+   "x_translation_joint": [
+    2000.0,
+    400.0,
+    15.0
+   ],
+   "y_rotation_joint": [
+    2000.0,
+    400.0,
+    15.0
+   ],
+   "y_translation_joint": [
+    2000.0,
+    400.0,
+    15.0
+   ],
+   "z_rotation_joint": [
+    2000.0,
+    400.0,
+    15.0
+   ],
+   "z_translation_joint": [
+    2000.0,
+    400.0,
+    15.0
+   ]
+  },
   "source": "tuned th0.2_z1.0_a0.0002 (theta_sat 0.2, zeta 1.0, armature 0.0002)",
   "selection": {
    "name": "th0.2_z1.0_a0.0002",
@@ -191,6 +255,38 @@
   }
  },
  "leap": {
+  "wrist_expected (env default, checked)": {
+   "x_rotation_joint": [
+    2000.0,
+    400.0,
+    15.0
+   ],
+   "x_translation_joint": [
+    2000.0,
+    400.0,
+    15.0
+   ],
+   "y_rotation_joint": [
+    2000.0,
+    400.0,
+    15.0
+   ],
+   "y_translation_joint": [
+    2000.0,
+    400.0,
+    15.0
+   ],
+   "z_rotation_joint": [
+    2000.0,
+    400.0,
+    15.0
+   ],
+   "z_translation_joint": [
+    2000.0,
+    400.0,
+    15.0
+   ]
+  },
   "source": "tuned th0.2_z0.7 (theta_sat 0.2, zeta 0.7, armature None)",
   "selection": {
    "name": "th0.2_z0.7",
@@ -234,8 +330,6 @@
   "override": {
    "floating_leap_right_actuators": {
     "_drop": [
-     "(x|y|z)_rotation_joint",
-     "(x|y|z)_translation_joint",
      "leap_(0|1|2|3|4|5|6|7|8|9|10|11|12|13|14|15)"
     ],
     "stiffness": {
@@ -296,6 +390,38 @@
   }
  },
  "shadow": {
+  "wrist_expected (env default, checked)": {
+   "x_rotation_joint": [
+    2000.0,
+    400.0,
+    15.0
+   ],
+   "x_translation_joint": [
+    2000.0,
+    400.0,
+    15.0
+   ],
+   "y_rotation_joint": [
+    2000.0,
+    400.0,
+    15.0
+   ],
+   "y_translation_joint": [
+    2000.0,
+    400.0,
+    15.0
+   ],
+   "z_rotation_joint": [
+    2000.0,
+    400.0,
+    15.0
+   ],
+   "z_translation_joint": [
+    2000.0,
+    400.0,
+    15.0
+   ]
+  },
   "source": "tuned th0.2_z1.0 (theta_sat 0.2, zeta 1.0, armature None)",
   "selection": {
    "name": "th0.2_z1.0",
@@ -338,8 +464,6 @@
   "override": {
    "floating_shadow_right_actuators": {
     "_drop": [
-     "(x|y|z)_rotation_joint",
-     "(x|y|z)_translation_joint",
      "FFJ(1|2|3|4)",
      "LFJ(1|2|3|4|5)",
      "MFJ(1|2|3|4)",
@@ -422,6 +546,38 @@
   }
  },
  "sharpa": {
+  "wrist_expected (env default, checked)": {
+   "right_pitch_joint": [
+    2000.0,
+    400.0,
+    15.0
+   ],
+   "right_roll_joint": [
+    2000.0,
+    400.0,
+    15.0
+   ],
+   "right_x_joint": [
+    2000.0,
+    400.0,
+    15.0
+   ],
+   "right_y_joint": [
+    2000.0,
+    400.0,
+    15.0
+   ],
+   "right_yaw_joint": [
+    2000.0,
+    400.0,
+    15.0
+   ],
+   "right_z_joint": [
+    2000.0,
+    400.0,
+    15.0
+   ]
+  },
   "source": "tuned th0.125_z1.0 (theta_sat 0.125, zeta 1.0, armature None)",
   "selection": {
    "name": "th0.125_z1.0",
@@ -540,6 +696,38 @@
   }
  },
  "wuji": {
+  "wrist_expected (env default, checked)": {
+   "right_pitch_joint": [
+    2000.0,
+    400.0,
+    15.0
+   ],
+   "right_roll_joint": [
+    2000.0,
+    400.0,
+    15.0
+   ],
+   "right_x_joint": [
+    2000.0,
+    400.0,
+    15.0
+   ],
+   "right_y_joint": [
+    2000.0,
+    400.0,
+    15.0
+   ],
+   "right_yaw_joint": [
+    2000.0,
+    400.0,
+    15.0
+   ],
+   "right_z_joint": [
+    2000.0,
+    400.0,
+    15.0
+   ]
+  },
   "source": "tuned th0.1_z2.0 (theta_sat 0.1, zeta 2.0, armature None)",
   "selection": {
    "name": "th0.1_z2.0",
@@ -601,9 +789,7 @@
      ".*_finger5_joint1",
      ".*_finger5_joint2",
      ".*_finger5_joint3",
-     ".*_finger5_joint4",
-     "right_(roll|pitch|yaw)_joint",
-     "right_(x|y|z)_joint"
+     ".*_finger5_joint4"
     ],
     "stiffness": {
      "right_finger1_joint1": 13.731489,
