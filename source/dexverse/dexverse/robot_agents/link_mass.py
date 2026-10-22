@@ -11,7 +11,9 @@ dummy links inside the fingers: LEAP's ``*_virtual_link`` (the 2-DoF MCP split i
 simulator, the finger joints carry ~100x their real inertia and the tactile pads feel the dummy masses.
 
 ``RobotConfig.dummy_mass_body_names`` (regex list) names those links; the base env cfg then adds the startup event
-:func:`set_link_mass` (1 g, inertia scaled with the mass). ``DEXVERSE_DUMMY_LINK_MASS=legacy`` keeps the 1 kg.
+:func:`set_link_mass` (0.01 g, inertia scaled with the mass): the official URDFs (LEAP_Hand_Sim's source of these
+links, dex-urdf, Unitree / ManiSkill Inspire) give them no ``<inertial>`` and attach them with fixed joints, i.e.
+no mass; PhysX needs a positive one. ``DEXVERSE_DUMMY_LINK_MASS=legacy`` keeps the 1 kg.
 """
 
 from __future__ import annotations
@@ -20,7 +22,7 @@ import os
 
 import torch
 
-DUMMY_LINK_MASS_KG = 1.0e-3
+DUMMY_LINK_MASS_KG = 1.0e-5
 
 
 def dummy_link_mass_enabled() -> bool:
