@@ -533,7 +533,7 @@ def build_tabletop_floating_inspire_right_setup(prim_path: str = "{ENV_REGEX_NS}
         robot_config_kwargs={
             "palm_body_name": FLOATING_INSPIRE_RIGHT_PALM_BODY_NAME,
             "fingertip_body_names": FLOATING_INSPIRE_RIGHT_FINGERTIP_BODY_NAMES,
-            "dummy_mass_body_names": [".*(index|middle|ring|pinky)_tip"],
+            "dummy_mass_body_names": [".*(thumb|index|middle|ring|pinky)_tip"],
             "hand_tips_body_names": FLOATING_INSPIRE_RIGHT_HAND_TIPS_BODY_NAMES,
             "wrist_joint_name": FLOATING_INSPIRE_RIGHT_WRIST_JOINT_NAME,
             "arm_joint_names_expr": FLOATING_INSPIRE_RIGHT_ARM_JOINT_NAMES_EXPR,
@@ -567,7 +567,7 @@ def build_tabletop_floating_inspire_left_setup(prim_path: str = "{ENV_REGEX_NS}/
         robot_config_kwargs={
             "palm_body_name": FLOATING_INSPIRE_LEFT_PALM_BODY_NAME,
             "fingertip_body_names": FLOATING_INSPIRE_LEFT_FINGERTIP_BODY_NAMES,
-            "dummy_mass_body_names": [".*(index|middle|ring|pinky)_tip"],
+            "dummy_mass_body_names": [".*(thumb|index|middle|ring|pinky)_tip"],
             "hand_tips_body_names": FLOATING_INSPIRE_LEFT_HAND_TIPS_BODY_NAMES,
             "wrist_joint_name": FLOATING_INSPIRE_LEFT_WRIST_JOINT_NAME,
             "arm_joint_names_expr": FLOATING_INSPIRE_LEFT_ARM_JOINT_NAMES_EXPR,
@@ -600,7 +600,7 @@ def build_tabletop_floating_inspire_bimanual_setup(prim_path: str = "{ENV_REGEX_
             "right_palm_body_name": FLOATING_INSPIRE_BIMANUAL_RIGHT_PALM_BODY_NAME,
             "left_palm_body_name": FLOATING_INSPIRE_BIMANUAL_LEFT_PALM_BODY_NAME,
             "fingertip_body_names": FLOATING_INSPIRE_BIMANUAL_FINGERTIP_BODY_NAMES,
-            "dummy_mass_body_names": [".*(index|middle|ring|pinky)_tip"],
+            "dummy_mass_body_names": [".*(thumb|index|middle|ring|pinky)_tip"],
             "hand_tips_body_names": FLOATING_INSPIRE_BIMANUAL_HAND_TIPS_BODY_NAMES,
             "wrist_joint_name": None,
             "arm_joint_names_expr": FLOATING_INSPIRE_BIMANUAL_ARM_JOINT_NAMES_EXPR,

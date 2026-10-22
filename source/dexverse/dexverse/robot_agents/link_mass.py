@@ -7,7 +7,7 @@
 
 PhysX gives a rigid body without mass properties 1 kg and an inertia of 1e-4 kg m^2. Some hand USDs have such
 dummy links on the fingers: LEAP's ``*_virtual_link`` (1 cm visual-only spheres) and ``*_tip_head`` and Inspire's
-``*_tip`` markers (index..pinky). With 1 kg each the LEAP hand weighs 23.7 kg and the Inspire hand 13.2 kg in the
+``*_tip`` markers (thumb..pinky). With 1 kg each the LEAP hand weighs 23.7 kg and the Inspire hand 13.2 kg in the
 simulator, the finger joints carry ~100x their real inertia and the tactile pads feel the dummy masses.
 
 ``RobotConfig.dummy_mass_body_names`` (regex list) names those links; the base env cfg then adds the startup event
