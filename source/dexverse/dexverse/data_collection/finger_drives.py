@@ -47,7 +47,8 @@ def apply_env_finger_drive(env_cfg, robot_type: str | None = None, log=print) ->
     rt = str(robot_type or getattr(env_cfg, "robot_type", "") or "")
     if spec == "@*":
         specs = json.load(open(os.environ.get("DEXVERSE_DRIVE_SPECS") or SPECS_PATH))
-        hand = next((k for k in specs if not k.startswith("_") and k in rt), None)
+        # an entry named after the robot type itself (e.g. floating_allegro_bimanual) wins over the hand entry
+        hand = rt if rt in specs else next((k for k in specs if not k.startswith(("_", "floating_")) and k in rt), None)
         return apply_drive_spec(env_cfg, f"@{hand}", log=log) if hand else []
     if not spec or (spec.startswith("@") and spec[1:] not in rt):
         return []
