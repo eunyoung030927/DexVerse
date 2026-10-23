@@ -31,7 +31,7 @@ import isaaclab.sim as sim_utils
 from isaaclab.sim.spawners.from_files import spawn_from_usd
 from isaaclab.sim.utils.queries import find_matching_prim_paths
 from isaaclab.sim.utils.stage import get_current_stage
-from pxr import Usd
+from pxr import Gf, Usd, UsdGeom, UsdPhysics
 from isaaclab.actuators.actuator_cfg import ImplicitActuatorCfg
 from isaaclab.assets.articulation import ArticulationCfg
 from isaaclab.envs.mdp.actions.actions_cfg import (
@@ -128,10 +128,42 @@ def _make_mimic_joints_rigid(prim_path: str) -> None:
                 prim.GetAttribute("physxMimicJoint:rotZ:offset").Set(_FINGER_MIMIC_OFFSET_DEG)
 
 
+def _fix_bimanual_finger_visuals(prim_path: str) -> None:
+    """Put the visual meshes of the bimanual Inspire hand back on their links.
+
+    In the bimanual USD every finger link's visual mesh carries an extra transform relative to its link (up to
+    12.8 cm and a rotation; e.g. right_index_proximal), so the fingers are drawn away from the palm. The mesh points
+    and the collision shapes are identical to the single-hand USDs, where the visual mesh sits on its link with an
+    identity transform. The ``visuals`` instance root of each link gets the inverse of its content's transform, so
+    the mesh is drawn on the link again; collisions and the articulation are untouched.
+    """
+    stage = get_current_stage()
+    for root in find_matching_prim_paths(prim_path):
+        xc = UsdGeom.XformCache()
+        for link in Usd.PrimRange(stage.GetPrimAtPath(root)):
+            if not link.HasAPI(UsdPhysics.RigidBodyAPI):
+                continue
+            vis = link.GetChild("visuals")
+            if not vis.IsValid():
+                continue
+            mesh = next((p for p in Usd.PrimRange(vis, Usd.TraverseInstanceProxies()) if p.IsA(UsdGeom.Mesh)), None)
+            if mesh is None:
+                continue
+            inner = xc.GetLocalToWorldTransform(mesh) * xc.GetLocalToWorldTransform(vis).GetInverse()
+            if Gf.IsClose(inner, Gf.Matrix4d(1.0), 1e-6):
+                continue
+            xf = UsdGeom.Xformable(vis)
+            xf.ClearXformOpOrder()
+            xf.AddTransformOp(UsdGeom.XformOp.PrecisionDouble).Set(inner.GetInverse())
+
+
 def _spawn_inspire_usd(prim_path: str, cfg: sim_utils.UsdFileCfg, *args, **kwargs) -> Usd.Prim:
-    """``spawn_from_usd`` followed by :func:`_make_mimic_joints_rigid`."""
+    """``spawn_from_usd`` followed by :func:`_make_mimic_joints_rigid` (and, for the bimanual USD,
+    :func:`_fix_bimanual_finger_visuals`)."""
     prim = spawn_from_usd(prim_path, cfg, *args, **kwargs)
     _make_mimic_joints_rigid(prim_path)
+    if "bimanual" in str(cfg.usd_path):
+        _fix_bimanual_finger_visuals(prim_path)
     return prim
 
 
