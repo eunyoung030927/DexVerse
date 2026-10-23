@@ -97,6 +97,10 @@ def main():
     ap.add_argument("--retry_failed", action="store_true",
                     help="also re-run items that ended failed_all_attempts (new attempts if --max_attempts grew) "
                          "or stage2_failed (stage 2 is re-run; a crash there is a bug, not a verdict)")
+    ap.add_argument("--shared_slots", action="store_true",
+                    help="count every live retargeting session on a GPU (any queue on this machine writing to the same "
+                         "$DEXVERSE_RETARGET_RUNS: run_target incl. its retries, stage 1, orphaned stage 2/3) against "
+                         "--per_gpu, so a second queue only fills slots whose processes have really ended")
     ap.add_argument("--keep_source", action="store_true",
                     help="also retarget onto the source hand itself (e.g. Shadow -> Shadow with other finger drives)")
     ap.add_argument("--dry_run", action="store_true")
@@ -124,12 +128,47 @@ def main():
         except Exception:  # noqa: BLE001
             return None
 
+    started = []                                             # (time, gpu) slots this queue handed out (not yet visible)
+
+    def live_sessions(g) -> int:
+        """Live retargeting sessions on GPU g of every queue on this machine using the same runs root."""
+        root, n = str(runs_root()), 0
+        for pid in os.listdir("/proc"):
+            if not pid.isdigit():
+                continue
+            try:
+                cmd = open(f"/proc/{pid}/cmdline", "rb").read().decode(errors="ignore")
+                if "scripts/retarget/" not in cmd:
+                    continue
+                env = dict(x.split("=", 1) for x in open(f"/proc/{pid}/environ", "rb").read().decode(errors="ignore").split("\0") if "=" in x)
+                if env.get("DEXVERSE_RETARGET_RUNS", str(runs_root())) != root or env.get("CUDA_VISIBLE_DEVICES") != str(g):
+                    continue
+                if "run_target.py" in cmd or "stage1_reference.py" in cmd:
+                    n += 1
+                elif "stage2_kinematic.py" in cmd or "stage3_spider.py" in cmd:      # counted via run_target unless orphaned
+                    ppid = open(f"/proc/{pid}/stat").read().rsplit(")", 1)[1].split()[1]
+                    if "run_target.py" not in open(f"/proc/{ppid}/cmdline", "rb").read().decode(errors="ignore"):
+                        n += 1
+            except (OSError, ValueError, IndexError):
+                continue
+        return n
+
     def acquire():
         """A free slot, on the GPU with the most usable VRAM; waits while every GPU is full. Items are offered in
         queue order (task 1's episodes first, then task 2, ...), so the GPUs fill in that order without idling."""
         with lock:
             while True:
-                if free:
+                if free and a.shared_slots:
+                    now = time.time()
+                    started[:] = [(t, g) for t, g in started if now - t < 20]
+                    room = {g: a.per_gpu - live_sessions(g) - sum(1 for _, x in started if x == g) for g in set(free)}
+                    ok = [g for g in room if room[g] > 0]
+                    if ok:
+                        g = max(ok, key=room.get)
+                        free.remove(g)
+                        started.append((now, g))
+                        return g
+                elif free:
                     if a.min_free_gb <= 0:
                         return free.pop(0)
                     now = time.time()
