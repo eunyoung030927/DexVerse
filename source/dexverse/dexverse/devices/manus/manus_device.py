@@ -20,8 +20,9 @@ back of the hand, -Z toward the fingertips) and re-placed at a wrist pose chosen
 * ``"fixed"``: a fixed wrist, palm down with the fingers along +X (fingers only, no headset).
 * ``"controller"``: the Quest controller mounted on the back of the same hand. The pivot
   calibration (``controller_offset_json``, from ``pivot_calibration.py``) moves the tracked point
-  to the wrist rotation centre; the controller-to-hand rotation is taken at START, with the hand
-  held like the robot hand.
+  to the wrist rotation centre. The controller-to-hand rotation is calibrated once at START with
+  the hand held like the robot hand (``calibrate_rotation``), saved to the same JSON as
+  ``mount_rot_ctrl_to_wrist`` and loaded on later runs; without a saved one it is taken at every START.
 * ``"handtracking"``: the headset's optical hand tracking (OpenXR wrist joint).
 
 With ``xr_cfg`` (a VR session) the device also owns an :class:`OpenXRDevice` without retargeters:
@@ -188,6 +189,7 @@ class ManusDevice(DeviceBase):
         self._wrist_first_pose: dict[str, np.ndarray] = {}
         self._ctrl_rot: dict[str, np.ndarray] = {}
         self._mount_rot = {side: np.eye(3) for side in _SIDES}  # controller frame -> OpenXR wrist frame
+        self._mount_loaded: set[str] = set()  # sides whose rotation came from controller_offset_json
         self._ctrl_offset = {side: np.zeros(3) for side in _SIDES}
         if cfg.controller_offset_json:
             with open(cfg.controller_offset_json) as f:
@@ -195,8 +197,14 @@ class ManusDevice(DeviceBase):
             for side in _SIDES:
                 if side in calib:
                     self._ctrl_offset[side] = np.asarray(calib[side]["offset_ctrl_m"], dtype=np.float64)
+                    if "mount_rot_ctrl_to_wrist" in calib[side]:
+                        self._mount_rot[side] = np.asarray(calib[side]["mount_rot_ctrl_to_wrist"], dtype=np.float64)
+                        self._mount_loaded.add(side)
             print(f"[manus] controller->wrist offsets from {cfg.controller_offset_json}: "
-                  + ", ".join(f"{s}={np.round(v, 4).tolist()}" for s, v in self._ctrl_offset.items()))
+                  + ", ".join(f"{s}={np.round(v, 4).tolist()}" for s, v in self._ctrl_offset.items())
+                  + f"; saved controller->hand rotation for {sorted(self._mount_loaded) or 'none'}")
+        if cfg.calibrate_rotation and not cfg.controller_offset_json:
+            raise ValueError("calibrate_rotation saves into controller_offset_json: set it (pivot_calibration.py output)")
 
         self._xr = None
         if cfg.xr_cfg is not None:
@@ -240,7 +248,13 @@ class ManusDevice(DeviceBase):
         """START: take the controller-to-hand rotation and move the XR anchor so the operator's hand
         sits on the robot hand, then fire the START callbacks (the retargeter's wrist calibration)
         once the updated wrist has reached the retargeter."""
-        rotated = self.cfg.wrist_mode == "controller" and self._calibrate_mount_rotation()
+        rotated = False
+        if self.cfg.wrist_mode == "controller" and (
+            self.cfg.calibrate_rotation or not set(self._robot_sides()) <= self._mount_loaded
+        ):
+            rotated = self._calibrate_mount_rotation()
+            if rotated and self.cfg.calibrate_rotation:
+                self._save_mount_rotation()
         moved = self.cfg.recenter_on_start and self.cfg.wrist_mode != "fixed" and self._recenter()
         if rotated or moved:
             self._pending_start = _START_DELAY_FRAMES
@@ -287,6 +301,21 @@ class ManusDevice(DeviceBase):
             angle = np.degrees(np.linalg.norm(R.from_matrix(self._mount_rot[side]).as_rotvec()))
             print(f"[manus] {side} controller->hand rotation calibrated from {how} ({angle:.0f} deg)")
         return True
+
+    def _save_mount_rotation(self) -> None:
+        """Store the calibrated controller-to-hand rotation next to the pivot offset."""
+        path = self.cfg.controller_offset_json
+        with open(path) as f:
+            calib = json.load(f)
+        for side in self._robot_sides():
+            if side in calib:
+                calib[side]["mount_rot_ctrl_to_wrist"] = self._mount_rot[side].round(6).tolist()
+                calib[side]["mount_rot_date"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+                self._mount_loaded.add(side)
+        with open(path, "w") as f:
+            json.dump(calib, f, indent=2)
+            f.write("\n")
+        print(f"[manus] controller->hand rotation saved to {path}; later runs load it (no rotation step on START)")
 
     def _recenter(self) -> bool:
         """Translate the XR anchor by (robot wrist - operator wrist) so the two coincide."""
@@ -413,6 +442,8 @@ class ManusDeviceCfg(DeviceCfg):
     stale_s: float = 0.5
     wrist_mode: str = "fixed"  # "fixed" | "controller" | "handtracking"
     controller_offset_json: str | None = None  # pivot_calibration.py output (controller -> wrist offset)
+    calibrate_rotation: bool = False  # on START take the hand as oriented like the robot hand and save the
+    # controller-to-hand rotation into controller_offset_json (once per mount); otherwise it is loaded
     recenter_on_start: bool = True  # on START move the XR anchor so your hand sits on the robot hand
     auto_start: bool = True  # start (and calibrate) on the first glove frame instead of the headset START
     wrist_pos: tuple[float, float, float] = (0.0, 0.0, 0.0)  # "fixed" mode wrist position

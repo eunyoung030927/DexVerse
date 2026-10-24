@@ -1078,6 +1078,9 @@ def create_environment_config() -> tuple["ManagerBasedRLEnvCfg | DirectRLEnvCfg"
                              fingers=os.environ.get("DEXVERSE_MANUS_FINGERS", "bench2dex"),
                              wrist_mode=os.environ.get("DEXVERSE_MANUS_WRIST", "fixed"),
                              controller_offset_json=os.environ.get("DEXVERSE_MANUS_CTRL_OFFSET") or None,
+                             # DEXVERSE_MANUS_CALIBRATE_ROTATION=1: on START (hand held like the robot hand)
+                             # save the controller-to-hand rotation into the offset JSON; later runs load it.
+                             calibrate_rotation=os.environ.get("DEXVERSE_MANUS_CALIBRATE_ROTATION", "0") == "1",
                              # The robot moves only after the headset START (align your hand first);
                              # DEXVERSE_MANUS_AUTO_START=1 starts as soon as hand data arrives.
                              auto_start=os.environ.get("DEXVERSE_MANUS_AUTO_START", "0") == "1")

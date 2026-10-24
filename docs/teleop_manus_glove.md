@@ -73,15 +73,44 @@ scripts/teleop_tools/run_teleop.sh teleop_agent \
    → Server IP, Port `48322` → Connect → Enter VR. 텔레옵을 다시 띄울 때마다 Disconnect → Connect.
 3. 로봇은 **START 전에는 움직이지 않는다**. 빨간 점(내 손)만 움직인다.
 
+### 회전 캘리브레이션 (컨트롤러 → 손 방향, 마운트당 1회)
+
+피벗 오프셋(위치)과 별도로, 컨트롤러 축과 손 축 사이 회전을 한 번 구해 같은 JSON에 저장한다.
+텔레옵 명령 앞에 `DEXVERSE_MANUS_CALIBRATE_ROTATION=1`을 붙여 실행하고:
+
+1. 실제 손을 VR 속 **로봇 손과 같은 방향**으로 둔다 (빨간 점은 아직 컨트롤러 방향이라 무시).
+2. 헤드셋 메뉴 **START** → `controller->hand rotation calibrated from robot hand orientation`,
+   `controller->hand rotation saved to <json>` (`mount_rot_ctrl_to_wrist` 항목).
+
+이후 실행은 저장된 회전을 불러온다(시작 로그 `saved controller->hand rotation for ['right']`).
+저장된 회전이 없으면 START마다 같은 방식으로 계산만 하고 저장하지 않는다. 마운트를 다시 끼우면 다시 한다.
+
 ### START (손 맞추기)
 
 1. 오른손을 실제 책상에서 약 20 cm 띄운다 (시뮬레이션: 테이블 윗면 0.6 m, 로봇 손목 홈 0.8 m).
-2. 실제 손을 VR 속 **로봇 손과 같은 방향**으로 둔다 (빨간 점은 START 전엔 컨트롤러 방향이라 무시).
+2. 손을 로봇 손 근처·같은 방향에 둔다.
 3. 헤드셋 메뉴 **START** → 로그:
-   - `[manus] right controller->hand rotation calibrated from robot hand orientation (... deg)` — 회전 오프셋
    - `[manus] recentered: XR anchor moved by [...] m` — 시점을 옮겨 내 손을 로봇 손 위치에 겹침
-   - `Calibrated wrist pose for HAND_RIGHT` — 이후 로봇이 따라옴
-4. 어긋나면 **STOP → 손 다시 맞추기 → START** (clutch).
+   - `Calibrated wrist pose for HAND_RIGHT` — 이후 로봇이 따라옴 (`record_demos`는 이때 녹화 시작)
+4. 어긋나면 **STOP → 손 다시 맞추기 → START** (clutch). `record_demos`는 성공·리셋 뒤 다시 START가 필요하다.
+
+## 데이터 녹화
+
+```bash
+cd /workspace/DexVerse
+DEXVERSE_MANUS_WRIST=controller \
+DEXVERSE_MANUS_CTRL_OFFSET=/workspace/datasets/dexverse/calibration/controller_wrist_offset_both.json \
+scripts/teleop_tools/run_teleop.sh record_demos \
+  --task Dexverse-PushT-v1 --robot_type floating_shadow_right --teleop_device manus --num_demos 20 --record_state
+```
+
+- 저장 위치: `$DEXVERSE_LEROBOT_DIR` = `/workspace/datasets/dexverse/teleop` (볼륨, `dexverse_env.sh`에서 설정)
+  아래 `trajectories/<카테고리>/<task>/...pkl`.
+- 저장 내용은 **로봇 기준**: 매 스텝 action(손목 가상 관절 6 + 손가락 관절 목표 = 리타게팅 결과), 에피소드 시작 장면
+  상태, `--record_state`면 매 스텝 장면 전체 상태(로봇 관절·물체 자세). 글러브·컨트롤러 원본(사람 쪽 입력)은 저장 안 함.
+- 성공 조건이 `--num_success_steps`(기본 10) 스텝 연속 유지되면 저장 후 자동 리셋.
+- VR 중에는 카메라를 끈다. LeRobot 데이터셋(영상 포함)은 녹화 후 `pickle_to_lerobot.sh`로 재생해 만든다
+  ([teleop_quest_cloudxr6.md](teleop_quest_cloudxr6.md) "LeRobot 데이터셋").
 
 ## 피벗 캘리브레이션 (컨트롤러 → 손목 회전 중심 오프셋)
 
@@ -113,6 +142,7 @@ scripts/teleop_tools/run_teleop.sh scripts/teleop_tools/record_controller_poses.
 | `DEXVERSE_MANUS_CTRL_OFFSET` | 피벗 결과 JSON | 없음(오프셋 0) |
 | `DEXVERSE_MANUS_FINGERS` | `bench2dex` / `dexverse`(Quest 손 추적용 DexVerse YAML) | `bench2dex` |
 | `DEXVERSE_MANUS_AUTO_START` | `1`이면 손 데이터가 들어오자마자 시작 | `0`(헤드셋 START) |
+| `DEXVERSE_MANUS_CALIBRATE_ROTATION` | `1`이면 START 때 컨트롤러→손 회전을 계산해 `DEXVERSE_MANUS_CTRL_OFFSET` JSON에 저장 | `0`(저장된 값 사용) |
 
 손가락 보정: `source/dexverse/dexverse/devices/manus/bench2dex/hand_cfgs/<손>.yml`의 `hand_scale_xyz`,
 `hand_offset_xyz`, `joint_limits_override`. 실행 중에 고쳐도 약 2초 안에 반영된다.
@@ -143,7 +173,7 @@ python scripts/teleop_tools/manus_finger_check.py --task Dexverse-PushT-v1 \
 | 브리지 `gloves=[]` | 글러브 전원·절전. Windows Core에서 페어링했는지 |
 | `no controller registered` (CloudXR 로그) | Quest가 손 추적 모드로 접속함 → 컨트롤러 모드로 다시 Connect |
 | `controller tracked at [anchor 좌표]` 뒤 로봇이 엉뚱한 곳 | Quest 접속 전 빈 값. 접속 후 STOP → START |
-| 빨간 점이 컨트롤러 방향을 봄 | START 전 정상. START 때 회전 오프셋이 잡힘 |
+| 빨간 점이 컨트롤러 방향을 봄 | 회전 캘리브레이션 전(저장값 없음)이면 정상. 회전 캘리브레이션을 한 번 한다 |
 | 로봇 손 방향이 내 손과 일정 각도 어긋남 | START 때 손 방향을 덜 맞춘 것 → STOP → 맞추기 → START |
 | 손목만 돌렸는데 로봇 손이 원을 그림 | 피벗 오프셋 없음/부정확 → 피벗 캘리브레이션 |
 | 시뮬레이션 책상이 낮음 | START 때 손을 책상에서 약 20 cm 띄우기 |
