@@ -464,7 +464,7 @@ def run_provenance() -> dict:
         "git_dirty": bool(status) if status is not None else None,
         "git_modified_files": [line[3:] for line in status.splitlines()] if status else [],
         "command": shlex.join([sys.executable, *sys.argv]),
-        "env": {k: v for k, v in os.environ.items() if k.startswith(("DEXVERSE_", "URDF_ZOO_DIR", "ISAACLAB_PATH"))},
+        "env": {k: v for k, v in os.environ.items() if k.startswith(("DEXVERSE_", "VR_TELEOP_", "URDF_ZOO_DIR", "ISAACLAB_PATH"))},
         "recorded_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "host": socket.gethostname(),
     }
@@ -1108,22 +1108,10 @@ def create_environment_config() -> tuple["ManagerBasedRLEnvCfg | DirectRLEnvCfg"
         )
         apply_teleop_retargeting_scheme(env_cfg.teleop_devices, args_cli.retargeting_scheme)
         if args_cli.teleop_device == "manus":
-            # Fingers from the Manus gloves (bridge), reusing the hand-tracking retargeters and XR anchor.
-            from dexverse.devices.manus import add_manus_device
+            # Manus glove fingers + glove-mounted Quest controller wrist (vr_teleop/, VR_TELEOP_* env vars).
+            from vr_teleop.teleop.dexverse_integration import add_manus_device_from_env
 
-            # DEXVERSE_MANUS_FINGERS=dexverse keeps the DexVerse (Quest-tuned) finger YAMLs.
-            # DEXVERSE_MANUS_WRIST=controller: wrist follows the Quest controller on the same hand
-            # (DEXVERSE_MANUS_CTRL_OFFSET=<pivot_calibration json> moves it to the wrist centre).
-            add_manus_device(env_cfg.teleop_devices, use_xr=bool(args_cli.xr),
-                             fingers=os.environ.get("DEXVERSE_MANUS_FINGERS", "bench2dex"),
-                             wrist_mode=os.environ.get("DEXVERSE_MANUS_WRIST", "fixed"),
-                             controller_offset_json=os.environ.get("DEXVERSE_MANUS_CTRL_OFFSET") or None,
-                             # DEXVERSE_MANUS_CALIBRATE_ROTATION=1: on START (hand held like the robot hand)
-                             # save the controller-to-hand rotation into the offset JSON; later runs load it.
-                             calibrate_rotation=os.environ.get("DEXVERSE_MANUS_CALIBRATE_ROTATION", "0") == "1",
-                             # The robot moves only after the headset START (align your hand first);
-                             # DEXVERSE_MANUS_AUTO_START=1 starts as soon as hand data arrives.
-                             auto_start=os.environ.get("DEXVERSE_MANUS_AUTO_START", "0") == "1")
+            add_manus_device_from_env(env_cfg.teleop_devices, use_xr=bool(args_cli.xr))
 
     configure_v1_debug_visualization(env_cfg, cues_in_rgb=args_cli.cues_in_rgb)
     return env_cfg, success_term

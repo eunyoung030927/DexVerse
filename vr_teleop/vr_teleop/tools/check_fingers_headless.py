@@ -3,17 +3,13 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Drive a floating DexVerse hand from the Manus gloves (fingers only) and record what happens.
+"""Headless check without a headset: drive a DexVerse floating hand from the Manus gloves (fingers only).   [DexVerse]
 
-Needs the Manus bridge running in the same network namespace::
+The wrist stays fixed (``wrist_mode="fixed"``); records the camera videos and the retargeted finger
+targets per step. Needs the Manus bridge (``run_manus_bridge.sh``; ``--fake`` = synthetic hand)::
 
-    MANUS_SDK_PY=/workspace/manus_sdk/Python python /workspace/robo-viz/manus/bridge.py          # gloves
-    python /workspace/robo-viz/manus/bridge.py --fake                                            # no gloves
-
-Then::
-
-    python scripts/teleop_tools/manus_finger_check.py --task Dexverse-PushT-v1 \\
-        --robot_type floating_allegro_right --steps 600 --headless --enable_cameras
+    python vr_teleop/tools/check_fingers_headless.py --task Dexverse-PushT-v1 \\
+        --robot_type floating_shadow_right --steps 600 --headless --enable_cameras
 
 Writes ``<out>/manus_<camera>.mp4`` and ``<out>/finger_joints.csv`` (retargeted finger targets per step).
 """
@@ -53,10 +49,11 @@ import imageio  # noqa: E402
 import isaaclab_tasks  # noqa: E402,F401
 import numpy as np  # noqa: E402
 import torch  # noqa: E402
-from dexverse.devices.manus import add_manus_device  # noqa: E402
 from dexverse.tasks.config.floating_teleop import apply_teleop_retargeting_scheme  # noqa: E402
 from dexverse.tasks.utils import parse_env_cfg  # noqa: E402
 from isaaclab.devices.teleop_device_factory import create_teleop_device  # noqa: E402
+
+from vr_teleop.teleop.dexverse_integration import add_manus_device  # noqa: E402
 
 
 def main() -> None:

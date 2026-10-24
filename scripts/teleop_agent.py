@@ -295,24 +295,10 @@ def main() -> None:  # noqa: C901
         )
         apply_teleop_retargeting_scheme(env_cfg.teleop_devices, args_cli.retargeting_scheme)
         if args_cli.teleop_device == "manus":
-            # Fingers from the Manus gloves (bridge), reusing the hand-tracking retargeters and XR anchor.
-            import os
+            # Manus glove fingers + glove-mounted Quest controller wrist (vr_teleop/, VR_TELEOP_* env vars).
+            from vr_teleop.teleop.dexverse_integration import add_manus_device_from_env
 
-            from dexverse.devices.manus import add_manus_device
-
-            # DEXVERSE_MANUS_FINGERS=dexverse keeps the DexVerse (Quest-tuned) finger YAMLs.
-            # DEXVERSE_MANUS_WRIST=controller: wrist follows the Quest controller on the same hand
-            # (DEXVERSE_MANUS_CTRL_OFFSET=<pivot_calibration json> moves it to the wrist centre).
-            add_manus_device(env_cfg.teleop_devices, use_xr=bool(args_cli.xr),
-                             fingers=os.environ.get("DEXVERSE_MANUS_FINGERS", "bench2dex"),
-                             wrist_mode=os.environ.get("DEXVERSE_MANUS_WRIST", "fixed"),
-                             controller_offset_json=os.environ.get("DEXVERSE_MANUS_CTRL_OFFSET") or None,
-                             # DEXVERSE_MANUS_CALIBRATE_ROTATION=1: on START (hand held like the robot hand)
-                             # save the controller-to-hand rotation into the offset JSON; later runs load it.
-                             calibrate_rotation=os.environ.get("DEXVERSE_MANUS_CALIBRATE_ROTATION", "0") == "1",
-                             # The robot moves only after the headset START (align your hand first);
-                             # DEXVERSE_MANUS_AUTO_START=1 starts as soon as hand data arrives.
-                             auto_start=os.environ.get("DEXVERSE_MANUS_AUTO_START", "0") == "1")
+            add_manus_device_from_env(env_cfg.teleop_devices, use_xr=bool(args_cli.xr))
 
     configure_v1_debug_visualization(env_cfg, cues_in_rgb=args_cli.cues_in_rgb)
     # Template environments consume json_path internally via parse_env_cfg.
