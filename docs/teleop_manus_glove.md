@@ -109,6 +109,17 @@ scripts/teleop_tools/run_teleop.sh record_demos \
 - 저장 내용은 **로봇 기준**: 매 스텝 action(손목 가상 관절 6 + 손가락 관절 목표 = 리타게팅 결과), 에피소드 시작 장면
   상태, `--record_state`면 매 스텝 장면 전체 상태(로봇 관절·물체 자세). 글러브·컨트롤러 원본(사람 쪽 입력)은 저장 안 함.
 - 성공 조건이 `--num_success_steps`(기본 10) 스텝 연속 유지되면 저장 후 자동 리셋.
+- **레이아웃 복원**: 에피소드마다 `initial_state`(로봇·물체 전체 상태), `task_state`(목표 등 장면 밖 태스크 값),
+  `multi_assets`/`multi_usds`가 저장되고, `record_demos.py --replay_demos <pkl>`이 `env.reset_to`로 그대로 되돌린다.
+  `--record_state`는 이와 별개로 매 스텝 상태까지 남기는 옵션이다.
+- **실행 출처 (`provenance`)**: pickle 최상위에 `git_commit`, `git_branch`, `git_dirty`, `git_modified_files`,
+  `command`(실행한 전체 명령), `env`(`DEXVERSE_*` 등 환경변수), `recorded_at`, `host`가 저장된다.
+  - 이유: 저장된 상태는 **코드가 다시 만든 환경** 위에 덮어쓰여야 의미가 있다. 태스크 cfg, 장면·에셋 정의, 로봇과
+    리타게터의 action 배치는 pickle이 아니라 코드에 있으므로, 코드가 바뀌면(테이블 크기, 생성 범위, action 순서 등)
+    같은 `initial_state`를 넣어도 녹화 때 장면이 재현되지 않는다. 그러면 재생·LeRobot 변환·MimicGen·학습 레이아웃
+    평가가 오류 없이 조용히 어긋난다. `git_commit`(+ 커밋 안 된 수정 여부와 파일)으로 그 환경을 만든 코드를 정확히
+    되찾고, `command`·`env`로 태스크·손 종류·리타게터·텔레옵 장치 설정까지 같은 조건으로 다시 띄울 수 있다.
+  - `git_dirty: true`인 녹화는 커밋에 없는 수정이 섞인 것이므로, 데이터 수집 전에는 커밋해 두는 것이 좋다.
 - VR 중에는 카메라를 끈다. LeRobot 데이터셋(영상 포함)은 녹화 후 `pickle_to_lerobot.sh`로 재생해 만든다
   ([teleop_quest_cloudxr6.md](teleop_quest_cloudxr6.md) "LeRobot 데이터셋").
 
@@ -182,7 +193,8 @@ python scripts/teleop_tools/manus_finger_check.py --task Dexverse-PushT-v1 \
 ## 변경 파일
 
 - `source/dexverse/dexverse/devices/manus/` — `manus_device.py`, `bench2dex_retargeter.py`, `bench2dex/`(복사본)
-- `scripts/teleop_agent.py`, `scripts/record_demos.py` — `--teleop_device manus` 연결, 위 환경변수
+- `scripts/teleop_agent.py`, `scripts/record_demos.py` — `--teleop_device manus` 연결, 위 환경변수,
+  녹화 pickle의 `provenance`(코드 버전·실행 명령)
 - `scripts/teleop_tools/run_teleop.sh` — Isaac Sim 번들 python이 없으면 활성 conda 환경 python 사용
 - `scripts/teleop_tools/record_controller_poses.py`, `pivot_calibration.py` — 피벗 캘리브레이션
 - `scripts/teleop_tools/manus_finger_check.py` — 헤드리스 점검

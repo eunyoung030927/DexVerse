@@ -431,6 +431,45 @@ from isaaclab.devices.teleop_device_factory import create_teleop_device  # noqa:
 from isaaclab.envs import DirectRLEnvCfg, ManagerBasedRLEnvCfg  # noqa: E402
 
 
+def run_provenance() -> dict:
+    """Code version and invocation of this recording session, stored in the pickle as ``provenance``.
+
+    The pickle restores a layout from ``initial_state`` / ``task_state``, but the environment those
+    states are written into is rebuilt from the *code*: task cfg, scene and asset definitions, robot
+    and retargeter layouts. If that code changes (e.g. a table size, a spawn range, an action layout),
+    the same state no longer reproduces the recorded scene, and replay / LeRobot conversion / MimicGen
+    / evaluation on the recorded layouts silently diverge. ``git_commit`` (+ ``git_dirty`` and the
+    modified files) says which code to check out to rebuild the exact environment, and ``command`` /
+    ``env`` say how it was launched (task, robot_type, retargeter options, teleop device settings).
+    """
+    import shlex
+    import socket
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parents[1]
+
+    def git(*cmd: str) -> str | None:
+        try:
+            out = subprocess.run(["git", "-C", str(repo), *cmd], capture_output=True, text=True, timeout=10)
+        except (OSError, subprocess.SubprocessError):
+            return None
+        return out.stdout.rstrip("\n") if out.returncode == 0 else None  # keep porcelain leading spaces
+
+    status = git("status", "--porcelain", "--untracked-files=no")
+    return {
+        "git_repo": str(repo),
+        "git_commit": git("rev-parse", "HEAD"),
+        "git_branch": git("rev-parse", "--abbrev-ref", "HEAD"),
+        "git_dirty": bool(status) if status is not None else None,
+        "git_modified_files": [line[3:] for line in status.splitlines()] if status else [],
+        "command": shlex.join([sys.executable, *sys.argv]),
+        "env": {k: v for k, v in os.environ.items() if k.startswith(("DEXVERSE_", "URDF_ZOO_DIR", "ISAACLAB_PATH"))},
+        "recorded_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "host": socket.gethostname(),
+    }
+
+
 class TrajectoryPickleRecorder:
     """Save teleop demos as replayable trajectory pickles.
 
@@ -492,6 +531,7 @@ class TrajectoryPickleRecorder:
             **task_identity(env_name or task_name),
             "action_layout": action_layout_metadata,
             "wrist_camera_body_collision": wrist_camera_body_collision,
+            "provenance": run_provenance(),  # code version + command needed to rebuild this env (see run_provenance)
         }
 
     @property
