@@ -158,7 +158,7 @@ if args_cli.enable_pinocchio:
     # dex-retargeting utilities (e.g., LeapHandDexRetargeting)
     import pinocchio  # noqa: F401
 
-if "handtracking" in args_cli.teleop_device.lower():
+if "handtracking" in args_cli.teleop_device.lower() or args_cli.teleop_device == "manus":
     app_launcher_args["xr"] = True
 
 # launch omniverse app
@@ -294,6 +294,22 @@ def main() -> None:  # noqa: C901
             anchor_pos_offsets=getattr(env_cfg, "retargeter_anchor_pos_offsets", None),
         )
         apply_teleop_retargeting_scheme(env_cfg.teleop_devices, args_cli.retargeting_scheme)
+        if args_cli.teleop_device == "manus":
+            # Fingers from the Manus gloves (bridge), reusing the hand-tracking retargeters and XR anchor.
+            import os
+
+            from dexverse.devices.manus import add_manus_device
+
+            # DEXVERSE_MANUS_FINGERS=dexverse keeps the DexVerse (Quest-tuned) finger YAMLs.
+            # DEXVERSE_MANUS_WRIST=controller: wrist follows the Quest controller on the same hand
+            # (DEXVERSE_MANUS_CTRL_OFFSET=<pivot_calibration json> moves it to the wrist centre).
+            add_manus_device(env_cfg.teleop_devices, use_xr=bool(args_cli.xr),
+                             fingers=os.environ.get("DEXVERSE_MANUS_FINGERS", "bench2dex"),
+                             wrist_mode=os.environ.get("DEXVERSE_MANUS_WRIST", "fixed"),
+                             controller_offset_json=os.environ.get("DEXVERSE_MANUS_CTRL_OFFSET") or None,
+                             # The robot moves only after the headset START (align your hand first);
+                             # DEXVERSE_MANUS_AUTO_START=1 starts as soon as hand data arrives.
+                             auto_start=os.environ.get("DEXVERSE_MANUS_AUTO_START", "0") == "1")
 
     configure_v1_debug_visualization(env_cfg, cues_in_rgb=args_cli.cues_in_rgb)
     # Template environments consume json_path internally via parse_env_cfg.

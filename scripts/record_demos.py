@@ -377,7 +377,7 @@ if args_cli.replay_demos:
     args_cli.teleop_device = "replay"
 if args_cli.no_lerobot and (args_cli.lerobot or args_cli.lerobot_root):
     parser.error("--no_lerobot cannot be combined with --lerobot / --lerobot_root")
-_xr_device = any(k in args_cli.teleop_device.lower() for k in ("handtracking", "motion_controllers"))
+_xr_device = any(k in args_cli.teleop_device.lower() for k in ("handtracking", "motion_controllers", "manus"))
 # Sessions record only the trajectory pickle by default; the LeRobot dataset is built afterwards by replaying it
 # (scripts/teleop_tools/pickle_to_lerobot.sh, which passes --lerobot_root). Rendering the dataset cameras inside an
 # XR session also stalls it, so --lerobot / --lerobot_root there is at your own risk.
@@ -394,6 +394,7 @@ if not args_cli.no_lerobot:
 
 uses_xr_teleop = (
     "handtracking" in args_cli.teleop_device.lower() or "motion_controllers" in args_cli.teleop_device.lower()
+    or args_cli.teleop_device == "manus"
 )
 
 if uses_xr_teleop and not args_cli.enable_pinocchio:
@@ -1066,6 +1067,20 @@ def create_environment_config() -> tuple["ManagerBasedRLEnvCfg | DirectRLEnvCfg"
             anchor_pos_offsets=getattr(env_cfg, "retargeter_anchor_pos_offsets", None),
         )
         apply_teleop_retargeting_scheme(env_cfg.teleop_devices, args_cli.retargeting_scheme)
+        if args_cli.teleop_device == "manus":
+            # Fingers from the Manus gloves (bridge), reusing the hand-tracking retargeters and XR anchor.
+            from dexverse.devices.manus import add_manus_device
+
+            # DEXVERSE_MANUS_FINGERS=dexverse keeps the DexVerse (Quest-tuned) finger YAMLs.
+            # DEXVERSE_MANUS_WRIST=controller: wrist follows the Quest controller on the same hand
+            # (DEXVERSE_MANUS_CTRL_OFFSET=<pivot_calibration json> moves it to the wrist centre).
+            add_manus_device(env_cfg.teleop_devices, use_xr=bool(args_cli.xr),
+                             fingers=os.environ.get("DEXVERSE_MANUS_FINGERS", "bench2dex"),
+                             wrist_mode=os.environ.get("DEXVERSE_MANUS_WRIST", "fixed"),
+                             controller_offset_json=os.environ.get("DEXVERSE_MANUS_CTRL_OFFSET") or None,
+                             # The robot moves only after the headset START (align your hand first);
+                             # DEXVERSE_MANUS_AUTO_START=1 starts as soon as hand data arrives.
+                             auto_start=os.environ.get("DEXVERSE_MANUS_AUTO_START", "0") == "1")
 
     configure_v1_debug_visualization(env_cfg, cues_in_rgb=args_cli.cues_in_rgb)
     return env_cfg, success_term
