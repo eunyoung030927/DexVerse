@@ -75,15 +75,26 @@ scripts/teleop_tools/run_teleop.sh teleop_agent \
 
 ### 회전 캘리브레이션 (컨트롤러 → 손 방향, 마운트당 1회)
 
-피벗 오프셋(위치)과 별도로, 컨트롤러 축과 손 축 사이 회전을 한 번 구해 같은 JSON에 저장한다.
-텔레옵 명령 앞에 `DEXVERSE_MANUS_CALIBRATE_ROTATION=1`을 붙여 실행하고:
+피벗 오프셋(위치)과 별도로, 컨트롤러 축과 손 축 사이 회전을 전용 VR 앱으로 한 번 구해 같은 JSON에 저장한다
+(`mount_rot_ctrl_to_wrist`). 텔레옵·녹화는 이 값을 불러 쓴다.
 
-1. 실제 손을 VR 속 **로봇 손과 같은 방향**으로 둔다 (빨간 점은 아직 컨트롤러 방향이라 무시).
-2. 헤드셋 메뉴 **START** → `controller->hand rotation calibrated from robot hand orientation`,
-   `controller->hand rotation saved to <json>` (`mount_rot_ctrl_to_wrist` 항목).
+```bash
+scripts/teleop_tools/run_teleop.sh scripts/teleop_tools/calibrate_controller_rotation.py \
+  --side right --offset_json /workspace/datasets/dexverse/calibration/controller_wrist_offset_both.json
+```
 
-이후 실행은 저장된 회전을 불러온다(시작 로그 `saved controller->hand rotation for ['right']`).
-저장된 회전이 없으면 START마다 같은 방식으로 계산만 하고 저장하지 않는다. 마운트를 다시 끼우면 다시 한다.
+- 배경이 투명해서 **패스스루로 실제 손과 방이 보인다** (`--no_passthrough`면 바닥·하늘 표시).
+- 초록 스켈레톤: 머리 앞 35 cm·아래 12 cm에 고정된 편 손(손바닥 아래, 손가락 정면), 초록 큰 점 = 목표 손목,
+  점선 축 = 목표 손목 축(X 자홍, Y 하늘색, Z 흰색). 노란 큰 점 = 내 손목(컨트롤러 + 피벗).
+1. 실제 손을 초록 손에 겹치고 노란 점을 초록 큰 점에 맞춘다.
+2. **A(오른쪽) / X(왼쪽)** → 0.5초 평균(이 동안 손을 멈출 것)으로 회전을 계산해 저장.
+3. 빨간 스켈레톤(새 회전으로 그린 내 손)과 내 손목 축(X 빨강, Y 초록, Z 파랑)이 초록 손과 겹치는지 확인.
+   로그 `hand vs target rotation`이 몇 도 이내면 좋다. 다시 하려면 다시 A.
+4. B/Y 짧게 = 목표 손을 지금 시선 앞으로, **2초 = 종료**.
+
+JSON에 이미 저장된 회전은 이 앱에서 쓰지 않는다(빨간 손은 이번 캡처 뒤에만 보임). `--mode handtracking`
+(손 추적으로 자동 측정)은 이 파이프라인에서 컨트롤러와 손 추적이 동시에 오지 않아 쓸 수 없었다.
+텔레옵 안에서 하는 방법(`DEXVERSE_MANUS_CALIBRATE_ROTATION=1`, START 때 로봇 손 방향 기준)도 남아 있다.
 
 ### START (손 맞추기)
 
@@ -184,7 +195,7 @@ python scripts/teleop_tools/manus_finger_check.py --task Dexverse-PushT-v1 \
 | 브리지 `gloves=[]` | 글러브 전원·절전. Windows Core에서 페어링했는지 |
 | `no controller registered` (CloudXR 로그) | Quest가 손 추적 모드로 접속함 → 컨트롤러 모드로 다시 Connect |
 | `controller tracked at [anchor 좌표]` 뒤 로봇이 엉뚱한 곳 | Quest 접속 전 빈 값. 접속 후 STOP → START |
-| 빨간 점이 컨트롤러 방향을 봄 | 회전 캘리브레이션 전(저장값 없음)이면 정상. 회전 캘리브레이션을 한 번 한다 |
+| 빨간 점이 컨트롤러 방향을 봄 | 회전 캘리브레이션 전(저장값 없음)이면 정상. `calibrate_controller_rotation.py`로 한 번 한다 |
 | 로봇 손 방향이 내 손과 일정 각도 어긋남 | START 때 손 방향을 덜 맞춘 것 → STOP → 맞추기 → START |
 | 손목만 돌렸는데 로봇 손이 원을 그림 | 피벗 오프셋 없음/부정확 → 피벗 캘리브레이션 |
 | 시뮬레이션 책상이 낮음 | START 때 손을 책상에서 약 20 cm 띄우기 |
@@ -197,5 +208,6 @@ python scripts/teleop_tools/manus_finger_check.py --task Dexverse-PushT-v1 \
   녹화 pickle의 `provenance`(코드 버전·실행 명령)
 - `scripts/teleop_tools/run_teleop.sh` — Isaac Sim 번들 python이 없으면 활성 conda 환경 python 사용
 - `scripts/teleop_tools/record_controller_poses.py`, `pivot_calibration.py` — 피벗 캘리브레이션
+- `scripts/teleop_tools/calibrate_controller_rotation.py` — 회전 캘리브레이션 (패스스루 VR 앱)
 - `scripts/teleop_tools/manus_finger_check.py` — 헤드리스 점검
 - 저장소 밖: `/workspace/robo-viz/manus/{sdk_reader,bridge}.py`에 손목 쿼터니언(`wq`) 송신 추가
