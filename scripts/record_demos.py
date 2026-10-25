@@ -1361,8 +1361,8 @@ def run_simulation_loop(
             print("RESET right after the Running press: the next demo starts after this reset")
 
     def start_recording_instance():
-        nonlocal running, auto_paused, auto_start_at
-        auto_start_at = None
+        nonlocal running, auto_paused, auto_start_at, start_req_t
+        auto_start_at, start_req_t = None, None
         if running:
             return
         running, auto_paused = True, False
