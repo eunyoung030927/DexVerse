@@ -1274,9 +1274,10 @@ class _XrStatusPanel:
         head = last if last else "READY"
         self._show(f"{head}  |  saved {self._count()}  |  press Running twice to start the next demo")
 
-    def recording(self) -> None:
+    def recording(self, detail: str | None = None) -> None:
         n = self._recorder.num_episodes + 1
-        self._show(f"REC  demo {n}" + (f" / {self._target}" if self._target > 0 else ""), recording=True)
+        head = f"REC  demo {n}" + (f" / {self._target}" if self._target > 0 else "")
+        self._show(head + (f"  |  {detail}" if detail else ""), recording=True)
 
     def stopped(self, mid_episode: bool) -> None:
         if mid_episode:
@@ -1311,6 +1312,13 @@ def run_simulation_loop(
     reset_reason = "manual_reset"
     running = False  # Start inactive for VR (user activates with START gesture).
     status = _XrStatusPanel(trajectory_recorder, enabled=bool(args_cli.xr) and args_cli.xr_status_panel)
+    # Manus teleop: which gate of the success condition holds, live (panel 2 Hz, terminal every 2 s).
+    success_status, last_detail, last_print = None, 0.0, 0.0
+    if args_cli.teleop_device == "manus" and success_term is not None:
+        from vr_teleop.teleop.dexverse_success_status import SuccessStatus
+
+        success_status = SuccessStatus(env, success_term, _resolve_term_callable)
+        print(f"[success] condition: {success_status.name}; saved after {args_cli.num_success_steps} frames in a row")
 
     def reset_recording_instance():
         nonlocal should_reset, reset_reason
@@ -1480,6 +1488,13 @@ def run_simulation_loop(
                     trajectory_recorder.record_arm_joint_action(arm_joint_pos_target.detach().clone())
 
                 success_step_count, success_reached = check_success(env, success_term, success_step_count)
+                if success_status is not None and not success_reached and time.time() - last_detail > 0.5:
+                    last_detail = time.time()
+                    detail = success_status.text(success_step_count, args_cli.num_success_steps)
+                    status.recording(detail)
+                    if last_detail - last_print > 2.0:
+                        last_print = last_detail
+                        print(f"[success] {detail}", flush=True)
                 if success_reached:
                     successful_reset_id = trajectory_recorder.current_reset_id
                     trajectory_recorder.finalize_episode(success=True)
