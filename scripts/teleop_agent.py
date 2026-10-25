@@ -299,6 +299,9 @@ def main() -> None:  # noqa: C901
             from vr_teleop.teleop.dexverse_integration import add_manus_device_from_env
 
             add_manus_device_from_env(env_cfg.teleop_devices, use_xr=bool(args_cli.xr))
+            from vr_teleop.teleop.dexverse_integration import show_goal_marker
+
+            show_goal_marker(env_cfg)
 
     configure_v1_debug_visualization(env_cfg, cues_in_rgb=args_cli.cues_in_rgb)
     # Template environments consume json_path internally via parse_env_cfg.

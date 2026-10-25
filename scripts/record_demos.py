@@ -1112,6 +1112,9 @@ def create_environment_config() -> tuple["ManagerBasedRLEnvCfg | DirectRLEnvCfg"
             from vr_teleop.teleop.dexverse_integration import add_manus_device_from_env
 
             add_manus_device_from_env(env_cfg.teleop_devices, use_xr=bool(args_cli.xr))
+            from vr_teleop.teleop.dexverse_integration import show_goal_marker
+
+            show_goal_marker(env_cfg)
 
     configure_v1_debug_visualization(env_cfg, cues_in_rgb=args_cli.cues_in_rgb)
     return env_cfg, success_term
@@ -1315,6 +1318,7 @@ def run_simulation_loop(
     # termination) the button still shows Running, so the operator's next press sends STOP. auto_paused makes
     # that STOP start the next demo, so one press is enough.
     auto_paused = False
+    auto_start_at = None  # time the STOP-as-START starts recording at the latest
     status = _XrStatusPanel(trajectory_recorder, enabled=bool(args_cli.xr) and args_cli.xr_status_panel)
     # Manus teleop: which gate of the success condition holds, live (panel 2 Hz, terminal every 2 s).
     success_status, last_detail, last_print = None, 0.0, 0.0
@@ -1336,7 +1340,10 @@ def run_simulation_loop(
         print("Recording instance reset requested")
 
     def start_recording_instance():
-        nonlocal running, auto_paused
+        nonlocal running, auto_paused, auto_start_at
+        auto_start_at = None
+        if running:
+            return
         running, auto_paused = True, False
         print("Recording started - Begin demonstration")
         if hasattr(teleop_interface, "_retargeters") and teleop_interface._retargeters:
@@ -1345,12 +1352,16 @@ def run_simulation_loop(
         status.recording()
 
     def stop_recording_instance():
-        nonlocal running, auto_paused
+        nonlocal running, auto_paused, auto_start_at
         if not running and auto_paused:
             auto_paused = False
             print("STOP while paused after a reset: treated as START (the client button did not see the pause)")
             request_start = getattr(teleop_interface, "_request_start", None)  # Manus: align hand, then START
-            (request_start or start_recording_instance)()
+            if request_start is None:
+                start_recording_instance()
+            else:
+                request_start()
+                auto_start_at = time.time() + 0.5  # if the device's delayed START does not come
             return
         running = False
         print("Recording paused")
@@ -1398,6 +1409,8 @@ def run_simulation_loop(
         while simulation_app.is_running():
             if hasattr(status, "retry"):  # RecordPanel: show READY once the headset has connected
                 status.retry()
+            if auto_start_at is not None and time.time() >= auto_start_at:
+                start_recording_instance()
             # Update robot wrist pose for the retargeter (mirrors teleop_agent.py).
             if hasattr(teleop_interface, "_retargeters") and teleop_interface._retargeters:
                 try:
@@ -1447,7 +1460,7 @@ def run_simulation_loop(
                 print(f"Reset ID: {next_reset_id}")
                 success_step_count = 0
                 should_reset = False
-                running = False
+                running, auto_start_at = False, None
                 status.after_reset(reset_reason)
                 continue
             if running:
