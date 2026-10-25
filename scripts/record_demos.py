@@ -1272,7 +1272,7 @@ class _XrStatusPanel:
 
     def waiting(self, last: str | None = None) -> None:
         head = last if last else "READY"
-        self._show(f"{head}  |  saved {self._count()}  |  press Running twice to start the next demo")
+        self._show(f"{head}  |  saved {self._count()}  |  press Running (once) or RESET then START for the next demo")
 
     def recording(self, detail: str | None = None) -> None:
         n = self._recorder.num_episodes + 1
@@ -1311,6 +1311,10 @@ def run_simulation_loop(
     should_reset = False
     reset_reason = "manual_reset"
     running = False  # Start inactive for VR (user activates with START gesture).
+    # The XR client's Running button is a local toggle: after the recorder pauses itself (saved demo, task
+    # termination) the button still shows Running, so the operator's next press sends STOP. auto_paused makes
+    # that STOP start the next demo, so one press is enough.
+    auto_paused = False
     status = _XrStatusPanel(trajectory_recorder, enabled=bool(args_cli.xr) and args_cli.xr_status_panel)
     # Manus teleop: which gate of the success condition holds, live (panel 2 Hz, terminal every 2 s).
     success_status, last_detail, last_print = None, 0.0, 0.0
@@ -1327,8 +1331,8 @@ def run_simulation_loop(
         print("Recording instance reset requested")
 
     def start_recording_instance():
-        nonlocal running
-        running = True
+        nonlocal running, auto_paused
+        running, auto_paused = True, False
         print("Recording started - Begin demonstration")
         if hasattr(teleop_interface, "_retargeters") and teleop_interface._retargeters:
             if hasattr(teleop_interface._retargeters[0], "calibrate_wrist_pose"):
@@ -1336,7 +1340,13 @@ def run_simulation_loop(
         status.recording()
 
     def stop_recording_instance():
-        nonlocal running
+        nonlocal running, auto_paused
+        if not running and auto_paused:
+            auto_paused = False
+            print("STOP while paused after a reset: treated as START (the client button did not see the pause)")
+            request_start = getattr(teleop_interface, "_request_start", None)  # Manus: align hand, then START
+            (request_start or start_recording_instance)()
+            return
         running = False
         print("Recording paused")
         status.stopped(trajectory_recorder.has_active_episode())
@@ -1469,7 +1479,7 @@ def run_simulation_loop(
                     teleop_interface.reset()
                     success_step_count = 0
                     should_reset = False
-                    running = False
+                    running, auto_paused = False, True
                     print(f"✗ Reset attempt recorded as {outcome}; auto-reset ID: {next_reset_id}")
                     status.after_reset("task_termination")
                     continue
@@ -1508,7 +1518,7 @@ def run_simulation_loop(
                         stats_panel.publish(trajectory_recorder.episodes)
                     should_reset = True
                     reset_reason = "after_success"
-                    running = False
+                    running, auto_paused = False, True
 
                 if args_cli.num_demos > 0 and trajectory_recorder.num_episodes >= args_cli.num_demos:
                     print(f"\nAll {trajectory_recorder.num_episodes} demonstrations recorded. Exiting...")
