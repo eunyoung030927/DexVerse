@@ -1314,13 +1314,6 @@ def run_simulation_loop(
     should_reset = False
     reset_reason = "manual_reset"
     running = False  # Start inactive for VR (user activates with START gesture).
-    # The XR client's Running button is a local toggle: after the recorder pauses itself (saved demo, task
-    # termination) the button still shows Running, so the operator's next press sends STOP. auto_paused makes
-    # that STOP start the next demo, so one press is enough.
-    auto_paused = False
-    auto_start_at = None  # time the STOP-as-START starts recording at the latest
-    start_req_t = None  # when the operator last asked for the next demo (Running press while auto-paused)
-    resume_at = None  # a RESET arrived right after that press (the client sends both): start again after it
     status = _XrStatusPanel(trajectory_recorder, enabled=bool(args_cli.xr) and args_cli.xr_status_panel)
     # Manus teleop: which gate of the success condition holds, live (panel 2 Hz, terminal every 2 s).
     success_status, last_detail, last_print = None, 0.0, 0.0
@@ -1341,31 +1334,11 @@ def run_simulation_loop(
         reset_reason = "manual_reset"
         print(f"Recording instance reset requested ({time.strftime('%H:%M:%S')})")
 
-    def begin_next_demo():
-        """Align the operator's hand with the robot hand (Manus device), then START a few frames later."""
-        nonlocal auto_start_at
-        request_start = getattr(teleop_interface, "_request_start", None)
-        if request_start is None:
-            start_recording_instance()
-            return
-        request_start()
-        auto_start_at = time.time() + 0.5  # if the device's delayed START does not come
-
-    def after_env_reset():
-        """Common tail of both reset paths: nothing runs until START, unless the reset came with the operator's
-        Running press (the XR client sends STOP then RESET for that press): then the next demo starts after it."""
-        nonlocal running, auto_start_at, resume_at
-        running, auto_start_at = False, None
-        if start_req_t is not None and time.time() - start_req_t < 1.0:
-            resume_at = time.time() + 0.3  # let the robot's reset pose reach the retargeter first
-            print("RESET right after the Running press: the next demo starts after this reset")
-
     def start_recording_instance():
-        nonlocal running, auto_paused, auto_start_at, start_req_t
-        auto_start_at, start_req_t = None, None
+        nonlocal running
         if running:
             return
-        running, auto_paused = True, False
+        running = True
         print(f"Recording started - Begin demonstration ({time.strftime('%H:%M:%S')})")
         if hasattr(teleop_interface, "_retargeters") and teleop_interface._retargeters:
             if hasattr(teleop_interface._retargeters[0], "calibrate_wrist_pose"):
@@ -1373,13 +1346,7 @@ def run_simulation_loop(
         status.recording()
 
     def stop_recording_instance():
-        nonlocal running, auto_paused, start_req_t
-        if not running and auto_paused:
-            auto_paused = False
-            start_req_t = time.time()
-            print(f"STOP while paused after a saved demo: treated as START ({time.strftime('%H:%M:%S')})")
-            begin_next_demo()
-            return
+        nonlocal running
         running = False
         print(f"Recording paused ({time.strftime('%H:%M:%S')})")
         status.stopped(trajectory_recorder.has_active_episode())
@@ -1392,6 +1359,26 @@ def run_simulation_loop(
     }
     for key, cb in teleop_callbacks.items():
         teleop_interface.add_callback(key, cb)
+
+    # Manus device: START first aligns the operator's hand with the robot hand, then starts a few frames later.
+    # The IsaacTeleop web client (v1.4.145) never sends STOP by itself: once it believes teleop runs, pressing its
+    # Running button sends nothing, and its Reset sends STOP + RESET. After a saved demo the recorder is paused
+    # but the client still shows Running, so the next demo is started with A (right) / X (left) on a controller,
+    # or with the panel's Reset and then Play. A START while recording is ignored (it would re-align mid-demo).
+    request_start = getattr(teleop_interface, "_request_start", None)
+    quest = getattr(teleop_interface, "_quest", None)
+    if request_start is not None and quest is not None:
+
+        def start_next_demo(source: str = "START"):
+            if running:
+                print(f"{source} ignored: already recording ({time.strftime('%H:%M:%S')})")
+                return
+            print(f"{source}: aligning the hand with the robot hand, recording starts right after ({time.strftime('%H:%M:%S')})")
+            request_start()
+
+        quest.add_callback("START", start_next_demo)
+        teleop_interface.primary_button_callback = lambda side: start_next_demo("A button" if side == "right" else "X button")
+        print("[vr_teleop] next demo: A (right) / X (left) controller button, or the panel's Play (after Reset)")
 
     env.sim.reset()
     env.reset()
@@ -1426,8 +1413,6 @@ def run_simulation_loop(
         while simulation_app.is_running():
             if hasattr(status, "retry"):  # RecordPanel: show READY once the headset has connected
                 status.retry()
-            if auto_start_at is not None and time.time() >= auto_start_at:
-                start_recording_instance()
             # Update robot wrist pose for the retargeter (mirrors teleop_agent.py).
             if hasattr(teleop_interface, "_retargeters") and teleop_interface._retargeters:
                 try:
@@ -1460,9 +1445,6 @@ def run_simulation_loop(
                 except (AttributeError, KeyError, ValueError):
                     pass
 
-            if resume_at is not None and time.time() >= resume_at:  # after the robot wrist pose above is fresh
-                resume_at = None
-                begin_next_demo()
             action = teleop_interface.advance()
             if getattr(teleop_interface, "finished", False):
                 print("Replay finished: every episode of the pickle was played.")
@@ -1480,7 +1462,7 @@ def run_simulation_loop(
                 print(f"Reset ID: {next_reset_id}")
                 success_step_count = 0
                 should_reset = False
-                after_env_reset()
+                running = False
                 status.after_reset(reset_reason)
                 continue
             if running:
@@ -1519,7 +1501,7 @@ def run_simulation_loop(
                     teleop_interface.reset()
                     success_step_count = 0
                     should_reset = False
-                    running, auto_paused = False, True
+                    running = False
                     print(f"✗ Reset attempt recorded as {outcome}; auto-reset ID: {next_reset_id}")
                     status.after_reset("task_termination")
                     continue
@@ -1558,7 +1540,7 @@ def run_simulation_loop(
                         stats_panel.publish(trajectory_recorder.episodes)
                     should_reset = True
                     reset_reason = "after_success"
-                    running, auto_paused = False, True
+                    running = False
 
                 if args_cli.num_demos > 0 and trajectory_recorder.num_episodes >= args_cli.num_demos:
                     print(f"\nAll {trajectory_recorder.num_episodes} demonstrations recorded. Exiting...")
@@ -1580,7 +1562,7 @@ def run_simulation_loop(
                 print(f"Reset ID: {next_reset_id}")
                 success_step_count = 0
                 should_reset = False
-                after_env_reset()
+                running = False
                 status.after_reset(reset_reason)
 
             if env.sim.is_stopped():
