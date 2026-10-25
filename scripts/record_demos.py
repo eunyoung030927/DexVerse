@@ -1322,6 +1322,11 @@ def run_simulation_loop(
         from vr_teleop.teleop.dexverse_success_status import SuccessStatus
 
         success_status = SuccessStatus(env, success_term, _resolve_term_callable)
+        quest = getattr(teleop_interface, "_quest", None)
+        if args_cli.xr and quest is not None:  # headset panel without --xr_status_panel (see RecordPanel)
+            from vr_teleop.teleop.dexverse_success_status import RecordPanel
+
+            status = RecordPanel(trajectory_recorder, args_cli.num_demos, quest.head)
         print(f"[success] condition: {success_status.name}; saved after {args_cli.num_success_steps} frames in a row")
 
     def reset_recording_instance():
@@ -1391,6 +1396,8 @@ def run_simulation_loop(
 
     with contextlib.suppress(KeyboardInterrupt), torch.inference_mode():
         while simulation_app.is_running():
+            if hasattr(status, "retry"):  # RecordPanel: show READY once the headset has connected
+                status.retry()
             # Update robot wrist pose for the retargeter (mirrors teleop_agent.py).
             if hasattr(teleop_interface, "_retargeters") and teleop_interface._retargeters:
                 try:
