@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Upload dv-demos exports (export_dv_demos.py) to the HF dataset repo Dexverse-CSI/dv-demos, merged per episode.
+"""Upload dv-demos exports (export_dv_demos.py) to the HF dataset repo Dexverse-CSI/dv-demos-v0, merged per episode.
 
 Two uploaders write the same repo: the central PC (the synced experiments tree of the servers, default sources)
 and the SLURM cluster job (--src <its export>, token from $HF_TOKEN). Each run merges its exports with what is on
@@ -19,7 +19,7 @@ the repo, episode by episode, so neither removes the other's results:
 The repo is created private if missing. Needs huggingface_hub.
 
   python scripts/retarget/upload_dv_demos.py [--src <export> ...] [--experiments /mnt/d/hscho_share/experiments]
-      [--repo Dexverse-CSI/dv-demos] [--token_file /mnt/d/confidentials/hf_token.json] [--dry_run]
+      [--repo Dexverse-CSI/dv-demos-v0] [--token_file /mnt/d/confidentials/hf_token.json] [--dry_run]
 """
 
 import argparse
@@ -102,7 +102,7 @@ def main():
     ap.add_argument("--src", action="append", default=[], help="export root(s) (.../dv-demos); default: every "
                     "<experiments>/*/dexverse-retarget/*/artifacts/dv-demos")
     ap.add_argument("--experiments", default=str(HERE.parents[4] / "experiments"))
-    ap.add_argument("--repo", default="Dexverse-CSI/dv-demos")
+    ap.add_argument("--repo", default="Dexverse-CSI/dv-demos-v0")
     ap.add_argument("--token_file", default="/mnt/d/confidentials/hf_token.json", help="JSON {token} or plain; $HF_TOKEN wins")
     ap.add_argument("--dry_run", action="store_true")
     ap.add_argument("--state", default="", help="(unused: an unchanged merge is detected against the repo)")

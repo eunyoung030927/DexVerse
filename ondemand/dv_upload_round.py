@@ -8,7 +8,7 @@
   1. arm_joint_meta.json for recorded results whose stage-3 trajectory predates storing it (stage 4 needs it for
      record_demos' arm_joint_actions); one short Isaac launch per (task, target hand)
   2. scripts/retarget/export_dv_demos.py -> <runs>/../dv-demos: epNNN.pkl per success + index.json per (task, hand)
-  3. scripts/retarget/upload_dv_demos.py --src that export -> Dexverse-CSI/dv-demos, merged per episode with the repo
+  3. scripts/retarget/upload_dv_demos.py --src that export -> Dexverse-CSI/dv-demos-v0, merged per episode with the repo
      (the central PC uploads the servers' results to the same repo; neither removes the other's)
 
 Step 1 is the only one that uses a GPU, outside the queue's slots, so the worker runs it alone before the queue

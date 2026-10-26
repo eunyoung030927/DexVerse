@@ -30,10 +30,11 @@ from run_queue import ALL_HANDS, find_demos, supported_robot_types  # noqa: E402
 from run_target import REPO, experiments_root  # noqa: E402
 
 PKG = REPO / "source" / "dexverse" / "dexverse"
-# the cross-dex dataset: 9 v1 tasks x 5 hands (ondemand/README.md)
-TASKS = ["Dexverse-GraspBleach-v1", "Dexverse-GraspPan-v1", "Dexverse-GraspKettle-v1", "Dexverse-FunctionalPourMug-v1",
-         "Dexverse-FunctionalHammerStrike-v1", "Dexverse-BimanualLiftTray-v1", "Dexverse-BimanualLiftCarton-v1",
-         "Dexverse-SlideUtilityKnife-v1", "Dexverse-OpenFlatFolder-v1"]
+# the cross-dex dataset targets (2026-10-26): v0 tasks except two v1 ones, x 5 hands (ondemand/README.md).
+# GraspTwoItems-v0 has no released source demos, so it is teleop-only and not listed here.
+TASKS = ["Dexverse-GraspBleach-v0", "Dexverse-GraspPan-v0", "Dexverse-GraspKettle-v0", "Dexverse-FunctionalPourMug-v0",
+         "Dexverse-FunctionalHammerStrike-v0", "Dexverse-OpenFlatFolder-v1", "Dexverse-SlideUtilityKnife-v1",
+         "Dexverse-BimanualLiftTray-v0", "Dexverse-BimanualLiftCarton-v0"]
 HAND_NAME = {"shadow": "Shadow Hand", "allegro": "Allegro Hand", "inspire": "Inspire Hand", "leap": "LEAP Hand",
              "sharpa": "Sharpa Wave", "wuji": "Wuji Hand"}
 

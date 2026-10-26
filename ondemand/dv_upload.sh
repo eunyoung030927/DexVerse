@@ -1,5 +1,5 @@
 #!/bin/bash
-# Upload this job's successful episodes to the HF dataset Dexverse-CSI/dv-demos in the dv-demos layout
+# Upload this job's successful episodes to the HF dataset Dexverse-CSI/dv-demos-v0 in the dv-demos layout
 # (v1/retargeting/<category>/<task>/<robot_type>/epNNN.pkl + index.json), merged per episode with what the central PC
 # uploads for the servers. Started BY retarget_worker.sbatch in the background (every DV_UPLOAD_S s, default 1800) and
 # run once by finalize.sbatch at the end of the job.

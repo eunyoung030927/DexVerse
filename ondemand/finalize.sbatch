@@ -1,6 +1,6 @@
 #!/bin/bash
 # After the retargeting: one last dv-demos upload round (ondemand/dv_upload.sh 0): every successful episode of TASKS as
-# v1/retargeting/<category>/<task>/<robot_type>/epNNN.pkl + index.json to the HF dataset Dexverse-CSI/dv-demos, merged
+# v1/retargeting/<category>/<task>/<robot_type>/epNNN.pkl + index.json to the HF dataset Dexverse-CSI/dv-demos-v0, merged
 # per episode with the repo. During the job the worker already uploads every DV_UPLOAD_S s.
 # (The old per-task repos <ns>/dexverse-<task>-<hand>-retargeting, scripts/retarget/upload_task.py, are not used.)
 # Run by ondemand/main_job.sbatch at its end (bash, not sbatch); can also be submitted on its own.
