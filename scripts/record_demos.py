@@ -54,6 +54,7 @@ import logging
 import os
 import pickle
 import re
+import sys
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -1320,6 +1321,10 @@ def _install_hang_diagnostics(heartbeat: dict, stall_s: float = 15.0) -> None:
                 print(f"[watchdog] main loop stalled for {time.time() - heartbeat['t']:.0f} s at stage "
                       f"'{heartbeat.get('stage')}' - Python stacks follow", flush=True)
                 faulthandler.dump_traceback(all_threads=True)
+                sys.stderr.flush()
+                print("[watchdog] exiting with code 3 so dexverse_session.sh relaunches the recorder "
+                      "(saved demos are on disk; reconnect the headset client afterwards)", flush=True)
+                os._exit(3)
 
     threading.Thread(target=watch, name="hang-watchdog", daemon=True).start()
 
