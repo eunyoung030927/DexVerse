@@ -1356,10 +1356,12 @@ def run_simulation_loop(
 
         success_status = SuccessStatus(env, success_term, _resolve_term_callable)
         quest = getattr(teleop_interface, "_quest", None)
-        if args_cli.xr and quest is not None:  # headset panel without --xr_status_panel (see RecordPanel)
+        if args_cli.xr and quest is not None and os.environ.get("VR_TELEOP_PANEL", "1") != "0":
+            # headset panel without --xr_status_panel (see RecordPanel); VR_TELEOP_PANEL=0 turns it off
             from vr_teleop.teleop.dexverse_success_status import RecordPanel
 
             status = RecordPanel(trajectory_recorder, args_cli.num_demos, quest.head)
+            print("[vr_teleop] headset status panel on (VR_TELEOP_PANEL=0 to turn it off)")
         print(f"[success] condition: {success_status.name}; saved after {args_cli.num_success_steps} frames in a row")
 
     last_env_reset_t = 0.0  # time of the last env reset
