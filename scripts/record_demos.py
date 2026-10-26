@@ -1371,6 +1371,8 @@ def run_simulation_loop(
         if since < RESET_MIN_GAP_S:
             print(f"RESET ignored: the environment was reset {since:.1f} s ago (wait {RESET_MIN_GAP_S:.0f} s between resets; "
                   f"after a saved demo it is already reset - just A / X or Play) ({time.strftime('%H:%M:%S')})")
+            if hasattr(status, "reset_ignored"):
+                status.reset_ignored(since)
             return
         should_reset = True
         reset_reason = "manual_reset"
