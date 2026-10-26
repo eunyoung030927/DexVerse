@@ -1300,6 +1300,30 @@ class _XrStatusPanel:
         self._show(f"DONE  |  {self._count()} demos recorded")
 
 
+def _install_hang_diagnostics(heartbeat: dict, stall_s: float = 15.0) -> None:
+    """``kill -USR1 <pid>`` prints every Python thread's stack; a watchdog does the same once if the main loop
+    has not advanced for ``stall_s`` (the XR session can block the app with no message at all)."""
+    import faulthandler
+    import signal
+    import threading
+
+    faulthandler.register(signal.SIGUSR1, all_threads=True, chain=True)
+
+    def watch():
+        last_seen, reported = heartbeat["t"], False
+        while True:
+            time.sleep(5.0)
+            if heartbeat["t"] != last_seen:
+                last_seen, reported = heartbeat["t"], False
+            elif not reported and time.time() - heartbeat["t"] > stall_s:
+                reported = True
+                print(f"[watchdog] main loop stalled for {time.time() - heartbeat['t']:.0f} s at stage "
+                      f"'{heartbeat.get('stage')}' - Python stacks follow", flush=True)
+                faulthandler.dump_traceback(all_threads=True)
+
+    threading.Thread(target=watch, name="hang-watchdog", daemon=True).start()
+
+
 def run_simulation_loop(
     env: gym.Env,
     teleop_interface: object,
@@ -1314,6 +1338,11 @@ def run_simulation_loop(
     should_reset = False
     reset_reason = "manual_reset"
     running = False  # Start inactive for VR (user activates with START gesture).
+    heartbeat = {"t": time.time(), "stage": "init"}
+    _install_hang_diagnostics(heartbeat)
+
+    def stage(name: str) -> None:
+        heartbeat["t"], heartbeat["stage"] = time.time(), name
     status = _XrStatusPanel(trajectory_recorder, enabled=bool(args_cli.xr) and args_cli.xr_status_panel)
     # Manus teleop: which gate of the success condition holds, live (panel 2 Hz, terminal every 2 s).
     success_status, last_detail, last_print = None, 0.0, 0.0
@@ -1411,6 +1440,7 @@ def run_simulation_loop(
 
     with contextlib.suppress(KeyboardInterrupt), torch.inference_mode():
         while simulation_app.is_running():
+            stage("loop")
             if hasattr(status, "retry"):  # RecordPanel: show READY once the headset has connected
                 status.retry()
             # Update robot wrist pose for the retargeter (mirrors teleop_agent.py).
@@ -1456,14 +1486,18 @@ def run_simulation_loop(
                 outcome = trajectory_recorder.finish_reset_without_success(reason=reset_reason)
                 if outcome is not None:
                     print(f"Reset attempt recorded as {outcome}.")
+                stage("env reset")
                 handle_reset(env)
                 next_reset_id = trajectory_recorder.start_reset_attempt()
+                stage("device reset")
                 teleop_interface.reset()
-                print(f"Reset ID: {next_reset_id}")
+                print(f"Reset ID: {next_reset_id} ({time.strftime('%H:%M:%S')})", flush=True)
                 success_step_count = 0
                 should_reset = False
                 running = False
+                stage("panel after reset")
                 status.after_reset(reset_reason)
+                stage("after reset done")
                 continue
             if running:
                 # On the first step of a new demo, capture the initial scene state.
@@ -1550,20 +1584,25 @@ def run_simulation_loop(
                         env.sim.render()
                     break
             else:
+                stage("render (paused)")
                 env.sim.render()
 
             if should_reset:
                 outcome = trajectory_recorder.finish_reset_without_success(reason=reset_reason)
                 if outcome is not None:
                     print(f"Reset attempt recorded as {outcome}.")
+                stage("env reset")
                 handle_reset(env)
                 next_reset_id = trajectory_recorder.start_reset_attempt()
+                stage("device reset")
                 teleop_interface.reset()
-                print(f"Reset ID: {next_reset_id}")
+                print(f"Reset ID: {next_reset_id} ({time.strftime('%H:%M:%S')})", flush=True)
                 success_step_count = 0
                 should_reset = False
                 running = False
+                stage("panel after reset")
                 status.after_reset(reset_reason)
+                stage("after reset done")
 
             if env.sim.is_stopped():
                 break
