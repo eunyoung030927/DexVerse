@@ -491,16 +491,15 @@ def main() -> None:  # noqa: C901
                         wrist_body_name = None
                         wrist_body_idx = None
 
-                        # Try z_rotation_link first (this is the actual wrist frame)
-                        if "z_rotation_link" in body_names:
-                            wrist_body_name = "z_rotation_link"
-                            wrist_body_idx = body_names.index("z_rotation_link")
-                        elif "palm_wrist" in body_names:
-                            wrist_body_name = "palm_wrist"
-                            wrist_body_idx = body_names.index("palm_wrist")
-                        elif "palm" in body_names:
-                            wrist_body_name = "palm"
-                            wrist_body_idx = body_names.index("palm")
+                        # The hand's palm body from the task robot_config (Inspire: hand_base_link, LEAP: palm_lower,
+                        # ...), then the Shadow / Allegro names.
+                        rc = getattr(env.cfg, "robot_config", None)
+                        for candidate in (getattr(rc, "right_palm_body_name", None), getattr(rc, "palm_body_name", None),
+                                          "z_rotation_link", "palm_wrist", "palm"):
+                            if candidate and candidate in body_names:
+                                wrist_body_name = candidate
+                                wrist_body_idx = body_names.index(candidate)
+                                break
 
                         if wrist_body_idx is not None:
                             # Get body pose in world frame [pos (3), quat (4)]

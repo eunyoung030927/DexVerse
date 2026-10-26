@@ -1470,7 +1470,11 @@ def run_simulation_loop(
                         _printed_bodies = True
                     wrist_body_idx = None
                     wrist_body_name = None
-                    for candidate in ("z_rotation_link", "palm_wrist", "palm"):
+                    rc = getattr(env.cfg, "robot_config", None)  # the hand's palm body (Inspire: hand_base_link, ...)
+                    for candidate in (getattr(rc, "right_palm_body_name", None), getattr(rc, "palm_body_name", None),
+                                      "z_rotation_link", "palm_wrist", "palm"):
+                        if not candidate:
+                            continue
                         if candidate in body_names:
                             wrist_body_name = candidate
                             wrist_body_idx = body_names.index(candidate)
