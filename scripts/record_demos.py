@@ -1362,8 +1362,16 @@ def run_simulation_loop(
             status = RecordPanel(trajectory_recorder, args_cli.num_demos, quest.head)
         print(f"[success] condition: {success_status.name}; saved after {args_cli.num_success_steps} frames in a row")
 
+    last_env_reset_t = 0.0  # time of the last env reset
+    RESET_MIN_GAP_S = 3.0  # Kit froze twice (2026-10-26) in render after a Reset pressed 2-3 s after the previous reset
+
     def reset_recording_instance():
         nonlocal should_reset, reset_reason
+        since = time.time() - last_env_reset_t
+        if since < RESET_MIN_GAP_S:
+            print(f"RESET ignored: the environment was reset {since:.1f} s ago (wait {RESET_MIN_GAP_S:.0f} s between resets; "
+                  f"after a saved demo it is already reset - just A / X or Play) ({time.strftime('%H:%M:%S')})")
+            return
         should_reset = True
         reset_reason = "manual_reset"
         print(f"Recording instance reset requested ({time.strftime('%H:%M:%S')})")
@@ -1493,6 +1501,7 @@ def run_simulation_loop(
                     print(f"Reset attempt recorded as {outcome}.")
                 stage("env reset")
                 handle_reset(env)
+                last_env_reset_t = time.time()
                 next_reset_id = trajectory_recorder.start_reset_attempt()
                 stage("device reset")
                 teleop_interface.reset()
@@ -1598,6 +1607,7 @@ def run_simulation_loop(
                     print(f"Reset attempt recorded as {outcome}.")
                 stage("env reset")
                 handle_reset(env)
+                last_env_reset_t = time.time()
                 next_reset_id = trajectory_recorder.start_reset_attempt()
                 stage("device reset")
                 teleop_interface.reset()
