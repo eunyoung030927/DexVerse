@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Export a retargeting run in the dv-demos layout (the Dexverse-CSI/dv-demos dataset repo), for upload_dv_demos.py:
+"""Export a retargeting run in the dv-demos layout (the Dexverse-CSI/dv-demos-v0 dataset repo), for upload_dv_demos.py:
 
     <out>/v1/retargeting/<category>/<task>/<robot_type>/epNNN.pkl     one successful source episode each (stage 4,
                                                                        record_demos format, NNN = source index)

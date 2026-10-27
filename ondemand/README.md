@@ -9,8 +9,8 @@ retargeting 코드는 `scripts/retarget/`(stage 1–4, 큐, 업로드)와 `sourc
 
 | | |
 |---|---|
-| 소스 | `dexverse/DexVerse_release` `demonstrations/v1/<category>/<task>/demos.pkl` (Shadow, 태스크당 50개) |
-| 태스크 (9) | 한 손(`floating_shadow_right`): GraspBleach, GraspPan, GraspKettle, FunctionalPourMug, FunctionalHammerStrike<br>양손(`floating_shadow_bimanual`): BimanualLiftTray, BimanualLiftCarton, SlideUtilityKnife, OpenFlatFolder |
+| 소스 | `dexverse/DexVerse_release` `demonstrations/<v0\|v1>/<category>/<task>/demos.pkl` (Shadow, 태스크당 50개) |
+| 태스크 (9, 2026-10-26 변경) | 한 손(`floating_shadow_right`): GraspBleach-v0, GraspPan-v0, GraspKettle-v0, FunctionalPourMug-v0, FunctionalHammerStrike-v0<br>양손(`floating_shadow_bimanual`): OpenFlatFolder-v1, SlideUtilityKnife-v1, BimanualLiftTray-v0, BimanualLiftCarton-v0<br>(10번째 목표 GraspTwoItems-v0는 공개 소스 데모가 없어 텔레옵만. 이전 v1 9태스크 결과는 HF `Dexverse-CSI/dv-demos-v0-v1`에 보관) |
 | 목표 손 (5) | Allegro, Inspire, LEAP, Sharpa, Wuji — 한 손 태스크는 `floating_<hand>_right`, 양손 태스크는 `floating_<hand>_bimanual` |
 | 규모 | 9 태스크 × 5 손 = 45 조합, 조합당 50 에피소드 |
 | 출력 | 동료(Eun) 레코딩 형식인 `record_demos` trajectory pickle. LeRobot은 렌더링 되는 다른 서버에서 `scripts/teleop_tools/pickle_to_lerobot.sh`(상태 재생)로 만든다 |
@@ -57,7 +57,7 @@ retargeting은 상태를 입력으로 쓰므로 그대로 진행할 수 있다(`
 5. retarget (`retarget_worker.sbatch`) — CUDA MPS, GPU당 `PER_GPU`(10) 세션, VRAM `MIN_FREE_GB` 남을 때만 새 세션(2 GPU에서 실측 34개 동시). (에피소드, 목표 손) 큐를
    **`scripts/retarget/run_queue.py` → `run_target.py`** 로 처리: 에피소드마다 stage 1 한 번, 손마다 stage 2(기구학 IK) → stage 3(SPIDER v2, 60 Hz).
    판정은 **태스크 자신의 `success` 조건 10스텝 유지**(record_demos 규칙). 렌더링 없음
-6. upload — **HF `Dexverse-CSI/dv-demos`에 dv-demos 형식으로 성공한 에피소드를 바로 올림** (2026-10-16):
+6. upload — **HF `Dexverse-CSI/dv-demos-v0`에 dv-demos 형식으로 성공한 에피소드를 바로 올림** (2026-10-16):
    `v1/retargeting/<category>/<task>/<robot_type>/epNNN.pkl`(에피소드 1개, record_demos 형식) + `index.json`(에피소드별 상태).
    워커가 `dv_upload.sh`를 `DV_UPLOAD_S`(1800)초마다 돌리고, 끝에 `finalize.sbatch`가 한 번 더. 한 회차 = `dv_upload_round.py`:
    arm_joint_meta 보충 → `export_dv_demos.py` → `upload_dv_demos.py --src`(저장소와 에피소드 단위 병합, 삭제 없음 —

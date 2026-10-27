@@ -17,7 +17,7 @@
 #                 (ondemand/retarget_worker.sbatch -> scripts/retarget/run_queue.py -> run_target.py; no rendering)
 #   6. upload     DURING the queue every DV_UPLOAD_S s (ondemand/dv_upload.sh) and once more at the end
 #                 (ondemand/finalize.sbatch): each successful episode as v1/retargeting/<category>/<task>/<robot_type>/
-#                 epNNN.pkl + index.json to the HF dataset Dexverse-CSI/dv-demos, merged per episode with the repo
+#                 epNNN.pkl + index.json to the HF dataset Dexverse-CSI/dv-demos-v0, merged per episode with the repo
 #
 # Walltime: at its start the job queues a continuation of itself (--dependency=afterany on this job). If this job
 # finishes every item, it cancels the continuation; if it hits the walltime, the continuation resumes the queue
