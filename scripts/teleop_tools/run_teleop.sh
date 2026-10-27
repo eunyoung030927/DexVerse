@@ -10,6 +10,7 @@
 #
 # Runs Isaac Sim's bundled python directly: with the conda base env active (the default in interactive
 # shells of this image) "isaaclab.sh -p" would pick the conda interpreter instead.
+# Without a bundled Isaac Sim, the active conda env's python is used if it has the isaacsim pip package.
 set -eo pipefail
 
 SCRIPT=${1:?usage: run_teleop.sh <teleop_agent|record_demos|path/to/script.py> [args...]}
@@ -54,7 +55,18 @@ if [[ "$(basename "${SCRIPT_PATH}")" == "teleop_agent.py" ]] && ! has_arg --xr_s
     ARGS+=(--xr_stream_log 120)
 fi
 
+# Isaac Sim bundled python (isaaclab-vnc image) if present; otherwise a pip-installed Isaac Sim env
+# (e.g. /workspace/envs/dexverse/main): activate it first, e.g. "source /workspace/dexverse_env.sh".
 PYTHON=${ISAACLAB_PATH:-/workspace/isaaclab}/_isaac_sim/python.sh
+if [ ! -x "${PYTHON}" ]; then
+    if [ -n "${CONDA_PREFIX}" ] && "${CONDA_PREFIX}/bin/python" -c "import isaacsim" 2>/dev/null; then
+        PYTHON=${CONDA_PREFIX}/bin/python
+    else
+        echo "[teleop] no Isaac Sim python: ${PYTHON} is missing and the active env has no isaacsim." >&2
+        echo "[teleop] activate a pip Isaac Sim env first (bs1: source /workspace/dexverse_env.sh)." >&2
+        exit 1
+    fi
+fi
 cd "${REPO_ROOT}"
 echo "[teleop] ${PYTHON} ${SCRIPT_PATH} ${ARGS[*]}"
 exec "${PYTHON}" "${SCRIPT_PATH}" "${ARGS[@]}"

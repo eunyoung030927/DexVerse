@@ -158,7 +158,7 @@ if args_cli.enable_pinocchio:
     # dex-retargeting utilities (e.g., LeapHandDexRetargeting)
     import pinocchio  # noqa: F401
 
-if "handtracking" in args_cli.teleop_device.lower():
+if "handtracking" in args_cli.teleop_device.lower() or args_cli.teleop_device == "manus":
     app_launcher_args["xr"] = True
 
 # launch omniverse app
@@ -294,6 +294,14 @@ def main() -> None:  # noqa: C901
             anchor_pos_offsets=getattr(env_cfg, "retargeter_anchor_pos_offsets", None),
         )
         apply_teleop_retargeting_scheme(env_cfg.teleop_devices, args_cli.retargeting_scheme)
+        if args_cli.teleop_device == "manus":
+            # Manus glove fingers + glove-mounted Quest controller wrist (vr_teleop/, VR_TELEOP_* env vars).
+            from vr_teleop.teleop.dexverse_integration import add_manus_device_from_env
+
+            add_manus_device_from_env(env_cfg.teleop_devices, use_xr=bool(args_cli.xr))
+            from vr_teleop.teleop.dexverse_integration import show_goal_marker
+
+            show_goal_marker(env_cfg)
 
     configure_v1_debug_visualization(env_cfg, cues_in_rgb=args_cli.cues_in_rgb)
     # Template environments consume json_path internally via parse_env_cfg.
@@ -483,16 +491,15 @@ def main() -> None:  # noqa: C901
                         wrist_body_name = None
                         wrist_body_idx = None
 
-                        # Try z_rotation_link first (this is the actual wrist frame)
-                        if "z_rotation_link" in body_names:
-                            wrist_body_name = "z_rotation_link"
-                            wrist_body_idx = body_names.index("z_rotation_link")
-                        elif "palm_wrist" in body_names:
-                            wrist_body_name = "palm_wrist"
-                            wrist_body_idx = body_names.index("palm_wrist")
-                        elif "palm" in body_names:
-                            wrist_body_name = "palm"
-                            wrist_body_idx = body_names.index("palm")
+                        # The hand's palm body from the task robot_config (Inspire: hand_base_link, LEAP: palm_lower,
+                        # ...), then the Shadow / Allegro names.
+                        rc = getattr(env.cfg, "robot_config", None)
+                        for candidate in (getattr(rc, "right_palm_body_name", None), getattr(rc, "palm_body_name", None),
+                                          "z_rotation_link", "palm_wrist", "palm"):
+                            if candidate and candidate in body_names:
+                                wrist_body_name = candidate
+                                wrist_body_idx = body_names.index(candidate)
+                                break
 
                         if wrist_body_idx is not None:
                             # Get body pose in world frame [pos (3), quat (4)]

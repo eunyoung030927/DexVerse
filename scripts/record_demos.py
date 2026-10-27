@@ -54,6 +54,7 @@ import logging
 import os
 import pickle
 import re
+import sys
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -377,7 +378,7 @@ if args_cli.replay_demos:
     args_cli.teleop_device = "replay"
 if args_cli.no_lerobot and (args_cli.lerobot or args_cli.lerobot_root):
     parser.error("--no_lerobot cannot be combined with --lerobot / --lerobot_root")
-_xr_device = any(k in args_cli.teleop_device.lower() for k in ("handtracking", "motion_controllers"))
+_xr_device = any(k in args_cli.teleop_device.lower() for k in ("handtracking", "motion_controllers", "manus"))
 # Sessions record only the trajectory pickle by default; the LeRobot dataset is built afterwards by replaying it
 # (scripts/teleop_tools/pickle_to_lerobot.sh, which passes --lerobot_root). Rendering the dataset cameras inside an
 # XR session also stalls it, so --lerobot / --lerobot_root there is at your own risk.
@@ -394,6 +395,7 @@ if not args_cli.no_lerobot:
 
 uses_xr_teleop = (
     "handtracking" in args_cli.teleop_device.lower() or "motion_controllers" in args_cli.teleop_device.lower()
+    or args_cli.teleop_device == "manus"
 )
 
 if uses_xr_teleop and not args_cli.enable_pinocchio:
@@ -428,6 +430,45 @@ from dexverse.tasks.utils import (  # noqa: E402
 from dexverse.teleop_utils.episode_task_state import capture_episode_task_state  # noqa: E402
 from isaaclab.devices.teleop_device_factory import create_teleop_device  # noqa: E402
 from isaaclab.envs import DirectRLEnvCfg, ManagerBasedRLEnvCfg  # noqa: E402
+
+
+def run_provenance() -> dict:
+    """Code version and invocation of this recording session, stored in the pickle as ``provenance``.
+
+    The pickle restores a layout from ``initial_state`` / ``task_state``, but the environment those
+    states are written into is rebuilt from the *code*: task cfg, scene and asset definitions, robot
+    and retargeter layouts. If that code changes (e.g. a table size, a spawn range, an action layout),
+    the same state no longer reproduces the recorded scene, and replay / LeRobot conversion / MimicGen
+    / evaluation on the recorded layouts silently diverge. ``git_commit`` (+ ``git_dirty`` and the
+    modified files) says which code to check out to rebuild the exact environment, and ``command`` /
+    ``env`` say how it was launched (task, robot_type, retargeter options, teleop device settings).
+    """
+    import shlex
+    import socket
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parents[1]
+
+    def git(*cmd: str) -> str | None:
+        try:
+            out = subprocess.run(["git", "-C", str(repo), *cmd], capture_output=True, text=True, timeout=10)
+        except (OSError, subprocess.SubprocessError):
+            return None
+        return out.stdout.rstrip("\n") if out.returncode == 0 else None  # keep porcelain leading spaces
+
+    status = git("status", "--porcelain", "--untracked-files=no")
+    return {
+        "git_repo": str(repo),
+        "git_commit": git("rev-parse", "HEAD"),
+        "git_branch": git("rev-parse", "--abbrev-ref", "HEAD"),
+        "git_dirty": bool(status) if status is not None else None,
+        "git_modified_files": [line[3:] for line in status.splitlines()] if status else [],
+        "command": shlex.join([sys.executable, *sys.argv]),
+        "env": {k: v for k, v in os.environ.items() if k.startswith(("DEXVERSE_", "VR_TELEOP_", "URDF_ZOO_DIR", "ISAACLAB_PATH"))},
+        "recorded_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "host": socket.gethostname(),
+    }
 
 
 class TrajectoryPickleRecorder:
@@ -491,6 +532,7 @@ class TrajectoryPickleRecorder:
             **task_identity(env_name or task_name),
             "action_layout": action_layout_metadata,
             "wrist_camera_body_collision": wrist_camera_body_collision,
+            "provenance": run_provenance(),  # code version + command needed to rebuild this env (see run_provenance)
         }
 
     @property
@@ -1066,6 +1108,14 @@ def create_environment_config() -> tuple["ManagerBasedRLEnvCfg | DirectRLEnvCfg"
             anchor_pos_offsets=getattr(env_cfg, "retargeter_anchor_pos_offsets", None),
         )
         apply_teleop_retargeting_scheme(env_cfg.teleop_devices, args_cli.retargeting_scheme)
+        if args_cli.teleop_device == "manus":
+            # Manus glove fingers + glove-mounted Quest controller wrist (vr_teleop/, VR_TELEOP_* env vars).
+            from vr_teleop.teleop.dexverse_integration import add_manus_device_from_env
+
+            add_manus_device_from_env(env_cfg.teleop_devices, use_xr=bool(args_cli.xr))
+            from vr_teleop.teleop.dexverse_integration import show_goal_marker
+
+            show_goal_marker(env_cfg)
 
     configure_v1_debug_visualization(env_cfg, cues_in_rgb=args_cli.cues_in_rgb)
     return env_cfg, success_term
@@ -1226,11 +1276,12 @@ class _XrStatusPanel:
 
     def waiting(self, last: str | None = None) -> None:
         head = last if last else "READY"
-        self._show(f"{head}  |  saved {self._count()}  |  press Running twice to start the next demo")
+        self._show(f"{head}  |  saved {self._count()}  |  press Running (once) or RESET then START for the next demo")
 
-    def recording(self) -> None:
+    def recording(self, detail: str | None = None) -> None:
         n = self._recorder.num_episodes + 1
-        self._show(f"REC  demo {n}" + (f" / {self._target}" if self._target > 0 else ""), recording=True)
+        head = f"REC  demo {n}" + (f" / {self._target}" if self._target > 0 else "")
+        self._show(head + (f"  |  {detail}" if detail else ""), recording=True)
 
     def stopped(self, mid_episode: bool) -> None:
         if mid_episode:
@@ -1250,6 +1301,34 @@ class _XrStatusPanel:
         self._show(f"DONE  |  {self._count()} demos recorded")
 
 
+def _install_hang_diagnostics(heartbeat: dict, stall_s: float = 15.0) -> None:
+    """``kill -USR1 <pid>`` prints every Python thread's stack; a watchdog does the same once if the main loop
+    has not advanced for ``stall_s`` (the XR session can block the app with no message at all)."""
+    import faulthandler
+    import signal
+    import threading
+
+    faulthandler.register(signal.SIGUSR1, all_threads=True, chain=True)
+
+    def watch():
+        last_seen, reported = heartbeat["t"], False
+        while True:
+            time.sleep(5.0)
+            if heartbeat["t"] != last_seen:
+                last_seen, reported = heartbeat["t"], False
+            elif not reported and time.time() - heartbeat["t"] > stall_s:
+                reported = True
+                print(f"[watchdog] main loop stalled for {time.time() - heartbeat['t']:.0f} s at stage "
+                      f"'{heartbeat.get('stage')}' - Python stacks follow", flush=True)
+                faulthandler.dump_traceback(all_threads=True)
+                sys.stderr.flush()
+                print("[watchdog] exiting with code 3 so dexverse_session.sh relaunches the recorder "
+                      "(saved demos are on disk; reconnect the headset client afterwards)", flush=True)
+                os._exit(3)
+
+    threading.Thread(target=watch, name="hang-watchdog", daemon=True).start()
+
+
 def run_simulation_loop(
     env: gym.Env,
     teleop_interface: object,
@@ -1264,18 +1343,49 @@ def run_simulation_loop(
     should_reset = False
     reset_reason = "manual_reset"
     running = False  # Start inactive for VR (user activates with START gesture).
+    heartbeat = {"t": time.time(), "stage": "init"}
+    _install_hang_diagnostics(heartbeat)
+
+    def stage(name: str) -> None:
+        heartbeat["t"], heartbeat["stage"] = time.time(), name
     status = _XrStatusPanel(trajectory_recorder, enabled=bool(args_cli.xr) and args_cli.xr_status_panel)
+    # Manus teleop: which gate of the success condition holds, live (panel 2 Hz, terminal every 2 s).
+    success_status, last_detail, last_print = None, 0.0, 0.0
+    if args_cli.teleop_device == "manus" and success_term is not None:
+        from vr_teleop.teleop.dexverse_success_status import SuccessStatus
+
+        success_status = SuccessStatus(env, success_term, _resolve_term_callable)
+        quest = getattr(teleop_interface, "_quest", None)
+        if args_cli.xr and quest is not None and os.environ.get("VR_TELEOP_PANEL", "1") != "0":
+            # headset panel without --xr_status_panel (see RecordPanel); VR_TELEOP_PANEL=0 turns it off
+            from vr_teleop.teleop.dexverse_success_status import RecordPanel
+
+            status = RecordPanel(trajectory_recorder, args_cli.num_demos, quest.head)
+            print("[vr_teleop] headset status panel on (VR_TELEOP_PANEL=0 to turn it off)")
+        print(f"[success] condition: {success_status.name}; saved after {args_cli.num_success_steps} frames in a row")
+
+    last_env_reset_t = 0.0  # time of the last env reset
+    RESET_MIN_GAP_S = 3.0  # Kit froze twice (2026-10-26) in render after a Reset pressed 2-3 s after the previous reset
 
     def reset_recording_instance():
         nonlocal should_reset, reset_reason
+        since = time.time() - last_env_reset_t
+        if since < RESET_MIN_GAP_S:
+            print(f"RESET ignored: the environment was reset {since:.1f} s ago (wait {RESET_MIN_GAP_S:.0f} s between resets; "
+                  f"after a saved demo it is already reset - just A / X or Play) ({time.strftime('%H:%M:%S')})")
+            if hasattr(status, "reset_ignored"):
+                status.reset_ignored(since)
+            return
         should_reset = True
         reset_reason = "manual_reset"
-        print("Recording instance reset requested")
+        print(f"Recording instance reset requested ({time.strftime('%H:%M:%S')})")
 
     def start_recording_instance():
         nonlocal running
+        if running:
+            return
         running = True
-        print("Recording started - Begin demonstration")
+        print(f"Recording started - Begin demonstration ({time.strftime('%H:%M:%S')})")
         if hasattr(teleop_interface, "_retargeters") and teleop_interface._retargeters:
             if hasattr(teleop_interface._retargeters[0], "calibrate_wrist_pose"):
                 teleop_interface._retargeters[0].calibrate_wrist_pose()
@@ -1284,7 +1394,7 @@ def run_simulation_loop(
     def stop_recording_instance():
         nonlocal running
         running = False
-        print("Recording paused")
+        print(f"Recording paused ({time.strftime('%H:%M:%S')})")
         status.stopped(trajectory_recorder.has_active_episode())
 
     teleop_callbacks = {
@@ -1295,6 +1405,26 @@ def run_simulation_loop(
     }
     for key, cb in teleop_callbacks.items():
         teleop_interface.add_callback(key, cb)
+
+    # Manus device: START first aligns the operator's hand with the robot hand, then starts a few frames later.
+    # The IsaacTeleop web client (v1.4.145) never sends STOP by itself: once it believes teleop runs, pressing its
+    # Running button sends nothing, and its Reset sends STOP + RESET. After a saved demo the recorder is paused
+    # but the client still shows Running, so the next demo is started with A (right) / X (left) on a controller,
+    # or with the panel's Reset and then Play. A START while recording is ignored (it would re-align mid-demo).
+    request_start = getattr(teleop_interface, "_request_start", None)
+    quest = getattr(teleop_interface, "_quest", None)
+    if request_start is not None and quest is not None:
+
+        def start_next_demo(source: str = "START"):
+            if running:
+                print(f"{source} ignored: already recording ({time.strftime('%H:%M:%S')})")
+                return
+            print(f"{source}: aligning the hand with the robot hand, recording starts right after ({time.strftime('%H:%M:%S')})")
+            request_start()
+
+        quest.add_callback("START", start_next_demo)
+        teleop_interface.primary_button_callback = lambda side: start_next_demo("A button" if side == "right" else "X button")
+        print("[vr_teleop] next demo: A (right) / X (left) controller button, or the panel's Play (after Reset)")
 
     env.sim.reset()
     env.reset()
@@ -1327,6 +1457,9 @@ def run_simulation_loop(
 
     with contextlib.suppress(KeyboardInterrupt), torch.inference_mode():
         while simulation_app.is_running():
+            stage("loop")
+            if hasattr(status, "retry"):  # RecordPanel: show READY once the headset has connected
+                status.retry()
             # Update robot wrist pose for the retargeter (mirrors teleop_agent.py).
             if hasattr(teleop_interface, "_retargeters") and teleop_interface._retargeters:
                 try:
@@ -1337,7 +1470,11 @@ def run_simulation_loop(
                         _printed_bodies = True
                     wrist_body_idx = None
                     wrist_body_name = None
-                    for candidate in ("z_rotation_link", "palm_wrist", "palm"):
+                    rc = getattr(env.cfg, "robot_config", None)  # the hand's palm body (Inspire: hand_base_link, ...)
+                    for candidate in (getattr(rc, "right_palm_body_name", None), getattr(rc, "palm_body_name", None),
+                                      "z_rotation_link", "palm_wrist", "palm"):
+                        if not candidate:
+                            continue
                         if candidate in body_names:
                             wrist_body_name = candidate
                             wrist_body_idx = body_names.index(candidate)
@@ -1370,14 +1507,19 @@ def run_simulation_loop(
                 outcome = trajectory_recorder.finish_reset_without_success(reason=reset_reason)
                 if outcome is not None:
                     print(f"Reset attempt recorded as {outcome}.")
+                stage("env reset")
                 handle_reset(env)
+                last_env_reset_t = time.time()
                 next_reset_id = trajectory_recorder.start_reset_attempt()
+                stage("device reset")
                 teleop_interface.reset()
-                print(f"Reset ID: {next_reset_id}")
+                print(f"Reset ID: {next_reset_id} ({time.strftime('%H:%M:%S')})", flush=True)
                 success_step_count = 0
                 should_reset = False
                 running = False
+                stage("panel after reset")
                 status.after_reset(reset_reason)
+                stage("after reset done")
                 continue
             if running:
                 # On the first step of a new demo, capture the initial scene state.
@@ -1434,6 +1576,13 @@ def run_simulation_loop(
                     trajectory_recorder.record_arm_joint_action(arm_joint_pos_target.detach().clone())
 
                 success_step_count, success_reached = check_success(env, success_term, success_step_count)
+                if success_status is not None and not success_reached and time.time() - last_detail > 0.5:
+                    last_detail = time.time()
+                    detail = success_status.text(success_step_count, args_cli.num_success_steps)
+                    status.recording(detail)
+                    if last_detail - last_print > 2.0:
+                        last_print = last_detail
+                        print(f"[success] {detail}", flush=True)
                 if success_reached:
                     successful_reset_id = trajectory_recorder.current_reset_id
                     trajectory_recorder.finalize_episode(success=True)
@@ -1457,20 +1606,26 @@ def run_simulation_loop(
                         env.sim.render()
                     break
             else:
+                stage("render (paused)")
                 env.sim.render()
 
             if should_reset:
                 outcome = trajectory_recorder.finish_reset_without_success(reason=reset_reason)
                 if outcome is not None:
                     print(f"Reset attempt recorded as {outcome}.")
+                stage("env reset")
                 handle_reset(env)
+                last_env_reset_t = time.time()
                 next_reset_id = trajectory_recorder.start_reset_attempt()
+                stage("device reset")
                 teleop_interface.reset()
-                print(f"Reset ID: {next_reset_id}")
+                print(f"Reset ID: {next_reset_id} ({time.strftime('%H:%M:%S')})", flush=True)
                 success_step_count = 0
                 should_reset = False
                 running = False
+                stage("panel after reset")
                 status.after_reset(reset_reason)
+                stage("after reset done")
 
             if env.sim.is_stopped():
                 break
