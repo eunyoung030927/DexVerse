@@ -1066,17 +1066,10 @@ def create_environment_config() -> tuple["ManagerBasedRLEnvCfg | DirectRLEnvCfg"
             env_cfg.commands.object_pose.resampling_time_range = (1.0e9, 1.0e9)
 
     _apply_wrist_camera_body_collision(env_cfg)
-    # finger drives: teleop recording uses each hand's tuned drives (tuned_finger_drives.json) by default;
-    # experiments and replays set them explicitly: DEXVERSE_FINGER_DRIVE=@<hand> (+ DEXVERSE_DRIVE_SPECS)
-    from dexverse.data_collection import finger_drives
+    # finger drive experiments (e.g. LeRobot conversion with the official drives): DEXVERSE_FINGER_DRIVE=@<hand>
+    from dexverse.data_collection.finger_drives import apply_env_finger_drive
 
-    if not args_cli.replay_demos and not os.environ.get("DEXVERSE_FINGER_DRIVE"):
-        os.environ["DEXVERSE_DRIVE_SPECS"] = os.path.join(
-            os.path.dirname(finger_drives.__file__), "tuned_finger_drives.json"
-        )
-        os.environ["DEXVERSE_FINGER_DRIVE"] = "@*"
-        print("[finger_drives] teleop recording: tuned finger drives (tuned_finger_drives.json)")
-    finger_drives.apply_env_finger_drive(env_cfg)
+    apply_env_finger_drive(env_cfg)
 
     success_term = None
     if hasattr(env_cfg.terminations, "success"):
