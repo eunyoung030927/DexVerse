@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Task configuration for randomly grasping two selected primitive objects."""
+"""Task configuration for grasping two cubes (lift both)."""
 
 from __future__ import annotations
 
@@ -40,13 +40,9 @@ OBJECT_SPAWN_Y_RANGE = (-0.06, 0.06)
 INACTIVE_OBJECT_PARK_Z = -10.0
 INACTIVE_OBJECT_PARK_X_SPACING = 10.0
 
-SPHERE_RADIUS = 0.028
-CYLINDER_RADIUS = 0.022
-CYLINDER_HEIGHT = 0.060
 TRIANGULAR_PRISM_SIDE_LENGTH = 0.060
 TRIANGULAR_PRISM_HEIGHT = 0.055
 CUBE_SIZE = 0.045
-CUBOID_SIZE = (0.065, 0.035, 0.045)
 
 
 @sim_utils.clone
@@ -172,40 +168,17 @@ def _spawn_kwargs(color: tuple[float, float, float]) -> dict:
     }
 
 
+# Two cubes only (2026-10-28: the sphere / cylinder / triangular prism / cuboid were too hard to grasp in teleop).
 PRIMITIVE_OBJECT_SPECS: dict[str, PrimitiveObjectSpec] = {
-    "sphere": PrimitiveObjectSpec(
-        sim_utils.SphereCfg(radius=SPHERE_RADIUS, **_spawn_kwargs((0.15, 0.35, 0.95))),
-        radius=SPHERE_RADIUS,
-        half_height=SPHERE_RADIUS,
-    ),
-    "cylinder": PrimitiveObjectSpec(
-        sim_utils.CylinderCfg(
-            radius=CYLINDER_RADIUS,
-            height=CYLINDER_HEIGHT,
-            axis="Z",
-            **_spawn_kwargs((0.1, 0.65, 0.35)),
-        ),
-        radius=CYLINDER_RADIUS,
-        half_height=CYLINDER_HEIGHT * 0.5,
-    ),
-    "triangular_prism": PrimitiveObjectSpec(
-        TriangularPrismCfg(
-            side_length=TRIANGULAR_PRISM_SIDE_LENGTH,
-            height=TRIANGULAR_PRISM_HEIGHT,
-            **_spawn_kwargs((0.95, 0.58, 0.12)),
-        ),
-        radius=TRIANGULAR_PRISM_SIDE_LENGTH / math.sqrt(3.0),
-        half_height=TRIANGULAR_PRISM_HEIGHT * 0.5,
-    ),
     "cube": PrimitiveObjectSpec(
         sim_utils.CuboidCfg(size=(CUBE_SIZE, CUBE_SIZE, CUBE_SIZE), **_spawn_kwargs((0.85, 0.18, 0.18))),
         radius=math.sqrt(2.0) * CUBE_SIZE * 0.5,
         half_height=CUBE_SIZE * 0.5,
     ),
-    "cuboid": PrimitiveObjectSpec(
-        sim_utils.CuboidCfg(size=CUBOID_SIZE, **_spawn_kwargs((0.42, 0.45, 0.50))),
-        radius=math.hypot(CUBOID_SIZE[0], CUBOID_SIZE[1]) * 0.5,
-        half_height=CUBOID_SIZE[2] * 0.5,
+    "cube_2": PrimitiveObjectSpec(
+        sim_utils.CuboidCfg(size=(CUBE_SIZE, CUBE_SIZE, CUBE_SIZE), **_spawn_kwargs((0.15, 0.35, 0.95))),
+        radius=math.sqrt(2.0) * CUBE_SIZE * 0.5,
+        half_height=CUBE_SIZE * 0.5,
     ),
 }
 OBJECT_NAMES: tuple[str, ...] = tuple(PRIMITIVE_OBJECT_SPECS)
@@ -467,17 +440,14 @@ class GraspTwoItemsEventCfg(dexverse_base_env.EventCfg):
 
 @configclass
 class GraspTwoItemsSceneCfg(dexverse_base_env.SceneCfg):
-    sphere: RigidObjectCfg = OBJECT_CFGS["sphere"]
-    cylinder: RigidObjectCfg = OBJECT_CFGS["cylinder"]
-    triangular_prism: RigidObjectCfg = OBJECT_CFGS["triangular_prism"]
     cube: RigidObjectCfg = OBJECT_CFGS["cube"]
-    cuboid: RigidObjectCfg = OBJECT_CFGS["cuboid"]
+    cube_2: RigidObjectCfg = OBJECT_CFGS["cube_2"]
     object = None
 
 
 @configclass
 class GraspTwoItemsEnvCfg(dexverse_base_env.DexVerseBaseEnvCfg):
-    """Short-horizon task: randomly select and lift two primitive objects."""
+    """Short-horizon task: lift both cubes."""
 
     rewards: GraspTwoItemsRewardsCfg = GraspTwoItemsRewardsCfg()
     terminations: GraspTwoItemsTerminationsCfg = GraspTwoItemsTerminationsCfg()
