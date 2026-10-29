@@ -23,7 +23,7 @@
 - **코드**: `source/dexverse/dexverse/tasks/config/grasping/grasp_two_items_cfg.py`
   (`PRIMITIVE_OBJECT_SPECS`, `GraspTwoItemsSceneCfg`).
 
-## 2026-10-29 · record_demos — 에피소드 번호로 리셋 장면을 고정 (`--episode_seed`, 당분간 기본 꺼짐)
+## 2026-10-29 · record_demos — 에피소드 번호로 리셋 장면을 고정 (`--episode_seed`, 기본 켜짐)
 
 - **배경**: 손 6종에 대해 같은 태스크의 데모를 모을 때 "에피소드 k의 물체 배치가 모든 손에서 같아야" 손 간 비교
   (cross-hand) 데이터가 된다. 기존에는 세션 시작 때 `cfg.seed`(기본 42)로 한 번만 시드를 걸고 리셋마다 같은
@@ -38,7 +38,7 @@
   - 성공 저장 뒤의 리셋은 다음 배치. 세션 첫 리셋 = 에피소드 0.
   - 검증(2026-10-29, a4, GraspPan-v0, allegro·leap·shadow 별도 프로세스): ep0/ep1/ep2 와 각 재시도의 물체·목표·스토브
     위치가 3손에서 모두 동일.
-- **켜기/끄기**: `record_demos.py --episode_seed` / `--no_episode_seed`. **2026-10-29 결정: 진행 중인 수집(LEAP까지)이 끝날 때까지 기본은 꺼짐** — 그 라운드의 세션들을 서로 같은 조건으로 두기 위함. 끝나면 기본을 켜짐으로 바꾼다(이 문서에 기록).
+- **켜기/끄기**: `record_demos.py --episode_seed`(기본) / `--no_episode_seed`(이전 방식: 세션당 한 난수열). 진행 중인 수집 라운드(LEAP까지, 2026-10-29)는 `--no_episode_seed`를 붙여 이전 조건으로 모으고, 그 뒤부터 기본(켜짐)으로 모은다.
   `dexverse_session.sh record … --no_episode_seed` 로 그대로 전달된다. `--replay_demos`에서는 자동 off(초기 상태를
   pickle에서 복원하므로). 어느 쪽으로 모았는지는 pickle `provenance.env["DEXVERSE_EPISODE_SEED"]` = `"1"`/`"0"` 과
   콘솔의 `[episode seed] episode k: seed …` 로 남는다.

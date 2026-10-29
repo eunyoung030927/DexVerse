@@ -1267,7 +1267,7 @@ def handle_reset(env: gym.Env, base_seed=None, episode_index: int | None = None)
 
 def _next_episode_index(args, recorder) -> int | None:
     """Index of the episode about to be recorded (= episodes saved so far), or None when per-episode seeding is off."""
-    if not getattr(args, "episode_seed", False) or getattr(args, "replay_demos", None):
+    if not getattr(args, "episode_seed", True) or getattr(args, "replay_demos", None):
         return None
     return recorder.num_episodes
 
