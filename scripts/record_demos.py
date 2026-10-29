@@ -115,14 +115,22 @@ parser.add_argument(
 )
 parser.add_argument(
     "--episode_seed",
-    action=argparse.BooleanOptionalAction,
-    default=False,
+    dest="episode_seed",
+    action="store_true",
+    default=True,
     help=(
-        "Re-seed the reset randomisation from (seed, index of the episode about to be recorded) before every reset: "
-        "episode k gets the same scene in every session and for every hand, and a RESET or failed attempt is retried "
-        "on the same scene. Default OFF until the current collection round (through LEAP, 2026-10-29) is finished, so "
-        "its sessions stay comparable with each other; then the default becomes on. Off: one RNG stream for the whole "
-        "session (scenes depend on failed attempts and episode lengths). Ignored with --replay_demos."
+        "Re-seed the reset randomisation from (seed, index of the episode about to be recorded) before every reset "
+        "(default on): episode k gets the same scene in every session and for every hand, and a RESET or failed "
+        "attempt is retried on the same scene. Ignored with --replay_demos."
+    ),
+)
+parser.add_argument(
+    "--no_episode_seed",
+    dest="episode_seed",
+    action="store_false",
+    help=(
+        "Turn per-episode seeding off: one RNG stream for the whole session (scenes then depend on failed attempts "
+        "and episode lengths, as before 2026-10-29)."
     ),
 )
 parser.add_argument(
