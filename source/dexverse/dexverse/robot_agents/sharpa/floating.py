@@ -149,6 +149,10 @@ FLOATING_SHARPA_BIMANUAL_SIMPLE_RELATIVE_RETARGETER_LAYOUT = {
 }
 
 FLOATING_SHARPA_RIGHT_PALM_BODY_NAME = "right_hand_C_MC"
+# Wrist camera in the palm body frame (m; quaternion w,x,y,z, ROS convention). Placed where Shadow's camera
+# sits relative to the fingers (from the default-pose fingertip / palm geometry, 2026-10-29; docs/task_changes.md).
+FLOATING_SHARPA_RIGHT_WRIST_CAMERA_OFFSET_POS = (0.0814, -0.0003, -0.0717)
+FLOATING_SHARPA_RIGHT_WRIST_CAMERA_OFFSET_ROT = (-0.706223, -0.035345, 0.035341, 0.706223)
 FLOATING_SHARPA_RIGHT_FINGERTIP_BODY_NAMES = [
     "right_thumb_fingertip",
     "right_index_fingertip",
@@ -167,6 +171,10 @@ FLOATING_SHARPA_RIGHT_BASE_ROT = _SHARPA_HOME_BASE_ROT
 FLOATING_SHARPA_RIGHT_WRIST_POSITION_OFFSET = (-0.25, 0.0, 0.8)
 
 FLOATING_SHARPA_LEFT_PALM_BODY_NAME = "left_hand_C_MC"
+# Wrist camera in the palm body frame (m; quaternion w,x,y,z, ROS convention). Placed where Shadow's camera
+# sits relative to the fingers (from the default-pose fingertip / palm geometry, 2026-10-29; docs/task_changes.md).
+FLOATING_SHARPA_LEFT_WRIST_CAMERA_OFFSET_POS = (0.0814, 0.0003, -0.0717)
+FLOATING_SHARPA_LEFT_WRIST_CAMERA_OFFSET_ROT = (0.706223, 0.035341, -0.035345, -0.706223)
 FLOATING_SHARPA_LEFT_FINGERTIP_BODY_NAMES = [
     "left_thumb_fingertip",
     "left_index_fingertip",
@@ -185,7 +193,13 @@ FLOATING_SHARPA_LEFT_BASE_ROT = FLOATING_SHARPA_RIGHT_BASE_ROT
 FLOATING_SHARPA_LEFT_WRIST_POSITION_OFFSET = FLOATING_SHARPA_RIGHT_WRIST_POSITION_OFFSET
 
 FLOATING_SHARPA_BIMANUAL_RIGHT_PALM_BODY_NAME = FLOATING_SHARPA_RIGHT_PALM_BODY_NAME
+# Wrist camera in the palm body frame (m; quaternion w,x,y,z, ROS convention). Placed where Shadow's camera
+# sits relative to the fingers (from the default-pose fingertip / palm geometry, 2026-10-29; docs/task_changes.md).
+FLOATING_SHARPA_BIMANUAL_RIGHT_WRIST_CAMERA_OFFSET_POS = (0.0814, -0.0003, -0.0717)
+FLOATING_SHARPA_BIMANUAL_RIGHT_WRIST_CAMERA_OFFSET_ROT = (-0.706223, -0.035345, 0.035341, 0.706223)
 FLOATING_SHARPA_BIMANUAL_LEFT_PALM_BODY_NAME = FLOATING_SHARPA_LEFT_PALM_BODY_NAME
+FLOATING_SHARPA_BIMANUAL_LEFT_WRIST_CAMERA_OFFSET_POS = (0.0814, 0.0003, -0.0717)
+FLOATING_SHARPA_BIMANUAL_LEFT_WRIST_CAMERA_OFFSET_ROT = (0.706223, 0.035341, -0.035345, -0.706223)
 FLOATING_SHARPA_BIMANUAL_PALM_BODY_NAME = FLOATING_SHARPA_BIMANUAL_RIGHT_PALM_BODY_NAME
 FLOATING_SHARPA_BIMANUAL_FINGERTIP_BODY_NAMES = [
     *FLOATING_SHARPA_RIGHT_FINGERTIP_BODY_NAMES,
@@ -579,6 +593,8 @@ def build_tabletop_floating_sharpa_right_setup(
     return TabletopRobotSetup(
         robot_config_kwargs={
             "palm_body_name": FLOATING_SHARPA_RIGHT_PALM_BODY_NAME,
+            "wrist_camera_offset_pos": FLOATING_SHARPA_RIGHT_WRIST_CAMERA_OFFSET_POS,
+            "wrist_camera_offset_rot": FLOATING_SHARPA_RIGHT_WRIST_CAMERA_OFFSET_ROT,
             "fingertip_body_names": FLOATING_SHARPA_RIGHT_FINGERTIP_BODY_NAMES,
             "hand_tips_body_names": FLOATING_SHARPA_RIGHT_HAND_TIPS_BODY_NAMES,
             "wrist_joint_name": FLOATING_SHARPA_RIGHT_WRIST_JOINT_NAME,
@@ -612,6 +628,8 @@ def build_tabletop_floating_sharpa_left_setup(
     return TabletopRobotSetup(
         robot_config_kwargs={
             "palm_body_name": FLOATING_SHARPA_LEFT_PALM_BODY_NAME,
+            "wrist_camera_offset_pos": FLOATING_SHARPA_LEFT_WRIST_CAMERA_OFFSET_POS,
+            "wrist_camera_offset_rot": FLOATING_SHARPA_LEFT_WRIST_CAMERA_OFFSET_ROT,
             "fingertip_body_names": FLOATING_SHARPA_LEFT_FINGERTIP_BODY_NAMES,
             "hand_tips_body_names": FLOATING_SHARPA_LEFT_HAND_TIPS_BODY_NAMES,
             "wrist_joint_name": FLOATING_SHARPA_LEFT_WRIST_JOINT_NAME,
@@ -647,6 +665,10 @@ def build_tabletop_floating_sharpa_bimanual_setup(
             "palm_body_name": FLOATING_SHARPA_BIMANUAL_PALM_BODY_NAME,
             "right_palm_body_name": FLOATING_SHARPA_BIMANUAL_RIGHT_PALM_BODY_NAME,
             "left_palm_body_name": FLOATING_SHARPA_BIMANUAL_LEFT_PALM_BODY_NAME,
+            "left_wrist_camera_offset_pos": FLOATING_SHARPA_BIMANUAL_LEFT_WRIST_CAMERA_OFFSET_POS,
+            "left_wrist_camera_offset_rot": FLOATING_SHARPA_BIMANUAL_LEFT_WRIST_CAMERA_OFFSET_ROT,
+            "wrist_camera_offset_pos": FLOATING_SHARPA_BIMANUAL_RIGHT_WRIST_CAMERA_OFFSET_POS,
+            "wrist_camera_offset_rot": FLOATING_SHARPA_BIMANUAL_RIGHT_WRIST_CAMERA_OFFSET_ROT,
             "fingertip_body_names": FLOATING_SHARPA_BIMANUAL_FINGERTIP_BODY_NAMES,
             "hand_tips_body_names": FLOATING_SHARPA_BIMANUAL_HAND_TIPS_BODY_NAMES,
             "wrist_joint_name": None,

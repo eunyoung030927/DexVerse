@@ -7,6 +7,7 @@
 |---|---|---|
 | 2026-10-28 | Dexverse-GraspTwoItems-v0 | b49a1a5 |
 | 2026-10-29 | 모든 태스크 — record_demos 에피소드별 리셋 시드 (`--episode_seed`) | 4e10f3a |
+| 2026-10-29 | 모든 태스크 — 손별 wrist camera 위치 (Shadow 기준으로 통일) | 이 항목을 추가한 커밋 |
 
 ## 2026-10-28 · Dexverse-GraspTwoItems-v0 — 정육면체 2개만 사용
 
@@ -49,3 +50,25 @@
   단일 손 학습 데이터로는 그대로 쓸 수 있다.
 - **코드**: `scripts/record_demos.py`(`--episode_seed`, `handle_reset`, `_next_episode_index`),
   `source/dexverse/dexverse/data_collection/episode_seed.py`(`seed_for_episode`, `install_per_term_seeding`).
+
+## 2026-10-29 · wrist camera — 손별 오프셋으로 Shadow와 같은 구도
+
+- **배경**: wrist 카메라 오프셋(`DEFAULT_WRIST_CAMERA_OFFSET_POS/ROT` = palm 기준 (0, −0.08, −0.08) m)은 Shadow의
+  `palm` 프레임에 맞춰 만든 값인데, 모든 손에 그대로 쓰였다. 손마다 palm body 프레임의 축이 달라서 Sharpa·Allegro·Wuji는
+  카메라가 90° 돌아가 손이 화면 옆에 걸치고, Inspire는 손등을, LEAP은 손바닥 블록 안쪽을 보고 있었다
+  (기존 LeRobot 데이터셋의 wrist 영상이 그렇게 찍혀 있음).
+- **변경**: `RobotConfig.wrist_camera_offset_pos/rot` (양손은 `left_wrist_camera_offset_*` 추가)을 두고, 손별
+  `robot_agents/<hand>/floating.py`의 `*_WRIST_CAMERA_OFFSET_POS/ROT` 상수로 채운다. None이면 기존 기본값(Shadow).
+  카메라 가이드 박스(`DEXVERSE_WRIST_CAMERA_BODY=1`)도 같은 오프셋을 따른다.
+- **값을 정한 방법**: 손이 테이블 위에 수평으로 놓인 기본 자세에서, Shadow right의 카메라를 "손 기하 프레임"(원점 =
+  엄지 제외 손끝 중심, x = 손가락 방향(월드 +x), z = 손바닥 법선(월드 +z))으로 표현하면 손끝 중심 27 cm 뒤·8 cm 손등 쪽이다.
+  같은 상대 위치를 각 손의 기본 자세 기하(헤드리스로 읽은 palm·손끝 body 위치)에서 계산해 그 손의 palm 프레임으로 바꿨다.
+  왼손은 손 프레임의 xz 평면 대칭(카메라 좌우축도 함께 반전; Shadow left·Shadow 양손의 기존 기본값과 일치함을 확인).
+  보정: Allegro는 손이 커서 3 cm 더 뒤, LEAP은 `palm_lower` 원점이 손가락 쪽이고 모터 블록이 가려서 6 cm 뒤·4 cm 아래.
+- **검증**: a4 헤드리스, 손별·손 구성별 1장면(오른손·왼손 GraspPan-v0, 양손 BimanualLiftTray-v0) 렌더를 Shadow와
+  나란히 비교 (before→after 페이지는 2026-10-29 작업 기록). 모든 손에서 손가락이 화면 위쪽에, 물체·테이블이 아래에
+  오는 Shadow와 같은 구도.
+- **데이터 영향**: 이 변경 전에 모은 pickle의 wrist 영상(변환된 LeRobot 데이터셋 포함)은 예전 구도다. pickle에는
+  관절·포즈만 저장되고 LeRobot 변환(`pickle_to_lerobot.sh`)이 헤드리스 재생으로 영상을 다시 렌더하므로, 다시 변환하면 새 구도의 wrist 영상을 얻는다.
+- **코드**: `tasks/dexverse_base_env_cfg.py`(`RobotConfig.wrist_camera_offset_*`, `_sync_wrist_camera_attachment`),
+  `robot_agents/{allegro,inspire,leap,sharpa,wuji}/floating.py`.

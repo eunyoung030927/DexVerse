@@ -207,6 +207,10 @@ FLOATING_LEAP_RIGHT_CFG = ArticulationCfg(
 )
 
 FLOATING_LEAP_RIGHT_PALM_BODY_NAME = "palm_lower"
+# Wrist camera in the palm body frame (m; quaternion w,x,y,z, ROS convention). Placed where Shadow's camera
+# sits relative to the fingers (from the default-pose fingertip / palm geometry, 2026-10-29; docs/task_changes.md).
+FLOATING_LEAP_RIGHT_WRIST_CAMERA_OFFSET_POS = (-0.2478, -0.0228, -0.1393)
+FLOATING_LEAP_RIGHT_WRIST_CAMERA_OFFSET_ROT = (-0.52422, 0.474542, -0.474545, 0.524223)
 FLOATING_LEAP_RIGHT_FINGERTIP_BODY_NAMES = [
     "thumb_fingertip", "fingertip", "fingertip_2", "fingertip_3",
 ]
@@ -412,7 +416,13 @@ BIMANUAL_LEAP_CFG = ArticulationCfg(
 )
 
 BIMANUAL_LEAP_RIGHT_PALM_BODY_NAME = "right_palm_lower"
+# Wrist camera in the palm body frame (m; quaternion w,x,y,z, ROS convention). Placed where Shadow's camera
+# sits relative to the fingers (from the default-pose fingertip / palm geometry, 2026-10-29; docs/task_changes.md).
+BIMANUAL_LEAP_RIGHT_WRIST_CAMERA_OFFSET_POS = (-0.2478, -0.0228, -0.1395)
+BIMANUAL_LEAP_RIGHT_WRIST_CAMERA_OFFSET_ROT = (-0.524367, 0.47438, -0.474383, 0.52437)
 BIMANUAL_LEAP_LEFT_PALM_BODY_NAME = "left_palm_lower_left"
+BIMANUAL_LEAP_LEFT_WRIST_CAMERA_OFFSET_POS = (-0.3232, -0.0407, -0.113)
+BIMANUAL_LEAP_LEFT_WRIST_CAMERA_OFFSET_ROT = (0.52437, -0.474383, 0.47438, -0.524367)
 
 BIMANUAL_LEAP_RIGHT_FINGERTIP_BODY_NAMES = [
     "right_thumb_fingertip",
@@ -444,6 +454,8 @@ def build_tabletop_floating_leap_right_setup(
     return TabletopRobotSetup(
         robot_config_kwargs={
             "palm_body_name": FLOATING_LEAP_RIGHT_PALM_BODY_NAME,
+            "wrist_camera_offset_pos": FLOATING_LEAP_RIGHT_WRIST_CAMERA_OFFSET_POS,
+            "wrist_camera_offset_rot": FLOATING_LEAP_RIGHT_WRIST_CAMERA_OFFSET_ROT,
             "fingertip_body_names": FLOATING_LEAP_RIGHT_FINGERTIP_BODY_NAMES,
             "dummy_mass_body_names": [".*(_virtual_link|_tip_head)"],
             "hand_tips_body_names": FLOATING_LEAP_RIGHT_HAND_TIPS_BODY_NAMES,
@@ -480,6 +492,10 @@ def build_tabletop_bimanual_leap_setup(
             "palm_body_name": BIMANUAL_LEAP_RIGHT_PALM_BODY_NAME,
             "right_palm_body_name": BIMANUAL_LEAP_RIGHT_PALM_BODY_NAME,
             "left_palm_body_name": BIMANUAL_LEAP_LEFT_PALM_BODY_NAME,
+            "left_wrist_camera_offset_pos": BIMANUAL_LEAP_LEFT_WRIST_CAMERA_OFFSET_POS,
+            "left_wrist_camera_offset_rot": BIMANUAL_LEAP_LEFT_WRIST_CAMERA_OFFSET_ROT,
+            "wrist_camera_offset_pos": BIMANUAL_LEAP_RIGHT_WRIST_CAMERA_OFFSET_POS,
+            "wrist_camera_offset_rot": BIMANUAL_LEAP_RIGHT_WRIST_CAMERA_OFFSET_ROT,
             "fingertip_body_names": BIMANUAL_LEAP_FINGERTIP_BODY_NAMES,
             "dummy_mass_body_names": [".*(_virtual_link|_tip_head).*"],  # one regex: the bimanual USD has no virtual links
             "hand_tips_body_names": BIMANUAL_LEAP_HAND_TIPS_BODY_NAMES,

@@ -307,6 +307,10 @@ FLOATING_INSPIRE_LEFT_CFG = ArticulationCfg(
 )
 
 FLOATING_INSPIRE_RIGHT_PALM_BODY_NAME = "hand_base_link"
+# Wrist camera in the palm body frame (m; quaternion w,x,y,z, ROS convention). Placed where Shadow's camera
+# sits relative to the fingers (from the default-pose fingertip / palm geometry, 2026-10-29; docs/task_changes.md).
+FLOATING_INSPIRE_RIGHT_WRIST_CAMERA_OFFSET_POS = (-0.081, 0.0579, 0.0048)
+FLOATING_INSPIRE_RIGHT_WRIST_CAMERA_OFFSET_ROT = (0.474388, 0.524361, -0.474383, 0.524369)
 FLOATING_INSPIRE_RIGHT_FINGERTIP_BODY_NAMES = list(_FINGERTIP_SUFFIXES)
 FLOATING_INSPIRE_RIGHT_HAND_TIPS_BODY_NAMES = (
     [FLOATING_INSPIRE_RIGHT_PALM_BODY_NAME] + FLOATING_INSPIRE_RIGHT_FINGERTIP_BODY_NAMES
@@ -315,6 +319,10 @@ FLOATING_INSPIRE_RIGHT_WRIST_JOINT_NAME = _SINGLE_ROT_EXPR
 FLOATING_INSPIRE_RIGHT_ARM_JOINT_NAMES_EXPR = [_SINGLE_TRANS_EXPR]
 
 FLOATING_INSPIRE_LEFT_PALM_BODY_NAME = FLOATING_INSPIRE_RIGHT_PALM_BODY_NAME
+# Wrist camera in the palm body frame (m; quaternion w,x,y,z, ROS convention). Placed where Shadow's camera
+# sits relative to the fingers (from the default-pose fingertip / palm geometry, 2026-10-29; docs/task_changes.md).
+FLOATING_INSPIRE_LEFT_WRIST_CAMERA_OFFSET_POS = (-0.0811, 0.0579, -0.0048)
+FLOATING_INSPIRE_LEFT_WRIST_CAMERA_OFFSET_ROT = (-0.47438, -0.524367, 0.474385, -0.524367)
 FLOATING_INSPIRE_LEFT_FINGERTIP_BODY_NAMES = FLOATING_INSPIRE_RIGHT_FINGERTIP_BODY_NAMES
 FLOATING_INSPIRE_LEFT_HAND_TIPS_BODY_NAMES = FLOATING_INSPIRE_RIGHT_HAND_TIPS_BODY_NAMES
 FLOATING_INSPIRE_LEFT_WRIST_JOINT_NAME = FLOATING_INSPIRE_RIGHT_WRIST_JOINT_NAME
@@ -452,7 +460,13 @@ FLOATING_INSPIRE_BIMANUAL_CFG = ArticulationCfg(
 )
 
 FLOATING_INSPIRE_BIMANUAL_RIGHT_PALM_BODY_NAME = "right_hand_base_link"
+# Wrist camera in the palm body frame (m; quaternion w,x,y,z, ROS convention). Placed where Shadow's camera
+# sits relative to the fingers (from the default-pose fingertip / palm geometry, 2026-10-29; docs/task_changes.md).
+FLOATING_INSPIRE_BIMANUAL_RIGHT_WRIST_CAMERA_OFFSET_POS = (-0.0811, 0.0579, 0.0048)
+FLOATING_INSPIRE_BIMANUAL_RIGHT_WRIST_CAMERA_OFFSET_ROT = (0.474386, 0.524364, -0.47438, 0.52437)
 FLOATING_INSPIRE_BIMANUAL_LEFT_PALM_BODY_NAME = "left_hand_base_link"
+FLOATING_INSPIRE_BIMANUAL_LEFT_WRIST_CAMERA_OFFSET_POS = (-0.0811, 0.0579, -0.0048)
+FLOATING_INSPIRE_BIMANUAL_LEFT_WRIST_CAMERA_OFFSET_ROT = (-0.47438, -0.524367, 0.474385, -0.524367)
 FLOATING_INSPIRE_BIMANUAL_PALM_BODY_NAME = FLOATING_INSPIRE_BIMANUAL_RIGHT_PALM_BODY_NAME
 FLOATING_INSPIRE_BIMANUAL_FINGERTIP_BODY_NAMES = [
     f"right_{s}" for s in _FINGERTIP_SUFFIXES
@@ -564,6 +578,8 @@ def build_tabletop_floating_inspire_right_setup(prim_path: str = "{ENV_REGEX_NS}
     return TabletopRobotSetup(
         robot_config_kwargs={
             "palm_body_name": FLOATING_INSPIRE_RIGHT_PALM_BODY_NAME,
+            "wrist_camera_offset_pos": FLOATING_INSPIRE_RIGHT_WRIST_CAMERA_OFFSET_POS,
+            "wrist_camera_offset_rot": FLOATING_INSPIRE_RIGHT_WRIST_CAMERA_OFFSET_ROT,
             "fingertip_body_names": FLOATING_INSPIRE_RIGHT_FINGERTIP_BODY_NAMES,
             "dummy_mass_body_names": [".*(thumb|index|middle|ring|pinky)_tip"],
             "hand_tips_body_names": FLOATING_INSPIRE_RIGHT_HAND_TIPS_BODY_NAMES,
@@ -598,6 +614,8 @@ def build_tabletop_floating_inspire_left_setup(prim_path: str = "{ENV_REGEX_NS}/
     return TabletopRobotSetup(
         robot_config_kwargs={
             "palm_body_name": FLOATING_INSPIRE_LEFT_PALM_BODY_NAME,
+            "wrist_camera_offset_pos": FLOATING_INSPIRE_LEFT_WRIST_CAMERA_OFFSET_POS,
+            "wrist_camera_offset_rot": FLOATING_INSPIRE_LEFT_WRIST_CAMERA_OFFSET_ROT,
             "fingertip_body_names": FLOATING_INSPIRE_LEFT_FINGERTIP_BODY_NAMES,
             "dummy_mass_body_names": [".*(thumb|index|middle|ring|pinky)_tip"],
             "hand_tips_body_names": FLOATING_INSPIRE_LEFT_HAND_TIPS_BODY_NAMES,
@@ -631,6 +649,10 @@ def build_tabletop_floating_inspire_bimanual_setup(prim_path: str = "{ENV_REGEX_
             "palm_body_name": FLOATING_INSPIRE_BIMANUAL_PALM_BODY_NAME,
             "right_palm_body_name": FLOATING_INSPIRE_BIMANUAL_RIGHT_PALM_BODY_NAME,
             "left_palm_body_name": FLOATING_INSPIRE_BIMANUAL_LEFT_PALM_BODY_NAME,
+            "left_wrist_camera_offset_pos": FLOATING_INSPIRE_BIMANUAL_LEFT_WRIST_CAMERA_OFFSET_POS,
+            "left_wrist_camera_offset_rot": FLOATING_INSPIRE_BIMANUAL_LEFT_WRIST_CAMERA_OFFSET_ROT,
+            "wrist_camera_offset_pos": FLOATING_INSPIRE_BIMANUAL_RIGHT_WRIST_CAMERA_OFFSET_POS,
+            "wrist_camera_offset_rot": FLOATING_INSPIRE_BIMANUAL_RIGHT_WRIST_CAMERA_OFFSET_ROT,
             "fingertip_body_names": FLOATING_INSPIRE_BIMANUAL_FINGERTIP_BODY_NAMES,
             "dummy_mass_body_names": [".*(thumb|index|middle|ring|pinky)_tip"],
             "hand_tips_body_names": FLOATING_INSPIRE_BIMANUAL_HAND_TIPS_BODY_NAMES,

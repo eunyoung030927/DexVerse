@@ -219,6 +219,10 @@ FLOATING_WUJI_BIMANUAL_SIMPLE_RELATIVE_RETARGETER_LAYOUT = {
 }
 
 FLOATING_WUJI_RIGHT_PALM_BODY_NAME = "right_palm_link"
+# Wrist camera in the palm body frame (m; quaternion w,x,y,z, ROS convention). Placed where Shadow's camera
+# sits relative to the fingers (from the default-pose fingertip / palm geometry, 2026-10-29; docs/task_changes.md).
+FLOATING_WUJI_RIGHT_WRIST_CAMERA_OFFSET_POS = (0.0629, -0.0072, -0.0824)
+FLOATING_WUJI_RIGHT_WRIST_CAMERA_OFFSET_ROT = (-0.706223, -0.035345, 0.035341, 0.706223)
 FLOATING_WUJI_RIGHT_FINGERTIP_BODY_NAMES = [f"right_finger{i}_tip_link" for i in range(1, 6)]
 FLOATING_WUJI_RIGHT_HAND_TIPS_BODY_NAMES = [
     FLOATING_WUJI_RIGHT_PALM_BODY_NAME,
@@ -231,6 +235,10 @@ FLOATING_WUJI_RIGHT_BASE_ROT = _WUJI_HOME_BASE_ROT
 FLOATING_WUJI_RIGHT_WRIST_POSITION_OFFSET = (-0.25, 0.0, 0.8)
 
 FLOATING_WUJI_LEFT_PALM_BODY_NAME = "left_palm_link"
+# Wrist camera in the palm body frame (m; quaternion w,x,y,z, ROS convention). Placed where Shadow's camera
+# sits relative to the fingers (from the default-pose fingertip / palm geometry, 2026-10-29; docs/task_changes.md).
+FLOATING_WUJI_LEFT_WRIST_CAMERA_OFFSET_POS = (0.0629, 0.0072, -0.0824)
+FLOATING_WUJI_LEFT_WRIST_CAMERA_OFFSET_ROT = (0.706223, 0.035341, -0.035345, -0.706223)
 FLOATING_WUJI_LEFT_FINGERTIP_BODY_NAMES = [f"left_finger{i}_tip_link" for i in range(1, 6)]
 FLOATING_WUJI_LEFT_HAND_TIPS_BODY_NAMES = [
     FLOATING_WUJI_LEFT_PALM_BODY_NAME,
@@ -243,7 +251,13 @@ FLOATING_WUJI_LEFT_BASE_ROT = FLOATING_WUJI_RIGHT_BASE_ROT
 FLOATING_WUJI_LEFT_WRIST_POSITION_OFFSET = FLOATING_WUJI_RIGHT_WRIST_POSITION_OFFSET
 
 FLOATING_WUJI_BIMANUAL_RIGHT_PALM_BODY_NAME = FLOATING_WUJI_RIGHT_PALM_BODY_NAME
+# Wrist camera in the palm body frame (m; quaternion w,x,y,z, ROS convention). Placed where Shadow's camera
+# sits relative to the fingers (from the default-pose fingertip / palm geometry, 2026-10-29; docs/task_changes.md).
+FLOATING_WUJI_BIMANUAL_RIGHT_WRIST_CAMERA_OFFSET_POS = (0.0629, -0.0072, -0.0824)
+FLOATING_WUJI_BIMANUAL_RIGHT_WRIST_CAMERA_OFFSET_ROT = (-0.706223, -0.035345, 0.035341, 0.706223)
 FLOATING_WUJI_BIMANUAL_LEFT_PALM_BODY_NAME = FLOATING_WUJI_LEFT_PALM_BODY_NAME
+FLOATING_WUJI_BIMANUAL_LEFT_WRIST_CAMERA_OFFSET_POS = (0.0629, 0.0072, -0.0824)
+FLOATING_WUJI_BIMANUAL_LEFT_WRIST_CAMERA_OFFSET_ROT = (0.706223, 0.035341, -0.035345, -0.706223)
 FLOATING_WUJI_BIMANUAL_PALM_BODY_NAME = FLOATING_WUJI_BIMANUAL_RIGHT_PALM_BODY_NAME
 FLOATING_WUJI_BIMANUAL_FINGERTIP_BODY_NAMES = [
     *FLOATING_WUJI_RIGHT_FINGERTIP_BODY_NAMES,
@@ -610,6 +624,8 @@ def build_tabletop_floating_wuji_right_setup(
     return TabletopRobotSetup(
         robot_config_kwargs={
             "palm_body_name": FLOATING_WUJI_RIGHT_PALM_BODY_NAME,
+            "wrist_camera_offset_pos": FLOATING_WUJI_RIGHT_WRIST_CAMERA_OFFSET_POS,
+            "wrist_camera_offset_rot": FLOATING_WUJI_RIGHT_WRIST_CAMERA_OFFSET_ROT,
             "fingertip_body_names": FLOATING_WUJI_RIGHT_FINGERTIP_BODY_NAMES,
             "hand_tips_body_names": FLOATING_WUJI_RIGHT_HAND_TIPS_BODY_NAMES,
             "wrist_joint_name": FLOATING_WUJI_RIGHT_WRIST_JOINT_NAME,
@@ -643,6 +659,8 @@ def build_tabletop_floating_wuji_left_setup(
     return TabletopRobotSetup(
         robot_config_kwargs={
             "palm_body_name": FLOATING_WUJI_LEFT_PALM_BODY_NAME,
+            "wrist_camera_offset_pos": FLOATING_WUJI_LEFT_WRIST_CAMERA_OFFSET_POS,
+            "wrist_camera_offset_rot": FLOATING_WUJI_LEFT_WRIST_CAMERA_OFFSET_ROT,
             "fingertip_body_names": FLOATING_WUJI_LEFT_FINGERTIP_BODY_NAMES,
             "hand_tips_body_names": FLOATING_WUJI_LEFT_HAND_TIPS_BODY_NAMES,
             "wrist_joint_name": FLOATING_WUJI_LEFT_WRIST_JOINT_NAME,
@@ -678,6 +696,10 @@ def build_tabletop_floating_wuji_bimanual_setup(
             "palm_body_name": FLOATING_WUJI_BIMANUAL_PALM_BODY_NAME,
             "right_palm_body_name": FLOATING_WUJI_BIMANUAL_RIGHT_PALM_BODY_NAME,
             "left_palm_body_name": FLOATING_WUJI_BIMANUAL_LEFT_PALM_BODY_NAME,
+            "left_wrist_camera_offset_pos": FLOATING_WUJI_BIMANUAL_LEFT_WRIST_CAMERA_OFFSET_POS,
+            "left_wrist_camera_offset_rot": FLOATING_WUJI_BIMANUAL_LEFT_WRIST_CAMERA_OFFSET_ROT,
+            "wrist_camera_offset_pos": FLOATING_WUJI_BIMANUAL_RIGHT_WRIST_CAMERA_OFFSET_POS,
+            "wrist_camera_offset_rot": FLOATING_WUJI_BIMANUAL_RIGHT_WRIST_CAMERA_OFFSET_ROT,
             "fingertip_body_names": FLOATING_WUJI_BIMANUAL_FINGERTIP_BODY_NAMES,
             "hand_tips_body_names": FLOATING_WUJI_BIMANUAL_HAND_TIPS_BODY_NAMES,
             "wrist_joint_name": None,

@@ -171,6 +171,10 @@ FLOATING_ALLEGRO_LEFT_CFG = ArticulationCfg(
 )
 
 FLOATING_ALLEGRO_RIGHT_PALM_BODY_NAME = "palm"
+# Wrist camera in the palm body frame (m; quaternion w,x,y,z, ROS convention). Placed where Shadow's camera
+# sits relative to the fingers (from the default-pose fingertip / palm geometry, 2026-10-29; docs/task_changes.md).
+FLOATING_ALLEGRO_RIGHT_WRIST_CAMERA_OFFSET_POS = (0.08, 0.0, -0.0886)
+FLOATING_ALLEGRO_RIGHT_WRIST_CAMERA_OFFSET_ROT = (-0.706223, -0.035346, 0.035342, 0.706223)
 FLOATING_ALLEGRO_RIGHT_FINGERTIP_BODY_NAMES = list(_RIGHT_FINGERTIP_SUFFIXES)
 FLOATING_ALLEGRO_RIGHT_HAND_TIPS_BODY_NAMES = (
     [FLOATING_ALLEGRO_RIGHT_PALM_BODY_NAME] + FLOATING_ALLEGRO_RIGHT_FINGERTIP_BODY_NAMES
@@ -179,6 +183,10 @@ FLOATING_ALLEGRO_RIGHT_WRIST_JOINT_NAME = _SINGLE_ROT_EXPR
 FLOATING_ALLEGRO_RIGHT_ARM_JOINT_NAMES_EXPR = [_SINGLE_TRANS_EXPR]
 
 FLOATING_ALLEGRO_LEFT_PALM_BODY_NAME = FLOATING_ALLEGRO_RIGHT_PALM_BODY_NAME
+# Wrist camera in the palm body frame (m; quaternion w,x,y,z, ROS convention). Placed where Shadow's camera
+# sits relative to the fingers (from the default-pose fingertip / palm geometry, 2026-10-29; docs/task_changes.md).
+FLOATING_ALLEGRO_LEFT_WRIST_CAMERA_OFFSET_POS = (0.08, 0.0, -0.0886)
+FLOATING_ALLEGRO_LEFT_WRIST_CAMERA_OFFSET_ROT = (0.706223, 0.035342, -0.035346, -0.706223)
 FLOATING_ALLEGRO_LEFT_FINGERTIP_BODY_NAMES = FLOATING_ALLEGRO_RIGHT_FINGERTIP_BODY_NAMES
 FLOATING_ALLEGRO_LEFT_HAND_TIPS_BODY_NAMES = FLOATING_ALLEGRO_RIGHT_HAND_TIPS_BODY_NAMES
 FLOATING_ALLEGRO_LEFT_WRIST_JOINT_NAME = FLOATING_ALLEGRO_RIGHT_WRIST_JOINT_NAME
@@ -304,7 +312,13 @@ FLOATING_ALLEGRO_BIMANUAL_CFG = ArticulationCfg(
 )
 
 FLOATING_ALLEGRO_BIMANUAL_RIGHT_PALM_BODY_NAME = "right_palm"
+# Wrist camera in the palm body frame (m; quaternion w,x,y,z, ROS convention). Placed where Shadow's camera
+# sits relative to the fingers (from the default-pose fingertip / palm geometry, 2026-10-29; docs/task_changes.md).
+FLOATING_ALLEGRO_BIMANUAL_RIGHT_WRIST_CAMERA_OFFSET_POS = (0.08, 0.0, -0.0886)
+FLOATING_ALLEGRO_BIMANUAL_RIGHT_WRIST_CAMERA_OFFSET_ROT = (-0.706223, -0.035346, 0.035342, 0.706223)
 FLOATING_ALLEGRO_BIMANUAL_LEFT_PALM_BODY_NAME = "left_palm"
+FLOATING_ALLEGRO_BIMANUAL_LEFT_WRIST_CAMERA_OFFSET_POS = (0.08, 0.0, -0.0886)
+FLOATING_ALLEGRO_BIMANUAL_LEFT_WRIST_CAMERA_OFFSET_ROT = (0.706223, 0.035342, -0.035346, -0.706223)
 FLOATING_ALLEGRO_BIMANUAL_PALM_BODY_NAME = FLOATING_ALLEGRO_BIMANUAL_RIGHT_PALM_BODY_NAME
 FLOATING_ALLEGRO_BIMANUAL_FINGERTIP_BODY_NAMES = [
     f"right_{s}" for s in _RIGHT_FINGERTIP_SUFFIXES
@@ -419,6 +433,8 @@ def build_tabletop_floating_allegro_right_setup(prim_path: str = "{ENV_REGEX_NS}
     return TabletopRobotSetup(
         robot_config_kwargs={
             "palm_body_name": FLOATING_ALLEGRO_RIGHT_PALM_BODY_NAME,
+            "wrist_camera_offset_pos": FLOATING_ALLEGRO_RIGHT_WRIST_CAMERA_OFFSET_POS,
+            "wrist_camera_offset_rot": FLOATING_ALLEGRO_RIGHT_WRIST_CAMERA_OFFSET_ROT,
             "fingertip_body_names": FLOATING_ALLEGRO_RIGHT_FINGERTIP_BODY_NAMES,
             "hand_tips_body_names": FLOATING_ALLEGRO_RIGHT_HAND_TIPS_BODY_NAMES,
             "wrist_joint_name": FLOATING_ALLEGRO_RIGHT_WRIST_JOINT_NAME,
@@ -449,6 +465,8 @@ def build_tabletop_floating_allegro_left_setup(prim_path: str = "{ENV_REGEX_NS}/
     return TabletopRobotSetup(
         robot_config_kwargs={
             "palm_body_name": FLOATING_ALLEGRO_LEFT_PALM_BODY_NAME,
+            "wrist_camera_offset_pos": FLOATING_ALLEGRO_LEFT_WRIST_CAMERA_OFFSET_POS,
+            "wrist_camera_offset_rot": FLOATING_ALLEGRO_LEFT_WRIST_CAMERA_OFFSET_ROT,
             "fingertip_body_names": FLOATING_ALLEGRO_LEFT_FINGERTIP_BODY_NAMES,
             "hand_tips_body_names": FLOATING_ALLEGRO_LEFT_HAND_TIPS_BODY_NAMES,
             "wrist_joint_name": FLOATING_ALLEGRO_LEFT_WRIST_JOINT_NAME,
@@ -481,6 +499,10 @@ def build_tabletop_floating_allegro_bimanual_setup(prim_path: str = "{ENV_REGEX_
             "palm_body_name": FLOATING_ALLEGRO_BIMANUAL_PALM_BODY_NAME,
             "right_palm_body_name": FLOATING_ALLEGRO_BIMANUAL_RIGHT_PALM_BODY_NAME,
             "left_palm_body_name": FLOATING_ALLEGRO_BIMANUAL_LEFT_PALM_BODY_NAME,
+            "left_wrist_camera_offset_pos": FLOATING_ALLEGRO_BIMANUAL_LEFT_WRIST_CAMERA_OFFSET_POS,
+            "left_wrist_camera_offset_rot": FLOATING_ALLEGRO_BIMANUAL_LEFT_WRIST_CAMERA_OFFSET_ROT,
+            "wrist_camera_offset_pos": FLOATING_ALLEGRO_BIMANUAL_RIGHT_WRIST_CAMERA_OFFSET_POS,
+            "wrist_camera_offset_rot": FLOATING_ALLEGRO_BIMANUAL_RIGHT_WRIST_CAMERA_OFFSET_ROT,
             "fingertip_body_names": FLOATING_ALLEGRO_BIMANUAL_FINGERTIP_BODY_NAMES,
             "hand_tips_body_names": FLOATING_ALLEGRO_BIMANUAL_HAND_TIPS_BODY_NAMES,
             "wrist_joint_name": None,
