@@ -74,5 +74,8 @@
   메시가 링크에서 떨어져(최대 12.8 cm) 테이블 위에 따로 그려졌다. 양손 USD에만 걸려 있던 보정(2026-10-23, 9a24ffe:
   각 링크 `visuals`에 메시 변환의 역변환)을 모든 Inspire USD에 적용 (`_fix_finger_visuals`; 이미 맞는 링크는 건너뜀).
   충돌 형상·관절은 원래 링크 위에 있어 물리·tactile은 바뀌지 않는다. 적용 뒤 모든 링크의 비주얼-링크 오프셋 0 cm 확인.
+  양손 USD의 왼손은 보정을 걸어도 기본 스폰 높이(0.6)에서만 예전 변환으로 그려졌다(0.61·0.75·0.9에서는 정상; 카메라·
+  링크·Fabric 위치는 모두 정상이었음) → `visuals` 인스턴스를 풀고(de-instance) 보정하도록 바꿔 해결. 확인: 양손 Inspire
+  좌·우 wrist 샷이 거울상으로 일치, 단일 좌·우도 그대로.
 - **코드**: `tasks/dexverse_base_env_cfg.py`(`RobotConfig.wrist_camera_offset_*`, `_sync_wrist_camera_attachment`),
   `robot_agents/{allegro,inspire,leap,sharpa,wuji}/floating.py`, `robot_agents/inspire/floating.py::_fix_finger_visuals`.

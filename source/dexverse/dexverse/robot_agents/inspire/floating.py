@@ -154,6 +154,12 @@ def _fix_finger_visuals(prim_path: str) -> None:
             inner = xc.GetLocalToWorldTransform(mesh) * xc.GetLocalToWorldTransform(vis).GetInverse()
             if Gf.IsClose(inner, Gf.Matrix4d(1.0), 1e-6):
                 continue
+            # ``visuals`` is an instanceable reference. Editing the instance root alone was not always picked up by
+            # the renderer (2026-10-29: the bimanual left hand was still drawn with the old transform at the default
+            # spawn pose, while the single left hand and other spawn heights were fine), so the prim is de-instanced
+            # first: its content becomes real prims and the corrected transform reaches Fabric with them.
+            if vis.IsInstance() or vis.IsInstanceable():
+                vis.SetInstanceable(False)
             xf = UsdGeom.Xformable(vis)
             xf.ClearXformOpOrder()
             xf.AddTransformOp(UsdGeom.XformOp.PrecisionDouble).Set(inner.GetInverse())
