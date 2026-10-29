@@ -6,7 +6,7 @@
 | 날짜 | 태스크 | 커밋 |
 |---|---|---|
 | 2026-10-28 | Dexverse-GraspTwoItems-v0 | b49a1a5 |
-| 2026-10-29 | 모든 태스크 — record_demos 에피소드별 리셋 시드 (`--episode_seed`) | 35d584c |
+| 2026-10-29 | 모든 태스크 — record_demos 에피소드별 리셋 시드 (`--episode_seed`) | 4e10f3a |
 
 ## 2026-10-28 · Dexverse-GraspTwoItems-v0 — 정육면체 2개만 사용
 
