@@ -6,6 +6,7 @@
 | 날짜 | 태스크 | 커밋 |
 |---|---|---|
 | 2026-10-28 | Dexverse-GraspTwoItems-v0 | b49a1a5 |
+| 2026-10-29 | 모든 태스크 — record_demos 에피소드별 리셋 시드 (`--episode_seed`) | 35d584c |
 
 ## 2026-10-28 · Dexverse-GraspTwoItems-v0 — 정육면체 2개만 사용
 
@@ -21,3 +22,30 @@
   replay·변환이 맞지 않음 → 버림 (2026-10-28 결정).
 - **코드**: `source/dexverse/dexverse/tasks/config/grasping/grasp_two_items_cfg.py`
   (`PRIMITIVE_OBJECT_SPECS`, `GraspTwoItemsSceneCfg`).
+
+## 2026-10-29 · record_demos — 에피소드 번호로 리셋 장면을 고정 (`--episode_seed`, 기본 켜짐)
+
+- **배경**: 손 6종에 대해 같은 태스크의 데모를 모을 때 "에피소드 k의 물체 배치가 모든 손에서 같아야" 손 간 비교
+  (cross-hand) 데이터가 된다. 기존에는 세션 시작 때 `cfg.seed`(기본 42)로 한 번만 시드를 걸고 리셋마다 같은
+  난수열을 이어 썼다. 난수 소비량이 실패 횟수·에피소드 길이·손(관절 수, 재질 랜덤화 대상 바디 수)에 따라
+  달라서, 시드가 같아도 **k번째 에피소드의 장면은 손·세션마다 달랐다** (GraspPan-v0, 5손, 시드 42: 첫 리셋만 같고
+  두 번째부터 다름). 또 RESET 버튼으로 다시 시작하면 **다음 난수의 새 배치**가 나왔다.
+- **변경**: 매 리셋 직전에 `(기본 시드 × 1,000,003 + 다음에 저장될 에피소드 번호)`로 모든 RNG(torch·numpy·python·
+  warp·replicator)를 다시 시드하고, 리셋 이벤트 항목(`events.reset_*`) 각각에도 `에피소드 시드 + 항목 이름 해시`로
+  독립 시드를 건다(한 항목의 난수 소비량이 손에 따라 달라도 다른 항목에 영향 없음). 결과:
+  - 에피소드 k의 물체·목표·보조물 배치가 **손·세션 무관하게 동일** (기본 시드가 같을 때).
+  - **RESET·실패(물체 이탈 등)로 다시 시작하면 같은 배치** — 에피소드 번호가 올라가지 않으므로.
+  - 성공 저장 뒤의 리셋은 다음 배치. 세션 첫 리셋 = 에피소드 0.
+  - 검증(2026-10-29, a4, GraspPan-v0, allegro·leap·shadow 별도 프로세스): ep0/ep1/ep2 와 각 재시도의 물체·목표·스토브
+    위치가 3손에서 모두 동일.
+- **켜기/끄기**: `record_demos.py --episode_seed`(기본) / `--no_episode_seed`(이전 방식: 세션당 한 난수열).
+  `dexverse_session.sh record … --no_episode_seed` 로 그대로 전달된다. `--replay_demos`에서는 자동 off(초기 상태를
+  pickle에서 복원하므로). 어느 쪽으로 모았는지는 pickle `provenance.env["DEXVERSE_EPISODE_SEED"]` = `"1"`/`"0"` 과
+  콘솔의 `[episode seed] episode k: seed …` 로 남는다.
+- **같은 배치를 다른 손에서 재현하려면**: 같은 태스크, 같은 `--seed`(기본 42), `--episode_seed` 켜고, 같은 에피소드
+  번호. 로봇 손의 시작 포즈는 손별 고정값이라 손끼리는 다르다(사람은 START 정렬로 맞춤).
+- **데이터 영향**: 이 변경 전에 모은 pickle(2026-10-29 이전: GraspPan-v0 5손 × 10, GraspKettle-v0 wuji·sharpa 50,
+  GraspTwoItems-v0 shadow 50 등)은 손 간 장면이 정렬되어 있지 않다. 손 간 정렬이 필요한 용도면 재수집 대상.
+  단일 손 학습 데이터로는 그대로 쓸 수 있다.
+- **코드**: `scripts/record_demos.py`(`--episode_seed`, `handle_reset`, `_next_episode_index`),
+  `source/dexverse/dexverse/data_collection/episode_seed.py`(`seed_for_episode`, `install_per_term_seeding`).

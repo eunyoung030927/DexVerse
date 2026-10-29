@@ -114,6 +114,17 @@ parser.add_argument(
     help="Number of continuous steps with task success for concluding a demo as successful. Default is 10.",
 )
 parser.add_argument(
+    "--episode_seed",
+    action=argparse.BooleanOptionalAction,
+    default=True,
+    help=(
+        "Re-seed the reset randomisation from (seed, index of the episode about to be recorded) before every reset "
+        "(default on): episode k gets the same scene in every session and for every hand, and a RESET or failed "
+        "attempt is retried on the same scene. --no_episode_seed: one RNG stream for the whole session (scenes then "
+        "depend on failed attempts and episode lengths). Ignored with --replay_demos."
+    ),
+)
+parser.add_argument(
     "--seed",
     type=int,
     default=None,
@@ -1060,6 +1071,7 @@ def create_environment_config() -> tuple["ManagerBasedRLEnvCfg | DirectRLEnvCfg"
     # is resolved to a randomly drawn seed and written back into cfg.seed.
     if args_cli.seed is not None:
         env_cfg.seed = args_cli.seed
+    os.environ["DEXVERSE_EPISODE_SEED"] = "1" if (args_cli.episode_seed and not args_cli.replay_demos) else "0"  # -> provenance.env
 
     if "TopDownGrasp" in args_cli.task or "Lift" in args_cli.task:
         if hasattr(env_cfg, "commands") and hasattr(env_cfg.commands, "object_pose"):
@@ -1229,11 +1241,26 @@ def _configure_lerobot_cameras(env_cfg) -> None:
             setattr(env_cfg.observations, group, None)
 
 
-def handle_reset(env: gym.Env) -> object:
-    """Reset simulation + environment for a new demo attempt."""
+def handle_reset(env: gym.Env, base_seed=None, episode_index: int | None = None) -> object:
+    """Reset simulation + environment for a new demo attempt.
+
+    With ``episode_index`` (``--episode_seed``) the RNGs are re-seeded from (base seed, episode index) first, so the
+    scene of episode k is the same in every session and for every hand, and a RESET / failed attempt replays the
+    same scene (``dexverse.data_collection.episode_seed``)."""
     print("Resetting environment...")
+    if episode_index is not None:
+        from dexverse.data_collection.episode_seed import seed_for_episode
+
+        seed_for_episode(env, base_seed, episode_index)
     env.sim.reset()
     return _unwrap_obs(env.reset())
+
+
+def _next_episode_index(args, recorder) -> int | None:
+    """Index of the episode about to be recorded (= episodes saved so far), or None when per-episode seeding is off."""
+    if not getattr(args, "episode_seed", True) or getattr(args, "replay_demos", None):
+        return None
+    return recorder.num_episodes
 
 
 class _XrStatusPanel:
@@ -1426,6 +1453,11 @@ def run_simulation_loop(
         teleop_interface.primary_button_callback = lambda side: start_next_demo("A button" if side == "right" else "X button")
         print("[vr_teleop] next demo: A (right) / X (left) controller button, or the panel's Play (after Reset)")
 
+    if _next_episode_index(args_cli, trajectory_recorder) is not None:
+        from dexverse.data_collection.episode_seed import install_per_term_seeding, seed_for_episode
+
+        install_per_term_seeding(env)
+        seed_for_episode(env, getattr(env_cfg, "seed", None), trajectory_recorder.num_episodes)
     env.sim.reset()
     env.reset()
     first_reset_id = trajectory_recorder.start_reset_attempt()
@@ -1508,7 +1540,7 @@ def run_simulation_loop(
                 if outcome is not None:
                     print(f"Reset attempt recorded as {outcome}.")
                 stage("env reset")
-                handle_reset(env)
+                handle_reset(env, getattr(env_cfg, "seed", None), _next_episode_index(args_cli, trajectory_recorder))
                 last_env_reset_t = time.time()
                 next_reset_id = trajectory_recorder.start_reset_attempt()
                 stage("device reset")
@@ -1614,7 +1646,7 @@ def run_simulation_loop(
                 if outcome is not None:
                     print(f"Reset attempt recorded as {outcome}.")
                 stage("env reset")
-                handle_reset(env)
+                handle_reset(env, getattr(env_cfg, "seed", None), _next_episode_index(args_cli, trajectory_recorder))
                 last_env_reset_t = time.time()
                 next_reset_id = trajectory_recorder.start_reset_attempt()
                 stage("device reset")
