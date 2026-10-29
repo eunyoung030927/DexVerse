@@ -128,14 +128,16 @@ def _make_mimic_joints_rigid(prim_path: str) -> None:
                 prim.GetAttribute("physxMimicJoint:rotZ:offset").Set(_FINGER_MIMIC_OFFSET_DEG)
 
 
-def _fix_bimanual_finger_visuals(prim_path: str) -> None:
-    """Put the visual meshes of the bimanual Inspire hand back on their links.
+def _fix_finger_visuals(prim_path: str) -> None:
+    """Put the visual meshes of an Inspire hand back on their links.
 
-    In the bimanual USD every finger link's visual mesh carries an extra transform relative to its link (up to
-    12.8 cm and a rotation; e.g. right_index_proximal), so the fingers are drawn away from the palm. The mesh points
-    and the collision shapes are identical to the single-hand USDs, where the visual mesh sits on its link with an
+    In the bimanual USD (2026-10-23) and in the single left-hand USD (2026-10-29: the fingers were drawn standing on
+    the table in the wrist camera, see docs/task_changes.md) every finger link's visual mesh carries an extra
+    transform relative to its link (up to 12.8 cm and a rotation), so the fingers are drawn away from the palm. The
+    mesh points and the collision shapes match the right-hand USD, where the visual mesh sits on its link with an
     identity transform. The ``visuals`` instance root of each link gets the inverse of its content's transform, so
-    the mesh is drawn on the link again; collisions and the articulation are untouched.
+    the mesh is drawn on the link again; links whose visuals already sit on the link are left alone, so this runs
+    for every Inspire USD. Collisions and the articulation are untouched.
     """
     stage = get_current_stage()
     for root in find_matching_prim_paths(prim_path):
@@ -158,12 +160,10 @@ def _fix_bimanual_finger_visuals(prim_path: str) -> None:
 
 
 def _spawn_inspire_usd(prim_path: str, cfg: sim_utils.UsdFileCfg, *args, **kwargs) -> Usd.Prim:
-    """``spawn_from_usd`` followed by :func:`_make_mimic_joints_rigid` (and, for the bimanual USD,
-    :func:`_fix_bimanual_finger_visuals`)."""
+    """``spawn_from_usd`` followed by :func:`_make_mimic_joints_rigid` and :func:`_fix_finger_visuals`."""
     prim = spawn_from_usd(prim_path, cfg, *args, **kwargs)
     _make_mimic_joints_rigid(prim_path)
-    if "bimanual" in str(cfg.usd_path):
-        _fix_bimanual_finger_visuals(prim_path)
+    _fix_finger_visuals(prim_path)
     return prim
 
 

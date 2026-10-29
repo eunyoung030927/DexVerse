@@ -70,5 +70,9 @@
   오는 Shadow와 같은 구도.
 - **데이터 영향**: 이 변경 전에 모은 pickle의 wrist 영상(변환된 LeRobot 데이터셋 포함)은 예전 구도다. pickle에는
   관절·포즈만 저장되고 LeRobot 변환(`pickle_to_lerobot.sh`)이 헤드리스 재생으로 영상을 다시 렌더하므로, 다시 변환하면 새 구도의 wrist 영상을 얻는다.
+- **Inspire 왼손 비주얼 메시**: wrist 카메라로 보니 단일 왼손 USD(`floating_inspire_hand_left.usd`)도 손가락 비주얼
+  메시가 링크에서 떨어져(최대 12.8 cm) 테이블 위에 따로 그려졌다. 양손 USD에만 걸려 있던 보정(2026-10-23, 9a24ffe:
+  각 링크 `visuals`에 메시 변환의 역변환)을 모든 Inspire USD에 적용 (`_fix_finger_visuals`; 이미 맞는 링크는 건너뜀).
+  충돌 형상·관절은 원래 링크 위에 있어 물리·tactile은 바뀌지 않는다. 적용 뒤 모든 링크의 비주얼-링크 오프셋 0 cm 확인.
 - **코드**: `tasks/dexverse_base_env_cfg.py`(`RobotConfig.wrist_camera_offset_*`, `_sync_wrist_camera_attachment`),
-  `robot_agents/{allegro,inspire,leap,sharpa,wuji}/floating.py`.
+  `robot_agents/{allegro,inspire,leap,sharpa,wuji}/floating.py`, `robot_agents/inspire/floating.py::_fix_finger_visuals`.
