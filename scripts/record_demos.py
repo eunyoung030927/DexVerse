@@ -116,12 +116,13 @@ parser.add_argument(
 parser.add_argument(
     "--episode_seed",
     action=argparse.BooleanOptionalAction,
-    default=True,
+    default=False,
     help=(
-        "Re-seed the reset randomisation from (seed, index of the episode about to be recorded) before every reset "
-        "(default on): episode k gets the same scene in every session and for every hand, and a RESET or failed "
-        "attempt is retried on the same scene. --no_episode_seed: one RNG stream for the whole session (scenes then "
-        "depend on failed attempts and episode lengths). Ignored with --replay_demos."
+        "Re-seed the reset randomisation from (seed, index of the episode about to be recorded) before every reset: "
+        "episode k gets the same scene in every session and for every hand, and a RESET or failed attempt is retried "
+        "on the same scene. Default OFF until the current collection round (through LEAP, 2026-10-29) is finished, so "
+        "its sessions stay comparable with each other; then the default becomes on. Off: one RNG stream for the whole "
+        "session (scenes depend on failed attempts and episode lengths). Ignored with --replay_demos."
     ),
 )
 parser.add_argument(
@@ -1258,7 +1259,7 @@ def handle_reset(env: gym.Env, base_seed=None, episode_index: int | None = None)
 
 def _next_episode_index(args, recorder) -> int | None:
     """Index of the episode about to be recorded (= episodes saved so far), or None when per-episode seeding is off."""
-    if not getattr(args, "episode_seed", True) or getattr(args, "replay_demos", None):
+    if not getattr(args, "episode_seed", False) or getattr(args, "replay_demos", None):
         return None
     return recorder.num_episodes
 
