@@ -435,7 +435,14 @@ def _sync_table_legs_to_table(scene_cfg) -> None:
         leg_cfg.init_state.rot = table_rot
 
 
-def _sync_wrist_camera_attachment(scene_cfg, camera_attr: str, body_attr: str, palm_body_name: str | None) -> None:
+def _sync_wrist_camera_attachment(
+    scene_cfg,
+    camera_attr: str,
+    body_attr: str,
+    palm_body_name: str | None,
+    offset_pos: tuple[float, float, float] | None = None,
+    offset_rot: tuple[float, float, float, float] | None = None,
+) -> None:
     if palm_body_name is None:
         return
 
@@ -449,6 +456,12 @@ def _sync_wrist_camera_attachment(scene_cfg, camera_attr: str, body_attr: str, p
         setattr(scene_cfg, body_attr, body_cfg)
 
     camera_cfg.prim_path = f"{{ENV_REGEX_NS}}/Robot/{palm_body_name}/wrist_cam"
+    # Per-hand placement (RobotConfig.wrist_camera_offset_*), same as tasks/dexverse_base_env_cfg.py (2026-10-29):
+    # the default offset is authored in the Shadow palm frame. The camera body box follows the camera.
+    if offset_pos is not None:
+        camera_cfg.offset.pos = tuple(float(v) for v in offset_pos)
+    if offset_rot is not None:
+        camera_cfg.offset.rot = tuple(float(v) for v in offset_rot)
     body_cfg.prim_path = f"{{ENV_REGEX_NS}}/Robot/{palm_body_name}/wrist_camera_body"
 
     body_pos, body_rot = _wrist_camera_body_pose(
@@ -468,17 +481,36 @@ def _configure_wrist_camera_attachments(scene_cfg, robot_config) -> None:
         scene_cfg.wrist_camera = None
         scene_cfg.wrist_camera_body = None
         _sync_wrist_camera_attachment(
-            scene_cfg, "right_wrist_camera", "right_wrist_camera_body", robot_config.right_palm_body_name
+            scene_cfg,
+            "right_wrist_camera",
+            "right_wrist_camera_body",
+            robot_config.right_palm_body_name,
+            robot_config.wrist_camera_offset_pos,
+            robot_config.wrist_camera_offset_rot,
         )
+        left_pos = robot_config.left_wrist_camera_offset_pos
+        left_rot = robot_config.left_wrist_camera_offset_rot
         _sync_wrist_camera_attachment(
-            scene_cfg, "left_wrist_camera", "left_wrist_camera_body", robot_config.left_palm_body_name
+            scene_cfg,
+            "left_wrist_camera",
+            "left_wrist_camera_body",
+            robot_config.left_palm_body_name,
+            robot_config.wrist_camera_offset_pos if left_pos is None else left_pos,
+            robot_config.wrist_camera_offset_rot if left_rot is None else left_rot,
         )
     else:
         scene_cfg.right_wrist_camera = None
         scene_cfg.left_wrist_camera = None
         scene_cfg.right_wrist_camera_body = None
         scene_cfg.left_wrist_camera_body = None
-        _sync_wrist_camera_attachment(scene_cfg, "wrist_camera", "wrist_camera_body", robot_config.palm_body_name)
+        _sync_wrist_camera_attachment(
+            scene_cfg,
+            "wrist_camera",
+            "wrist_camera_body",
+            robot_config.palm_body_name,
+            robot_config.wrist_camera_offset_pos,
+            robot_config.wrist_camera_offset_rot,
+        )
     if not wrist_camera_body_enabled():
         for body_attr in ("wrist_camera_body", "right_wrist_camera_body", "left_wrist_camera_body"):
             setattr(scene_cfg, body_attr, None)
@@ -692,6 +724,15 @@ class RobotConfig:
     dummy_mass_body_names: list[str] | None = None
     """Regex list of robot links without mass in the USD (PhysX default 1 kg) that get 1 g at startup
     (:mod:`dexverse.robot_agents.link_mass`)."""
+    wrist_camera_offset_pos: tuple[float, float, float] | None = None
+    """Wrist camera position in the palm body frame (m); None = DEFAULT_WRIST_CAMERA_OFFSET_POS (Shadow palm frame).
+    Set per hand in robot_agents/<hand>/floating.py (2026-10-29, docs/task_changes.md)."""
+    wrist_camera_offset_rot: tuple[float, float, float, float] | None = None
+    """Wrist camera orientation in the palm body frame, quaternion (w, x, y, z), ROS convention."""
+    left_wrist_camera_offset_pos: tuple[float, float, float] | None = None
+    """Bimanual only: left camera position in the left palm body frame. None: same as wrist_camera_offset_pos."""
+    left_wrist_camera_offset_rot: tuple[float, float, float, float] | None = None
+    """Bimanual only: left camera orientation. None: same as wrist_camera_offset_rot."""
     forbidden_zone_body_names: list[str] | None = None
     """Robot bodies tested against forbidden zones / "do not touch" terminations
     (regex list, resolved by :class:`SceneEntityCfg`). ``None`` (default) means
