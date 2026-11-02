@@ -16,6 +16,7 @@ from isaaclab.utils import configclass
 from scipy.spatial.transform import Rotation as R
 
 from ... import mdp
+from ..robot_init import align_retargeter_wrist_origin_to_init, set_robot_wrist_init_world_pos
 from .base_cfg import (
     DEFAULT_FLOATING_SHADOW_XR_CFG,
     POUR_ANGLE_RAD,
@@ -36,6 +37,13 @@ rot_quat = R.from_euler("x", np.pi / 2).as_quat()
 
 MUG_INIT_QUAT = tuple(rot_quat.tolist())
 CENTER_SQUARE_SIZE = 0.45
+
+# Allegro / Inspire / LEAP spawn the palm at (-0.1, 0, 0.75): above the mug reset box and below the
+# rim of the 1.5x mug (~0.79 once it settles), so they start inside the mug. Move their wrist back to
+# Shadow's spawn x and lift it clear of the rim. Shadow keeps its spawn (public demos replay on it).
+LOW_SPAWN_HAND_ROBOT_TYPES = ("floating_allegro_right", "floating_inspire_right", "floating_leap_right")
+LOW_SPAWN_HAND_WRIST_INIT_WORLD_X = -0.25
+LOW_SPAWN_HAND_WRIST_INIT_WORLD_Z = 0.85
 
 MUG_CFG = build_object_cfg_from_usd(
     MUG_USD_PATH,
@@ -141,3 +149,11 @@ class PourMugEnvFloatingDexHandRightCfg(PourMugEnvCfg, FunctionalPourEnvFloating
 
     robot_type: str = "floating_shadow_right"
     xr: XrCfg = DEFAULT_FLOATING_SHADOW_XR_CFG
+
+    def __post_init__(self):
+        super().__post_init__()
+        if self.robot_type in LOW_SPAWN_HAND_ROBOT_TYPES:
+            set_robot_wrist_init_world_pos(
+                self, x=LOW_SPAWN_HAND_WRIST_INIT_WORLD_X, z=LOW_SPAWN_HAND_WRIST_INIT_WORLD_Z
+            )
+            align_retargeter_wrist_origin_to_init(self)
