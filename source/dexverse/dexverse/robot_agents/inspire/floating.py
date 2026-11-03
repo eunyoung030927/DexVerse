@@ -271,7 +271,7 @@ FLOATING_INSPIRE_LEFT_CFG = ArticulationCfg(
             max_depenetration_velocity=1000.0,
         ),
         articulation_props=sim_utils.ArticulationRootPropertiesCfg(
-            enabled_self_collisions=False,
+            enabled_self_collisions=True,  # 2026-11-03: was False (release); the two hands passed through each other
             solver_position_iteration_count=32,
             solver_velocity_iteration_count=1,
             sleep_threshold=0.005,
@@ -422,7 +422,7 @@ FLOATING_INSPIRE_BIMANUAL_CFG = ArticulationCfg(
             max_depenetration_velocity=1000.0,
         ),
         articulation_props=sim_utils.ArticulationRootPropertiesCfg(
-            enabled_self_collisions=False,
+            enabled_self_collisions=True,  # 2026-11-03: was False (release); the two hands passed through each other
             solver_position_iteration_count=32,
             solver_velocity_iteration_count=1,
             sleep_threshold=0.005,
