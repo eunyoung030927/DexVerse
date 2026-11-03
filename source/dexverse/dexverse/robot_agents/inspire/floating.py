@@ -29,6 +29,8 @@ from pathlib import Path
 
 import isaaclab.sim as sim_utils
 from isaaclab.sim.spawners.from_files import spawn_from_usd
+
+from ..collision_filter import filter_intra_hand_collisions
 from isaaclab.sim.utils.queries import find_matching_prim_paths
 from isaaclab.sim.utils.stage import get_current_stage
 from pxr import Gf, Usd, UsdGeom, UsdPhysics
@@ -170,6 +172,10 @@ def _spawn_inspire_usd(prim_path: str, cfg: sim_utils.UsdFileCfg, *args, **kwarg
     prim = spawn_from_usd(prim_path, cfg, *args, **kwargs)
     _make_mimic_joints_rigid(prim_path)
     _fix_finger_visuals(prim_path)
+    if "bimanual" in str(cfg.usd_path):
+        # self-collisions are on for the bimanual hand so the two hands collide; the links of one hand are
+        # filtered against each other (their collision meshes overlap at rest and pushed the fingers open)
+        print(f"[inspire] intra-hand collision pairs filtered: {filter_intra_hand_collisions(prim_path)}")
     return prim
 
 
@@ -271,7 +277,7 @@ FLOATING_INSPIRE_LEFT_CFG = ArticulationCfg(
             max_depenetration_velocity=1000.0,
         ),
         articulation_props=sim_utils.ArticulationRootPropertiesCfg(
-            enabled_self_collisions=True,  # 2026-11-03: was False (release); the two hands passed through each other
+            enabled_self_collisions=False,
             solver_position_iteration_count=32,
             solver_velocity_iteration_count=1,
             sleep_threshold=0.005,
@@ -422,7 +428,7 @@ FLOATING_INSPIRE_BIMANUAL_CFG = ArticulationCfg(
             max_depenetration_velocity=1000.0,
         ),
         articulation_props=sim_utils.ArticulationRootPropertiesCfg(
-            enabled_self_collisions=True,  # 2026-11-03: was False (release); the two hands passed through each other
+            enabled_self_collisions=True,  # 2026-11-03: the two hands must collide; same-hand links are filtered in _spawn_inspire_usd
             solver_position_iteration_count=32,
             solver_velocity_iteration_count=1,
             sleep_threshold=0.005,

@@ -16,6 +16,10 @@ from isaaclab.envs.mdp.actions.actions_cfg import JointPositionActionCfg
 from isaaclab.utils import configclass
 
 from dexverse.devices.wrist_origin import compute_wrist_joint_origin
+from isaaclab.sim.spawners.from_files import spawn_from_usd
+from pxr import Usd
+
+from ..collision_filter import filter_intra_hand_collisions
 
 from .. import TabletopRobotSetup, dex_retargeting_hand_spec
 from ..floating_wrist import UPSTREAM_SHARPA_WUJI_WRIST_DRIVE, wrist_drive_terms
@@ -355,7 +359,7 @@ FLOATING_WUJI_LEFT_CFG = ArticulationCfg(
             max_depenetration_velocity=1000.0,
         ),
         articulation_props=sim_utils.ArticulationRootPropertiesCfg(
-            enabled_self_collisions=True,  # 2026-11-03: was False (release); the two hands passed through each other
+            enabled_self_collisions=False,
             solver_position_iteration_count=32,
             solver_velocity_iteration_count=1,
             sleep_threshold=0.005,
@@ -410,8 +414,17 @@ FLOATING_WUJI_LEFT_CFG = ArticulationCfg(
     soft_joint_pos_limit_factor=1.0,
 )
 
+def _spawn_wuji_bimanual_usd(prim_path: str, cfg: sim_utils.UsdFileCfg, *args, **kwargs) -> Usd.Prim:
+    """``spawn_from_usd`` + collision filtering between the links of one hand (2026-11-03): self-collisions are on so
+    the two hands collide, but the overlapping collision meshes inside one hand made the palms spin at rest."""
+    prim = spawn_from_usd(prim_path, cfg, *args, **kwargs)
+    print(f"[wuji] intra-hand collision pairs filtered: {filter_intra_hand_collisions(prim_path)}")
+    return prim
+
+
 FLOATING_WUJI_BIMANUAL_CFG = ArticulationCfg(
     spawn=sim_utils.UsdFileCfg(
+        func=_spawn_wuji_bimanual_usd,
         usd_path=str((_ASSET_DIR / "floating_wuji_hand_bimanual" / "configuration" / "floating_wuji_hand_bimanual_physics.usd").resolve()),
         activate_contact_sensors=True,
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
@@ -424,7 +437,7 @@ FLOATING_WUJI_BIMANUAL_CFG = ArticulationCfg(
             max_depenetration_velocity=1000.0,
         ),
         articulation_props=sim_utils.ArticulationRootPropertiesCfg(
-            enabled_self_collisions=True,  # 2026-11-03: was False (release); the two hands passed through each other
+            enabled_self_collisions=True,  # 2026-11-03: the two hands must collide; same-hand links are filtered in _spawn_wuji_bimanual_usd
             solver_position_iteration_count=32,
             solver_velocity_iteration_count=1,
             sleep_threshold=0.005,
