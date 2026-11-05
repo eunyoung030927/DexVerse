@@ -1348,6 +1348,9 @@ class _XrStatusPanel:
         self._show(f"DONE  |  {self._count()} demos recorded")
 
 
+_HANG_WATCHDOG = {"off": False}  # set once the simulation loop is over: the shutdown below is long and silent
+
+
 def _install_hang_diagnostics(heartbeat: dict, stall_s: float = 15.0) -> None:
     """``kill -USR1 <pid>`` prints every Python thread's stack; a watchdog does the same once if the main loop
     has not advanced for ``stall_s`` (the XR session can block the app with no message at all)."""
@@ -1361,6 +1364,8 @@ def _install_hang_diagnostics(heartbeat: dict, stall_s: float = 15.0) -> None:
         last_seen, reported = heartbeat["t"], False
         while True:
             time.sleep(5.0)
+            if _HANG_WATCHDOG["off"]:
+                return
             if heartbeat["t"] != last_seen:
                 last_seen, reported = heartbeat["t"], False
             elif not reported and time.time() - heartbeat["t"] > stall_s:
@@ -1406,7 +1411,9 @@ def run_simulation_loop(
             scene_variant += 1
         return ep, scene_variant
     heartbeat = {"t": time.time(), "stage": "init"}
-    _install_hang_diagnostics(heartbeat)
+    # A replay rewrites the whole trajectory pickle after every episode (tens of MB by the end); on a loaded host that
+    # blocks the main loop for longer than the live-teleop stall limit and used to kill finished replays with exit 3.
+    _install_hang_diagnostics(heartbeat, stall_s=900.0 if getattr(args_cli, "replay_demos", None) else 15.0)
 
     def stage(name: str) -> None:
         heartbeat["t"], heartbeat["stage"] = time.time(), name
@@ -1828,6 +1835,10 @@ def main() -> None:
         stats_panel=stats_panel,
     )
 
+    # The loop is done and every demo is saved. Closing the LeRobot writer, the environment and dumping the final
+    # trajectory pickle (tens of MB for long bimanual sessions) advance no heartbeat, so the stall watchdog would
+    # kill a finished session with exit code 3 ("main loop stalled at stage ...").
+    _HANG_WATCHDOG["off"] = True
     if stats_panel is not None:
         stats_panel.close()
     if trajectory_recorder.lerobot is not None:
