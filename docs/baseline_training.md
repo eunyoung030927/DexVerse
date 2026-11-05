@@ -1,5 +1,9 @@
 # Train and run DP and DP3
 
+> **Dex Team note (2026-11-05):** this in-house DP (`scripts/diffusion`, `IL/diffusion`) is no longer used by the
+> team; our DP baseline is LeRobot's official Diffusion Policy in `baselines/lerobot_dp/`. The walkthrough is kept
+> for the upstream code only.
+
 This walkthrough uses the `develop` branch and all 50 curated demonstrations for
 `Dexverse-PushT-v1`. It covers demonstration replay, dataset conversion, two-epoch
 training runs, and short online evaluations. Two epochs are a pipeline check;

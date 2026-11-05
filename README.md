@@ -571,6 +571,12 @@ python scripts/demo_tools/download_demos.py --baseline
 DP/DP3 training and evaluation are still in progress. The walkthrough below
 provides commands for initial pipeline checks.
 
+> **Dex Team note (2026-11-05):** the in-house DP below (`dexverse.IL.diffusion` + `scripts/diffusion/`, upstream
+> author code plus our 2026-10 image/DDIM/DDP extensions) is **no longer used** for our studies. The 2026-10
+> `dexverse-dp-images` / `dexverse-dp-no-images` runs (HF `dp-with-image`, `dp-without-image`) were its last use.
+> New DP baselines use LeRobot's official Diffusion Policy in [`baselines/lerobot_dp/`](baselines/lerobot_dp/README.md).
+> Kept as upstream code; do not extend it.
+
 State-based [Diffusion Policy](https://diffusion-policy.cs.columbia.edu/) lives in
 `dexverse.IL.diffusion`, with entry points in `scripts/diffusion/`.
 [DP3](source/dexverse/dexverse/IL/dp3/README.md) uses point clouds and proprioception,
