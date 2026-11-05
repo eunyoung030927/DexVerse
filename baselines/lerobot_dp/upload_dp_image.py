@@ -76,7 +76,7 @@ def upload_run(api, r):
     ev = [episodes(r, p) for p in (0, 1)]
     if any(e is None for e in ev) or sum(e["num_episodes"] for e in ev) != 50: print("SKIP", r.name, "final evaluation incomplete"); return
     best_ok = sum(x["success"] for e in ev for x in e["episodes"]); best_n = 50
-    task = config["task"]; rt = Path(config["dataset_root"]).name.split("-v0-", 1)[1]
+    task = config["task"]; rt = re.split(r"-v\d+-", Path(config["dataset_root"]).name, 1)[1]  # <task>-v0-floating_<hand>_<side> (v1 tasks too)
     cat = CAT[task.replace("Dexverse-", "").rsplit("-v", 1)[0]]
     sel_file = r / "logs/select.log"; selection = re.findall(r"^(\d{6}) (\d+/10)$", sel_file.read_text(), re.M) if sel_file.exists() else []
     best_txt = r / "eval/select/best.txt"; best_step = best_txt.read_text().split()[0] if best_txt.exists() else "기록 없음"
