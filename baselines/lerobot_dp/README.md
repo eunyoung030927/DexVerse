@@ -6,6 +6,10 @@ evaluates it in the DexVerse Isaac Sim env, restoring each demo's initial state.
 (the DexLatent / XL-VLA comparison lives next to it). Study notes, run files and results stay in that experiments folder;
 models go to HF `Dexverse-CSI/dexverse-dp-image` (`v0/teleop_lerobot/<category>/<Task>/<robot_type>/{best,last}/`).
 
+Not to be confused with DexVerse's own diffusion policy (`scripts/diffusion/` + `source/dexverse/dexverse/IL/diffusion/`, author's
+state/image DP used for the 2026-10 `dexverse-dp-images` / `dexverse-dp-no-images` studies, checkpoints in HF `dp-with-image` /
+`dp-without-image`): different model code, dataset format and checkpoint format.
+
 | file | role |
 |---|---|
 | `run_sets.sh` | one-GPU session: train → snapshot selection (pkl episodes 0–9) → final 50 rollouts → run files; same RID = resume/attach |
