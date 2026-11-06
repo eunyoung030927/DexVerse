@@ -233,6 +233,9 @@ n1에서 VR로 녹화한 PickCube pickle 1개를 work1에서 돌려도 주석 �
 | `port 48322 is already in use` | 다른 컨테이너(vls 등)의 CloudXR 런타임을 내릴 것 |
 | `libcusparseLt.so.0: cannot open shared object file` (XR에서만) | 이미지가 옛 2.3.2-conda 빌드(torch 번들 손상). 수정된 `isaaclab-vnc:2.3.2-conda`로 컨테이너를 다시 만들 것 |
 | START 전 손을 안 보여줬더니 로봇이 튐 | START는 그 순간의 손목 자세로 캘리브레이션한다. 손이 추적되는 상태에서 START |
+| 접속·컨트롤러는 되는데 **VR에 장면이 안 뜨고 패널의 render/streaming fps가 비어 있음**, 수십 초 뒤 끊겼다 재접속 반복 (2026-11-03, 11-06) | Quest 클라이언트 설정의 **Video encoding이 AV1**이면 생긴다. 런타임 로그 `cxr_streamsdk.*.log`에 `Unsupported Video Codec 0` → `H264 video format selected` → `Transport feedback is empty`가 찍히고 `Actual frames`가 수백에서 끝난다 (H264 4096×4032@90을 Quest가 디코드 못 함). **클라이언트 설정에서 H265(HEVC)로 바꾼다** → 로그에 `HEVC video format selected`, 정상 세션은 수만 프레임·feedback 오류 0. 런타임 재시작·헤드셋 재부팅으로는 안 풀린다 |
+| `xrCreateSwapchain: Failed to create swapchain (XRT_ERROR_VULKAN)` 뒤 매 프레임 `xrAcquireSwapchainImage(swapchain == NULL)` (2026-11-06) | 런타임이 떠 있는 동안 같은 GPU의 VRAM이 다른 작업으로 꽉 차면(11 GB 중 10.6 GB) 런타임의 Vulkan 스왑체인이 깨지고 세션을 다시 띄워도 반복된다. 다른 GPU 작업을 내린 뒤 **런타임을 재시작**(Ctrl+C → 다시 실행)하고 Quest 클라이언트도 다시 접속. 텔레옵 중에는 bs1 GPU에 다른 검사·학습을 띄우지 말 것 |
+| 헤드셋 재부팅 후 클라이언트가 Connect 자체를 못 함 | Quest의 Tailscale VPN이 재부팅으로 꺼진 것. 서버 `tailscale status`에 `quest-3 … offline`이면 헤드셋에서 Tailscale 앱 → Connect 후 다시 시도 |
 
 ## 변경 파일 (브랜치 `teleop/quest-cloudxr6`, feat/multi-hand-support 기반)
 
