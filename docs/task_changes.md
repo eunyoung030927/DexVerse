@@ -8,6 +8,23 @@
 | 2026-10-28 | Dexverse-GraspTwoItems-v0 | b49a1a5 |
 | 2026-10-29 | 모든 태스크 — record_demos 에피소드별 리셋 시드 (`--episode_seed`) | 4e10f3a |
 | 2026-10-29 | 모든 태스크 — 손별 wrist camera 위치 (Shadow 기준으로 통일) | 이 항목을 추가한 커밋 |
+| 2026-11-06 | 모든 태스크 — record_demos RESET 버튼은 같은 에피소드의 다른 배치(variant) | 이 항목을 추가한 커밋 |
+
+## 2026-11-06 · record_demos — RESET 버튼은 같은 에피소드의 **다른 배치**(scene variant)
+
+- **배경**: 10-29 변경으로 헤드셋 패널의 RESET이 같은 배치를 다시 내놓았는데, 수집자는 RESET으로 물체 위치 등
+  초기 레이아웃을 바꾸고 싶어 한다 (2026-11-06 요청).
+- **변경**: 에피소드 시드에 **variant** 번호를 섞는다 (`episode_seed(base, k, variant)`, variant 0 = 기존 값 그대로,
+  v>0 은 `seed ^ (v × 0x9E3779B1)`). variant = 마지막 저장 이후 누른 RESET 횟수. 성공 저장 뒤 리셋·실패 후 재시도는
+  variant 0(기존과 동일). RESET을 누를 때마다 +1 → 새 배치. 재현성은 유지된다: (기본 시드, 에피소드 k, variant v)
+  가 같으면 손·세션 무관하게 같은 배치.
+- **기록**: 콘솔 `[episode seed] episode k: seed …, variant v (RESET)`, pickle `episodes[].scene_variant`,
+  `reset_attempts[].scene_variant` (시드 켜진 세션만).
+- **주의**: RESET을 누른 손은 그 에피소드가 variant v 배치로 저장되므로, 손 간 장면 정렬(cross-hand)이 필요하면 다른
+  손도 같은 에피소드에서 같은 횟수만큼 RESET해야 같은 배치가 된다. 정렬이 중요한 수집에서는 RESET을 쓰지 말고
+  실패(물체 이탈)나 그대로 다시 시도하는 쪽이 안전하다.
+- **코드**: `scripts/record_demos.py`(`next_scene`, `handle_reset(..., scene_variant)`,
+  `start_reset_attempt(scene_variant=)`), `episode_seed.py`(`episode_seed(..., variant)`, `VARIANT_MIX`).
 
 ## 2026-10-28 · Dexverse-GraspTwoItems-v0 — 정육면체 2개만 사용
 
@@ -35,7 +52,7 @@
   warp·replicator)를 다시 시드하고, 리셋 이벤트 항목(`events.reset_*`) 각각에도 `에피소드 시드 + 항목 이름 해시`로
   독립 시드를 건다(한 항목의 난수 소비량이 손에 따라 달라도 다른 항목에 영향 없음). 결과:
   - 에피소드 k의 물체·목표·보조물 배치가 **손·세션 무관하게 동일** (기본 시드가 같을 때).
-  - **RESET·실패(물체 이탈 등)로 다시 시작하면 같은 배치** — 에피소드 번호가 올라가지 않으므로.
+  - **실패(물체 이탈 등)로 다시 시작하면 같은 배치** — 에피소드 번호가 올라가지 않으므로. (RESET 버튼은 2026-11-06부터 다른 배치, 아래 항목.)
   - 성공 저장 뒤의 리셋은 다음 배치. 세션 첫 리셋 = 에피소드 0.
   - 검증(2026-10-29, a4, GraspPan-v0, allegro·leap·shadow 별도 프로세스): ep0/ep1/ep2 와 각 재시도의 물체·목표·스토브
     위치가 3손에서 모두 동일.

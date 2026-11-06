@@ -120,8 +120,9 @@ parser.add_argument(
     default=True,
     help=(
         "Re-seed the reset randomisation from (seed, index of the episode about to be recorded) before every reset "
-        "(default on): episode k gets the same scene in every session and for every hand, and a RESET or failed "
-        "attempt is retried on the same scene. Ignored with --replay_demos."
+        "(default on): episode k gets the same scene in every session and for every hand, a failed attempt is "
+        "retried on the same scene, and a manual RESET gives the next variant (another layout) of that episode's "
+        "scene (variant v of episode k is again the same for every hand). Ignored with --replay_demos."
     ),
 )
 parser.add_argument(
@@ -533,6 +534,7 @@ class TrajectoryPickleRecorder:
         self._active_episode: dict | None = None
         self._reset_attempts: list[dict] = []
         self._active_reset_id: int | None = None
+        self._active_scene_variant: int | None = None  # episode_seed variant of the active reset (None: unseeded)
         self._next_reset_id = 0
         self._record_state = bool(record_state)
         self._arm_joint_names = list(arm_joint_names) if arm_joint_names else None
@@ -576,13 +578,17 @@ class TrajectoryPickleRecorder:
     def num_reset_attempts(self) -> int:
         return len(self._reset_attempts)
 
-    def start_reset_attempt(self) -> int:
-        """Open a ledger entry for the scene produced by one environment reset."""
+    def start_reset_attempt(self, scene_variant: int | None = None) -> int:
+        """Open a ledger entry for the scene produced by one environment reset.
+
+        ``scene_variant`` is the per-episode seed variant of that scene (0 = the episode's base scene, +1 per manual
+        RESET); it is stored with the reset attempt and the episode so the layout can be reproduced."""
         if self._active_reset_id is not None:
             raise RuntimeError(f"Reset {self._active_reset_id} is still active.")
         reset_id = self._next_reset_id
         self._next_reset_id += 1
         self._active_reset_id = reset_id
+        self._active_scene_variant = scene_variant
         return reset_id
 
     def _finalize_reset_attempt(
@@ -605,8 +611,11 @@ class TrajectoryPickleRecorder:
         }
         if successful_episode_index is not None:
             entry["successful_episode_index"] = int(successful_episode_index)
+        if self._active_scene_variant is not None:
+            entry["scene_variant"] = int(self._active_scene_variant)
         self._reset_attempts.append(entry)
         self._active_reset_id = None
+        self._active_scene_variant = None
 
     def finish_reset_without_success(self, *, reason: str) -> str | None:
         """Close the current reset as failed (actions exist) or skipped (none)."""
@@ -649,6 +658,8 @@ class TrajectoryPickleRecorder:
             "actions": [],
             "success": None,
         }
+        if self._active_scene_variant is not None:
+            self._active_episode["scene_variant"] = int(self._active_scene_variant)
         if task_state:
             self._active_episode["task_state"] = self._to_pickleable(task_state)
         if self._record_state:
@@ -1250,17 +1261,17 @@ def _configure_lerobot_cameras(env_cfg) -> None:
             setattr(env_cfg.observations, group, None)
 
 
-def handle_reset(env: gym.Env, base_seed=None, episode_index: int | None = None) -> object:
+def handle_reset(env: gym.Env, base_seed=None, episode_index: int | None = None, scene_variant: int = 0) -> object:
     """Reset simulation + environment for a new demo attempt.
 
-    With ``episode_index`` (``--episode_seed``) the RNGs are re-seeded from (base seed, episode index) first, so the
-    scene of episode k is the same in every session and for every hand, and a RESET / failed attempt replays the
-    same scene (``dexverse.data_collection.episode_seed``)."""
+    With ``episode_index`` (``--episode_seed``) the RNGs are re-seeded from (base seed, episode index, scene variant)
+    first, so the scene of episode k is the same in every session and for every hand, a failed attempt replays the
+    same scene, and a manual RESET (variant + 1) gives another layout (``dexverse.data_collection.episode_seed``)."""
     print("Resetting environment...")
     if episode_index is not None:
         from dexverse.data_collection.episode_seed import seed_for_episode
 
-        seed_for_episode(env, base_seed, episode_index)
+        seed_for_episode(env, base_seed, episode_index, scene_variant)
     env.sim.reset()
     return _unwrap_obs(env.reset())
 
@@ -1379,6 +1390,21 @@ def run_simulation_loop(
     should_reset = False
     reset_reason = "manual_reset"
     running = False  # Start inactive for VR (user activates with START gesture).
+    scene_variant = 0  # manual RESETs since the last saved episode = variant of that episode's scene (episode_seed)
+    scene_variant_episode: int | None = None
+
+    def next_scene(reason: str) -> tuple[int | None, int]:
+        """Episode index and scene variant for the coming reset: a manual RESET asks for another layout of the same
+        episode (2026-11-06); a failed attempt or the reset after a saved demo keeps variant 0."""
+        nonlocal scene_variant, scene_variant_episode
+        ep = _next_episode_index(args_cli, trajectory_recorder)
+        if ep is None:
+            return None, 0
+        if ep != scene_variant_episode:
+            scene_variant, scene_variant_episode = 0, ep
+        elif reason == "manual_reset":
+            scene_variant += 1
+        return ep, scene_variant
     heartbeat = {"t": time.time(), "stage": "init"}
     _install_hang_diagnostics(heartbeat)
 
@@ -1467,9 +1493,10 @@ def run_simulation_loop(
 
         install_per_term_seeding(env)
         seed_for_episode(env, getattr(env_cfg, "seed", None), trajectory_recorder.num_episodes)
+        scene_variant_episode = trajectory_recorder.num_episodes
     env.sim.reset()
     env.reset()
-    first_reset_id = trajectory_recorder.start_reset_attempt()
+    first_reset_id = trajectory_recorder.start_reset_attempt(scene_variant=0 if scene_variant_episode is not None else None)
     teleop_interface.reset()
     print(f"Reset ID: {first_reset_id}")
 
@@ -1549,9 +1576,10 @@ def run_simulation_loop(
                 if outcome is not None:
                     print(f"Reset attempt recorded as {outcome}.")
                 stage("env reset")
-                handle_reset(env, getattr(env_cfg, "seed", None), _next_episode_index(args_cli, trajectory_recorder))
+                ep_idx, variant = next_scene(reset_reason)
+                handle_reset(env, getattr(env_cfg, "seed", None), ep_idx, variant)
                 last_env_reset_t = time.time()
-                next_reset_id = trajectory_recorder.start_reset_attempt()
+                next_reset_id = trajectory_recorder.start_reset_attempt(scene_variant=variant if ep_idx is not None else None)
                 stage("device reset")
                 teleop_interface.reset()
                 print(f"Reset ID: {next_reset_id} ({time.strftime('%H:%M:%S')})", flush=True)
@@ -1655,9 +1683,10 @@ def run_simulation_loop(
                 if outcome is not None:
                     print(f"Reset attempt recorded as {outcome}.")
                 stage("env reset")
-                handle_reset(env, getattr(env_cfg, "seed", None), _next_episode_index(args_cli, trajectory_recorder))
+                ep_idx, variant = next_scene(reset_reason)
+                handle_reset(env, getattr(env_cfg, "seed", None), ep_idx, variant)
                 last_env_reset_t = time.time()
-                next_reset_id = trajectory_recorder.start_reset_attempt()
+                next_reset_id = trajectory_recorder.start_reset_attempt(scene_variant=variant if ep_idx is not None else None)
                 stage("device reset")
                 teleop_interface.reset()
                 print(f"Reset ID: {next_reset_id} ({time.strftime('%H:%M:%S')})", flush=True)

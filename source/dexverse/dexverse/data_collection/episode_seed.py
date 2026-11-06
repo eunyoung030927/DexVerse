@@ -15,27 +15,35 @@ seed 42, identical only at reset 0).
 and the index of the episode about to be recorded. Consequences:
 
 * episode k has the same scene in every session / for every hand (same task, same base seed);
-* a failed or manually RESET attempt is retried on the same scene (the index has not advanced);
-* after a saved episode the next reset moves to the next scene.
+* a failed attempt (object out of bounds) is retried on the same scene (the index has not advanced);
+* a manual RESET (headset panel / controller) asks for a *different* layout of the same episode: ``variant`` counts
+  the RESETs since the last saved episode and is mixed into the seed (2026-11-06; before, RESET replayed the same
+  scene). Variant v of episode k is still the same in every session / for every hand;
+* after a saved episode the next reset moves to the next scene (variant 0).
 """
 
 from __future__ import annotations
 
 EPISODE_SEED_STRIDE = 1_000_003  # prime, so seeds of different base seeds never overlap for < 1e6 episodes
+VARIANT_MIX = 0x9E3779B1  # golden-ratio constant: variant v xors (v * VARIANT_MIX) into the seed; variant 0 = unchanged
 CURRENT_SEED: int | None = None  # the episode seed set by seed_for_episode (read by the per-term wrappers)
 
 
-def episode_seed(base_seed: int | None, episode_index: int) -> int:
+def episode_seed(base_seed: int | None, episode_index: int, variant: int = 0) -> int:
     base = 42 if base_seed is None or int(base_seed) < 0 else int(base_seed)
-    return (base * EPISODE_SEED_STRIDE + int(episode_index)) % (2**31 - 1)
+    seed = (base * EPISODE_SEED_STRIDE + int(episode_index)) % (2**31 - 1)
+    if int(variant) > 0:
+        seed = (seed ^ ((int(variant) * VARIANT_MIX) & 0x7FFFFFFF)) % (2**31 - 1)
+    return seed
 
 
-def seed_for_episode(env, base_seed: int | None, episode_index: int, log=print) -> int:
+def seed_for_episode(env, base_seed: int | None, episode_index: int, variant: int = 0, log=print) -> int:
     """Seed torch / numpy / python (and warp / replicator through Isaac Lab's ``env.seed``) for ``episode_index``.
 
-    Call immediately before ``env.reset()``. Returns the seed used."""
+    ``variant`` > 0 selects another layout of the same episode (manual RESET). Call immediately before
+    ``env.reset()``. Returns the seed used."""
     global CURRENT_SEED
-    seed = episode_seed(base_seed, episode_index)
+    seed = episode_seed(base_seed, episode_index, variant)
     CURRENT_SEED = seed
     target = getattr(env, "unwrapped", env)
     if hasattr(target, "seed"):
@@ -52,7 +60,8 @@ def seed_for_episode(env, base_seed: int | None, episode_index: int, log=print) 
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(seed)
     if log is not None:
-        log(f"[episode seed] episode {episode_index}: seed {seed} (base {base_seed})")
+        tag = f", variant {variant} (RESET)" if int(variant) > 0 else ""
+        log(f"[episode seed] episode {episode_index}: seed {seed} (base {base_seed}{tag})")
     return seed
 
 
