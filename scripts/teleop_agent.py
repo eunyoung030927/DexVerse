@@ -295,11 +295,12 @@ def main() -> None:  # noqa: C901
         )
         apply_teleop_retargeting_scheme(env_cfg.teleop_devices, args_cli.retargeting_scheme)
         if args_cli.teleop_device == "manus":
-            # Manus glove fingers + glove-mounted Quest controller wrist (vr_teleop/, VR_TELEOP_* env vars).
-            from vr_teleop.teleop.dexverse_integration import add_manus_device_from_env
+            # Manus glove fingers + glove-mounted Quest controller wrist (cross_dex.teleop, VR_TELEOP_* env vars;
+            # pip install -e /workspace/cross_dex).
+            from cross_dex.dexverse.adapters.dexverse_integration import add_manus_device_from_env
 
             add_manus_device_from_env(env_cfg.teleop_devices, use_xr=bool(args_cli.xr))
-            from vr_teleop.teleop.dexverse_integration import show_goal_marker
+            from cross_dex.dexverse.adapters.dexverse_integration import show_goal_marker
 
             show_goal_marker(env_cfg)
 

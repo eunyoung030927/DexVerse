@@ -1141,11 +1141,12 @@ def create_environment_config() -> tuple["ManagerBasedRLEnvCfg | DirectRLEnvCfg"
         )
         apply_teleop_retargeting_scheme(env_cfg.teleop_devices, args_cli.retargeting_scheme)
         if args_cli.teleop_device == "manus":
-            # Manus glove fingers + glove-mounted Quest controller wrist (vr_teleop/, VR_TELEOP_* env vars).
-            from vr_teleop.teleop.dexverse_integration import add_manus_device_from_env
+            # Manus glove fingers + glove-mounted Quest controller wrist (cross_dex.teleop, VR_TELEOP_* env vars;
+            # pip install -e /workspace/cross_dex).
+            from cross_dex.dexverse.adapters.dexverse_integration import add_manus_device_from_env
 
             add_manus_device_from_env(env_cfg.teleop_devices, use_xr=bool(args_cli.xr))
-            from vr_teleop.teleop.dexverse_integration import show_goal_marker
+            from cross_dex.dexverse.adapters.dexverse_integration import show_goal_marker
 
             show_goal_marker(env_cfg)
 
@@ -1421,13 +1422,13 @@ def run_simulation_loop(
     # Manus teleop: which gate of the success condition holds, live (panel 2 Hz, terminal every 2 s).
     success_status, last_detail, last_print = None, 0.0, 0.0
     if args_cli.teleop_device == "manus" and success_term is not None:
-        from vr_teleop.teleop.dexverse_success_status import SuccessStatus
+        from cross_dex.dexverse.adapters.dexverse_success_status import SuccessStatus
 
         success_status = SuccessStatus(env, success_term, _resolve_term_callable)
         quest = getattr(teleop_interface, "_quest", None)
         if args_cli.xr and quest is not None and os.environ.get("VR_TELEOP_PANEL", "1") != "0":
             # headset panel without --xr_status_panel (see RecordPanel); VR_TELEOP_PANEL=0 turns it off
-            from vr_teleop.teleop.dexverse_success_status import RecordPanel
+            from cross_dex.dexverse.adapters.dexverse_success_status import RecordPanel
 
             status = RecordPanel(trajectory_recorder, args_cli.num_demos, quest.head)
             print("[vr_teleop] headset status panel on (VR_TELEOP_PANEL=0 to turn it off)")
