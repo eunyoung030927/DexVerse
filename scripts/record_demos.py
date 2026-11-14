@@ -67,7 +67,11 @@ from dexverse.data_collection.lerobot_spool import (  # stdlib + numpy only (pre
 )
 from dexverse.demo_paths import DEXVERSE_DATA_DIR_ENV, get_dexverse_data_dir, resolve_demo_output_path
 from dexverse.benchmark import action_layout, task_identity
-from dexverse.teleop_utils.debug_visualization import add_debug_visualization_args, configure_v1_debug_visualization
+from dexverse.teleop_utils.debug_visualization import (
+    add_debug_visualization_args,
+    configure_v1_debug_visualization,
+    show_pour_goal_marker,
+)
 from isaaclab.app import AppLauncher
 
 logger = logging.getLogger(__name__)
@@ -1150,6 +1154,9 @@ def create_environment_config() -> tuple["ManagerBasedRLEnvCfg | DirectRLEnvCfg"
 
             show_goal_marker(env_cfg)
 
+    # Recording, replay and LeRobot rendering all show the goal of the v0 pour-style tasks (was teleoperation only:
+    # the rendered datasets had no goal in the images).
+    show_pour_goal_marker(env_cfg)
     configure_v1_debug_visualization(env_cfg, cues_in_rgb=args_cli.cues_in_rgb)
     return env_cfg, success_term
 

@@ -59,7 +59,7 @@ def make_env(payload: dict):
     from dexverse.IL.diffusion.online_eval import _SuccessProbe
     from dexverse.replay_rigid_object import configure_replay_rigid_objects
     from dexverse.tasks.utils import parse_env_cfg
-    from dexverse.teleop_utils.debug_visualization import configure_v1_debug_visualization
+    from dexverse.teleop_utils.debug_visualization import configure_v1_debug_visualization, show_pour_goal_marker
     from dexverse.teleop_utils.replay_teleop import recorded_wrist_camera_body_collision, set_wrist_camera_body_collision
 
     task, robot_type = payload["env_name"], payload["robot_type"]
@@ -68,6 +68,7 @@ def make_env(payload: dict):
     env_cfg.sim.device = args.device
     env_cfg.scene.num_envs = 1
     configure_v1_debug_visualization(env_cfg, cues_in_rgb=True)
+    show_pour_goal_marker(env_cfg)  # v0 pour-style tasks: the goal sphere the operator saw (same as the rendered datasets)
     env_cfg.seed = payload["seed"]
     set_wrist_camera_body_collision(env_cfg, recorded_wrist_camera_body_collision(payload, robot_type))
     for name in CAMERAS:  # same override as record_demos._configure_lerobot_cameras
