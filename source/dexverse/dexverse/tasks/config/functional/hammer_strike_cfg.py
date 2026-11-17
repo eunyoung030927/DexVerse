@@ -12,9 +12,12 @@ board) authored at ``DEXVERSE_AUTHORED_ARTICULATIONS_DIR/nail_board``.
 
 Success requires:
 
-- Forbidden-zone clearance on the hammer (fingertips off the hammer head).
-- Affinity-zone overlap between the hammer head and the nail.
-- Compression of the nail's prismatic joint past a tunable threshold.
+- Compression of the nail's prismatic joint past a tunable threshold (6 cm).
+- Fingertips off the nail head (target-frame forbidden sphere).
+- The nail driven by the hammer head (2026-11-17): at least
+  ``head_press_fraction`` of the press must follow strikes made with the head
+  (face, sides or claw), not the handle or the hand. (The former
+  "affinity overlap" line was never checked in code.)
 
 Nail dynamics:
     Gravity is disabled for the nail and the prismatic joint has zero
@@ -273,6 +276,28 @@ class HammerStrikeEnvFloatingDexHandRightCfg(FunctionalGraspingEnvFloatingDexHan
     # hammer spawn. Enforced via rejection sampling at reset time.
     min_object_goal_xy_distance: float = 0.10
 
+    # Hammer-head rule (2026-11-17): the nail must be driven by the hammer *head*
+    # (face, sides or claw all count), not the handle or the hand. The YCB 048
+    # hammer head (unscaled, hammer local frame) runs from the claw tip
+    # (-0.126, 0.050) through the claw bend (-0.075, 0.122) to the centre of the
+    # blunt striking face (-0.022, 0.128), z-centre 0.015, half-width ~1.6 cm.
+    # The nail-head centre (r = 0.020, h = 0.008, 0.084 above the nail link
+    # frame) must lie within ``head_radius`` (scaled metres: head half-width
+    # ~1.9 cm + nail head r 2 cm + 1 cm margin) of that polyline at each strike;
+    # the handle stays > 5 cm away below its top ~3 cm.
+    # Set ``head_segments_unscaled = ()`` to drop the rule.
+    head_segments_unscaled: tuple = (
+        ((-0.126, 0.050, 0.015), (-0.075, 0.122, 0.015)),
+        ((-0.075, 0.122, 0.015), (-0.022, 0.128, 0.015)),
+    )
+    head_radius: float = 0.05
+    nail_body_name: str = "nail"
+    nail_head_local_offset: tuple[float, float, float] = (0.0, 0.0, 0.084)
+    # A strike = nail press velocity jumps by more than this in one env step (m/s).
+    impact_dv_threshold: float = 0.01
+    # Share of the total nail press that must come from head strikes.
+    head_press_fraction: float = 0.5
+
     # Override the scene to include the nail-board target articulation.
     scene: HammerStrikeSceneCfg = HammerStrikeSceneCfg(
         num_envs=4096,
@@ -423,5 +448,21 @@ class HammerStrikeEnvFloatingDexHandRightCfg(FunctionalGraspingEnvFloatingDexHan
                 "object_cfg": SceneEntityCfg("object"),
                 "target_asset_cfg": SceneEntityCfg(TARGET_KEY),
                 "target_joint_cfg": SceneEntityCfg(TARGET_KEY, joint_names=[NAIL_PRISMATIC_JOINT]),
+                **self._strike_head_params(),
             },
         )
+
+    def _strike_head_params(self) -> dict:
+        if not self.head_segments_unscaled:
+            return {}
+        sc = self.object_scale
+        sn = self.nail_board_scale
+        scale = lambda pt, k: tuple(c * f for c, f in zip(pt, k))  # noqa: E731
+        return {
+            "nail_cfg": SceneEntityCfg(TARGET_KEY, body_names=[self.nail_body_name]),
+            "nail_head_local_offset": scale(self.nail_head_local_offset, sn),
+            "head_segments": [(scale(a, sc), scale(b, sc)) for a, b in self.head_segments_unscaled],
+            "head_radius": self.head_radius,
+            "impact_dv_threshold": self.impact_dv_threshold,
+            "head_press_fraction": self.head_press_fraction,
+        }

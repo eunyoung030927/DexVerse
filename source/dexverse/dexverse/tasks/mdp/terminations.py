@@ -1103,6 +1103,13 @@ def assets_axis_aligned(
     return cos >= threshold_cos
 
 
+def _point_segment_distance(p: torch.Tensor, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+    """Distance from points ``p`` (N, 3) to the segment ``a``-``b`` (3,)."""
+    ab = b - a
+    t = torch.clamp(((p - a) @ ab) / torch.clamp(ab @ ab, min=1e-12), 0.0, 1.0)
+    return torch.linalg.norm(p - (a + t.unsqueeze(-1) * ab), dim=-1)
+
+
 class hammer_strike_success(ManagerTermBase):
     """Success when grasp is held, forbidden zones are clear, and target compresses.
 
@@ -1114,6 +1121,15 @@ class hammer_strike_success(ManagerTermBase):
 
     ``*_zones`` are interpreted in the source object's local frame;
     ``target_*_zones`` are interpreted in the target asset's local frame.
+
+    Optional hammer-head rule (``head_segments`` set, 2026-11-17): the nail must be
+    driven by the hammer *head* (face, sides or claw), not the handle or the hand.
+    The head is a chain of capsules (``head_segments``, radius ``head_radius``) in the
+    source object's local frame. Every step where the nail's press velocity jumps by
+    more than ``impact_dv_threshold`` (a new push or strike) records whether the
+    nail-head point lies inside the head capsules; the press made after that step is
+    credited to the head or not, and success also needs head press
+    ``>= head_press_fraction`` of the total press.
     """
 
     def __init__(self, cfg, env: ManagerBasedRLEnv):
@@ -1146,6 +1162,57 @@ class hammer_strike_success(ManagerTermBase):
             cfg.params.get("target_cylinder_zones"),
             env.device,
         )
+        n = env.num_envs
+        self._head_press = torch.zeros(n, device=env.device)
+        self._total_press = torch.zeros(n, device=env.device)
+        self._prev_delta = torch.zeros(n, device=env.device)
+        self._prev_vel = torch.zeros(n, device=env.device)
+        self._head_label = torch.zeros(n, dtype=torch.bool, device=env.device)
+
+    def reset(self, env_ids=None):
+        if env_ids is None:
+            env_ids = slice(None)
+        for buf in (self._head_press, self._total_press, self._prev_delta, self._prev_vel):
+            buf[env_ids] = 0.0
+        self._head_label[env_ids] = False
+
+    def _head_ok(self, env, object_cfg, target_joint_cfg, nail_cfg, nail_head_local_offset,
+                 head_segments, head_radius, impact_dv_threshold, head_press_fraction):
+        # also clear on episode start for callers that never call ``reset`` (set-state replayers)
+        fresh = env.episode_length_buf == 0
+        if fresh.any():
+            self.reset(fresh.nonzero(as_tuple=False).squeeze(-1))
+        target: Articulation = env.scene[target_joint_cfg.name]
+        joint_ids = resolve_joint_ids(env, target_joint_cfg)
+        q = target.data.joint_pos[:, joint_ids][:, 0]
+        v = target.data.joint_vel[:, joint_ids][:, 0].clone()  # kept as prev_vel: must not alias the live buffer
+        delta = torch.abs(q - get_init_joint_pos(target, joint_ids)[:, 0])
+        sign = torch.sign(q - get_init_joint_pos(target, joint_ids)[:, 0])
+        sign = torch.where(sign == 0, torch.ones_like(sign), sign)
+        # nail-head point -> hammer (source object) local frame
+        obj = env.scene[object_cfg.name]
+        bid = nail_cfg.body_ids
+        if bid is None or isinstance(bid, slice):  # cfg not resolved by a manager (e.g. set-state replayers)
+            bid = target.find_bodies(nail_cfg.body_names)[0]
+        bid = bid[0] if isinstance(bid, (list, tuple)) else bid
+        npos, nquat = target.data.body_pos_w[:, bid, :], target.data.body_quat_w[:, bid, :]
+        off = torch.tensor(nail_head_local_offset, device=env.device, dtype=npos.dtype).expand(env.num_envs, -1)
+        p = quat_apply_inverse(obj.data.root_quat_w, npos + quat_apply(nquat, off) - obj.data.root_pos_w)
+        dist = torch.full((env.num_envs,), float("inf"), device=env.device, dtype=p.dtype)
+        for seg_a, seg_b in head_segments:
+            sa = torch.tensor(seg_a, device=env.device, dtype=p.dtype)
+            sb = torch.tensor(seg_b, device=env.device, dtype=p.dtype)
+            dist = torch.minimum(dist, _point_segment_distance(p, sa, sb))
+        in_head = dist <= head_radius
+        # a new push/strike = press velocity jumps up; remember which part made it
+        impact = (v - self._prev_vel) * sign > impact_dv_threshold
+        self._head_label = torch.where(impact, in_head, self._head_label)
+        step = torch.clamp(delta - self._prev_delta, min=0.0)
+        self._total_press += step
+        self._head_press += torch.where(self._head_label, step, torch.zeros_like(step))
+        self._prev_delta.copy_(delta)
+        self._prev_vel.copy_(v)
+        return self._head_press >= head_press_fraction * torch.clamp(self._total_press, min=1e-6)
 
     def __call__(
         self,
@@ -1162,8 +1229,17 @@ class hammer_strike_success(ManagerTermBase):
         target_asset_cfg: SceneEntityCfg = SceneEntityCfg("target"),
         target_joint_cfg: SceneEntityCfg = SceneEntityCfg("target"),
         press_mode: str = "displacement",
+        nail_cfg: SceneEntityCfg | None = None,
+        nail_head_local_offset: tuple[float, float, float] = (0.0, 0.0, 0.0),
+        head_segments: list | None = None,
+        head_radius: float = 0.05,
+        impact_dv_threshold: float = 0.01,
+        head_press_fraction: float = 0.5,
     ) -> torch.Tensor:
         success = torch.ones(env.num_envs, dtype=torch.bool, device=env.device)
+        if head_segments:  # updated every step so the strike history is complete
+            success &= self._head_ok(env, object_cfg, target_joint_cfg, nail_cfg, nail_head_local_offset,
+                                     head_segments, head_radius, impact_dv_threshold, head_press_fraction)
         if (
             self._forbidden_sphere_centers.shape[0] > 0
             or self._forbidden_box_centers.shape[0] > 0
