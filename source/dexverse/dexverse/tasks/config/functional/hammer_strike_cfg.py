@@ -15,8 +15,9 @@ Success requires:
 - Compression of the nail's prismatic joint past a tunable threshold (6 cm).
 - Fingertips off the nail head (target-frame forbidden sphere).
 - The nail driven by the hammer head (2026-11-17): at least
-  ``head_press_fraction`` of the press must follow strikes made with the head
-  (face, sides or claw), not the handle or the hand. (The former
+  ``head_press_fraction`` of the press must follow strikes made with the head,
+  not the handle or the hand. Since 2026-11-18 only the round striking face
+  counts (``face_*``); sides and claw no longer do. (The former
   "affinity overlap" line was never checked in code.)
 
 Nail dynamics:
@@ -291,6 +292,19 @@ class HammerStrikeEnvFloatingDexHandRightCfg(FunctionalGraspingEnvFloatingDexHan
         ((-0.075, 0.122, 0.015), (-0.022, 0.128, 0.015)),
     )
     head_radius: float = 0.05
+    # Striking-face rule (2026-11-18, replaces the head capsules when set): only the
+    # round striking face counts. Face of the YCB 048 mesh (unscaled, hammer local
+    # frame): centre (-0.0203, 0.1303, 0.0141), outward normal (0.94, 0.339, -0.026),
+    # radius ~1.6 cm. At a strike the nail-head centre must be within
+    # ``face_lateral_max`` (scaled m) of the face axis, ``face_axial_range`` in front
+    # of the face, and the face must point against the nail axis (cos >= face_min_cos).
+    # Teleop demos: 291/300 pass (old capsule rule 300/300). Set
+    # ``face_center_unscaled = None`` to fall back to the capsules.
+    face_center_unscaled: tuple | None = (-0.0203, 0.1303, 0.0141)
+    face_normal_unscaled: tuple = (0.94, 0.339, -0.026)
+    face_lateral_max: float = 0.04
+    face_axial_range: tuple[float, float] = (0.0, 0.03)
+    face_min_cos: float = 0.7
     nail_body_name: str = "nail"
     nail_head_local_offset: tuple[float, float, float] = (0.0, 0.0, 0.084)
     # A strike = nail press velocity jumps by more than this in one env step (m/s).
@@ -453,12 +467,23 @@ class HammerStrikeEnvFloatingDexHandRightCfg(FunctionalGraspingEnvFloatingDexHan
         )
 
     def _strike_head_params(self) -> dict:
-        if not self.head_segments_unscaled:
+        if not self.head_segments_unscaled and self.face_center_unscaled is None:
             return {}
         sc = self.object_scale
         sn = self.nail_board_scale
         scale = lambda pt, k: tuple(c * f for c, f in zip(pt, k))  # noqa: E731
+        face = {}
+        if self.face_center_unscaled is not None:
+            face = {
+                "face_center": scale(self.face_center_unscaled, sc),
+                "face_normal": tuple(c / f for c, f in zip(self.face_normal_unscaled, sc)),  # normals scale by 1/s
+                "face_lateral_max": self.face_lateral_max,
+                "face_axial_min": self.face_axial_range[0],
+                "face_axial_max": self.face_axial_range[1],
+                "face_min_cos": self.face_min_cos,
+            }
         return {
+            **face,
             "nail_cfg": SceneEntityCfg(TARGET_KEY, body_names=[self.nail_body_name]),
             "nail_head_local_offset": scale(self.nail_head_local_offset, sn),
             "head_segments": [(scale(a, sc), scale(b, sc)) for a, b in self.head_segments_unscaled],

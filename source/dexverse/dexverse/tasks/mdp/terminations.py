@@ -1130,6 +1130,13 @@ class hammer_strike_success(ManagerTermBase):
     nail-head point lies inside the head capsules; the press made after that step is
     credited to the head or not, and success also needs head press
     ``>= head_press_fraction`` of the total press.
+
+    Striking-face rule (``face_center`` set, 2026-11-18, replaces the capsules): only
+    the round striking face counts. At a strike the nail-head point (hammer local
+    frame) must be within ``face_lateral_max`` of the face axis, between
+    ``face_axial_min`` and ``face_axial_max`` in front of the face along
+    ``face_normal``, and the face must point against the nail axis
+    (cos >= ``face_min_cos``). Sides, claw, handle and hand do not count.
     """
 
     def __init__(self, cfg, env: ManagerBasedRLEnv):
@@ -1178,7 +1185,7 @@ class hammer_strike_success(ManagerTermBase):
         self._head_label[env_ids] = False
 
     def _head_ok(self, env, object_cfg, target_joint_cfg, nail_cfg, nail_head_local_offset,
-                 head_segments, head_radius, impact_dv_threshold, head_press_fraction):
+                 head_segments, head_radius, impact_dv_threshold, head_press_fraction, face=None):
         # Also clear on a new episode for callers that never call ``reset``: the set-state replayers (they evaluate
         # at step 0) and record_demos (it evaluates after env.step, so it sees step 1, never 0). A new episode =
         # the step counter is 0 or went back; without this the strike history leaked into the next episode.
@@ -1203,12 +1210,26 @@ class hammer_strike_success(ManagerTermBase):
         npos, nquat = target.data.body_pos_w[:, bid, :], target.data.body_quat_w[:, bid, :]
         off = torch.tensor(nail_head_local_offset, device=env.device, dtype=npos.dtype).expand(env.num_envs, -1)
         p = quat_apply_inverse(obj.data.root_quat_w, npos + quat_apply(nquat, off) - obj.data.root_pos_w)
-        dist = torch.full((env.num_envs,), float("inf"), device=env.device, dtype=p.dtype)
-        for seg_a, seg_b in head_segments:
-            sa = torch.tensor(seg_a, device=env.device, dtype=p.dtype)
-            sb = torch.tensor(seg_b, device=env.device, dtype=p.dtype)
-            dist = torch.minimum(dist, _point_segment_distance(p, sa, sb))
-        in_head = dist <= head_radius
+        if face is not None:  # striking face only
+            fc = torch.tensor(face["center"], device=env.device, dtype=p.dtype)
+            fn = torch.tensor(face["normal"], device=env.device, dtype=p.dtype)
+            fn = fn / torch.linalg.norm(fn)
+            dd = p - fc
+            ax = dd @ fn
+            lat = torch.linalg.norm(dd - ax.unsqueeze(-1) * fn, dim=-1)
+            z = torch.tensor((0.0, 0.0, 1.0), device=env.device, dtype=p.dtype).expand(env.num_envs, -1)
+            nail_up = quat_apply(nquat, z)
+            face_w = quat_apply(obj.data.root_quat_w, fn.expand(env.num_envs, -1))
+            cos = -(face_w * nail_up).sum(-1)
+            in_head = (lat <= face["lateral_max"]) & (ax >= face["axial_min"]) & (ax <= face["axial_max"])
+            in_head &= cos >= face["min_cos"]
+        else:
+            dist = torch.full((env.num_envs,), float("inf"), device=env.device, dtype=p.dtype)
+            for seg_a, seg_b in head_segments:
+                sa = torch.tensor(seg_a, device=env.device, dtype=p.dtype)
+                sb = torch.tensor(seg_b, device=env.device, dtype=p.dtype)
+                dist = torch.minimum(dist, _point_segment_distance(p, sa, sb))
+            in_head = dist <= head_radius
         # a new push/strike = press velocity jumps up; remember which part made it
         impact = (v - self._prev_vel) * sign > impact_dv_threshold
         self._head_label = torch.where(impact, in_head, self._head_label)
@@ -1240,11 +1261,21 @@ class hammer_strike_success(ManagerTermBase):
         head_radius: float = 0.05,
         impact_dv_threshold: float = 0.01,
         head_press_fraction: float = 0.5,
+        face_center: tuple[float, float, float] | None = None,
+        face_normal: tuple[float, float, float] = (1.0, 0.0, 0.0),
+        face_lateral_max: float = 0.04,
+        face_axial_min: float = 0.0,
+        face_axial_max: float = 0.03,
+        face_min_cos: float = 0.7,
     ) -> torch.Tensor:
         success = torch.ones(env.num_envs, dtype=torch.bool, device=env.device)
-        if head_segments:  # updated every step so the strike history is complete
+        face = None
+        if face_center is not None:
+            face = {"center": face_center, "normal": face_normal, "lateral_max": face_lateral_max,
+                    "axial_min": face_axial_min, "axial_max": face_axial_max, "min_cos": face_min_cos}
+        if head_segments or face is not None:  # updated every step so the strike history is complete
             success &= self._head_ok(env, object_cfg, target_joint_cfg, nail_cfg, nail_head_local_offset,
-                                     head_segments, head_radius, impact_dv_threshold, head_press_fraction)
+                                     head_segments, head_radius, impact_dv_threshold, head_press_fraction, face)
         if (
             self._forbidden_sphere_centers.shape[0] > 0
             or self._forbidden_box_centers.shape[0] > 0
