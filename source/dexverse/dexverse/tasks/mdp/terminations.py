@@ -1168,6 +1168,7 @@ class hammer_strike_success(ManagerTermBase):
         self._prev_delta = torch.zeros(n, device=env.device)
         self._prev_vel = torch.zeros(n, device=env.device)
         self._head_label = torch.zeros(n, dtype=torch.bool, device=env.device)
+        self._last_len = torch.zeros(n, dtype=torch.long, device=env.device)
 
     def reset(self, env_ids=None):
         if env_ids is None:
@@ -1178,10 +1179,14 @@ class hammer_strike_success(ManagerTermBase):
 
     def _head_ok(self, env, object_cfg, target_joint_cfg, nail_cfg, nail_head_local_offset,
                  head_segments, head_radius, impact_dv_threshold, head_press_fraction):
-        # also clear on episode start for callers that never call ``reset`` (set-state replayers)
-        fresh = env.episode_length_buf == 0
+        # Also clear on a new episode for callers that never call ``reset``: the set-state replayers (they evaluate
+        # at step 0) and record_demos (it evaluates after env.step, so it sees step 1, never 0). A new episode =
+        # the step counter is 0 or went back; without this the strike history leaked into the next episode.
+        ep_len = env.episode_length_buf.to(torch.long)
+        fresh = (ep_len == 0) | (ep_len < self._last_len)
         if fresh.any():
             self.reset(fresh.nonzero(as_tuple=False).squeeze(-1))
+        self._last_len.copy_(ep_len)
         target: Articulation = env.scene[target_joint_cfg.name]
         joint_ids = resolve_joint_ids(env, target_joint_cfg)
         q = target.data.joint_pos[:, joint_ids][:, 0]
